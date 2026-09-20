@@ -20,11 +20,17 @@ const NAV_ITEMS = [
       { label: 'Credit Notes', href: '/credit-notes', icon: '📝' },
     ]
   },
-  {
+    {
     section: 'Purchases',
     items: [
       { label: 'Bills', href: '/bills', icon: '🛒' },
       { label: 'Expenses', href: '/expenses', icon: '💸' },
+    ]
+  },
+  {
+    section: 'Payments',
+    items: [
+      { label: 'Receivables & Payables', href: '/payments', icon: '💳' },
     ]
   },
   {
