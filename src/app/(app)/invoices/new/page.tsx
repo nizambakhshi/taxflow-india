@@ -374,12 +374,37 @@ export default function NewInvoicePage() {
         sort_order: idx,
       }))
 
-      const { error: itemsError } = await supabase
+           const { error: itemsError } = await supabase
         .from('invoice_items')
         .insert(itemsToInsert)
 
       if (itemsError) throw itemsError
 
+      // Update stock for tracked products
+      for (const item of validItems) {
+        if (!item.product_id) continue
+
+        const { data: product } = await supabase
+          .from('products')
+          .select('track_inventory, current_stock')
+          .eq('id', item.product_id)
+          .single()
+
+        if (product?.track_inventory) {
+          await supabase.rpc('record_stock_movement', {
+            p_organization_id: orgId,
+            p_product_id: item.product_id,
+            p_movement_type: 'sale',
+            p_quantity: -(parseFloat(item.quantity)),
+            p_reference_type: 'invoice',
+            p_reference_id: invoice.id,
+            p_reference_number: finalInvoiceNumber,
+            p_notes: `Sale — ${finalInvoiceNumber}`,
+            p_created_by: (await supabase.auth.getUser()).data.user?.id,
+          })
+        }
+      }
+      
       router.push(`/invoices/${invoice.id}`)
     } catch (err: any) {
       setError(err.message || 'Failed to save invoice')

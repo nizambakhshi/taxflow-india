@@ -295,7 +295,33 @@ export default function BillsPage() {
         sort_order: idx,
       }))
 
-      await supabase.from('purchase_bill_items').insert(itemsToInsert)
+            await supabase.from('purchase_bill_items').insert(itemsToInsert)
+
+      // Update stock for tracked products
+      for (const item of validItems) {
+        if (!item.product_id) continue
+
+        const { data: product } = await supabase
+          .from('products')
+          .select('track_inventory')
+          .eq('id', item.product_id)
+          .single()
+
+        if (product?.track_inventory) {
+          const user = await supabase.auth.getUser()
+          await supabase.rpc('record_stock_movement', {
+            p_organization_id: orgId,
+            p_product_id: item.product_id,
+            p_movement_type: 'purchase',
+            p_quantity: parseFloat(item.quantity),
+            p_reference_type: 'bill',
+            p_reference_id: bill.id,
+            p_reference_number: billNumber,
+            p_notes: `Purchase — ${billNumber}`,
+            p_created_by: user.data.user?.id,
+          })
+        }
+      }
 
       const { data: updatedBills } = await supabase
         .from('purchase_bills')

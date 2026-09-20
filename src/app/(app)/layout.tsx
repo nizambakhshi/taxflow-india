@@ -33,12 +33,13 @@ const NAV_ITEMS = [
       { label: 'Receivables & Payables', href: '/payments', icon: '💳' },
     ]
   },
-  {
+    {
     section: 'Masters',
     items: [
       { label: 'Customers', href: '/customers', icon: '👥' },
       { label: 'Vendors', href: '/vendors', icon: '🏭' },
       { label: 'Products', href: '/products', icon: '📦' },
+      { label: 'Inventory', href: '/inventory', icon: '🏪' },
     ]
   },
   {
