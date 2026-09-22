@@ -50,10 +50,16 @@ const NAV_ITEMS = [
       { label: 'GSTR-3B', href: '/gst/gstr3b', icon: '📑' },
     ]
   },
-  {
+    {
     section: 'Reports',
     items: [
       { label: 'Reports', href: '/reports', icon: '📈' },
+    ]
+  },
+  {
+    section: 'Account',
+    items: [
+      { label: 'Settings', href: '/settings', icon: '⚙️' },
     ]
   },
 ]
