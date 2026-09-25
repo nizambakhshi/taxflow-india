@@ -368,14 +368,7 @@ export default function InvoiceDetailPage() {
                   <td style={TD()}>{formatINR(item.total_amount)}</td>
                 </tr>
               ))}
-              {/* Empty padding rows */}
-              {Array.from({ length: Math.max(0, 8 - items.length) }).map((_, i) => (
-                <tr key={`e${i}`} style={{ height: '20px' }}>
-                  {Array.from({ length: 9 }).map((_, j) => (
-                    <td key={j} style={{ border: '1px solid #eee' }}></td>
-                  ))}
-                </tr>
-              ))}
+              
             </tbody>
             <tfoot>
               <tr style={{ background: '#f0f4f8', fontWeight: '700' }}>
