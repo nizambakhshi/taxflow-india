@@ -103,7 +103,7 @@ export default function InvoiceDetailPage() {
       if (!element) return
 
       const canvas = await html2canvas(element, {
-        scale: 2,
+        scale: 5,
         useCORS: true,
         backgroundColor: '#ffffff',
         windowWidth: element.scrollWidth,
