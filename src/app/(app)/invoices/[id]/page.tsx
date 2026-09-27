@@ -345,15 +345,30 @@ export default function InvoiceDetailPage() {
               display: 'flex', gap: '10px', padding: '8px 10px',
               borderBottom: '1px solid #999', alignItems: 'flex-start',
             }}>
-              <div style={{
-                width: '48px', height: '48px',
-                border: '1px solid #ddd', borderRadius: '4px',
-                display: 'flex', alignItems: 'center',
-                justifyContent: 'center', background: '#f8fafc',
-                fontSize: '18px', flexShrink: 0,
-              }}>
-                🏢
-              </div>
+                          <div style={{
+              width: '72px', height: '56px',
+              flexShrink: 0, display: 'flex',
+              alignItems: 'center', justifyContent: 'center',
+            }}>
+              {org?.logo_url ? (
+                <img
+                  src={org.logo_url}
+                  alt="Logo"
+                  style={{
+                    maxWidth: '72px', maxHeight: '56px',
+                    objectFit: 'contain',
+                  }}
+                />
+              ) : (
+                <div style={{
+                  width: '56px', height: '56px',
+                  border: '1px solid #ddd', borderRadius: '4px',
+                  display: 'flex', alignItems: 'center',
+                  justifyContent: 'center', background: '#f8fafc',
+                  fontSize: '20px',
+                }}>🏢</div>
+              )}
+            </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: '9px', color: '#666', marginBottom: '1px' }}>
                   GSTIN : {gstReg?.gstin || '—'}

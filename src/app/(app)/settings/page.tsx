@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 
@@ -17,36 +17,28 @@ const labelStyle = {
   color: '#374151', marginBottom: '6px',
 }
 
-const sectionTitle = (title: string, subtitle: string) => (
-  <div style={{ marginBottom: '1.5rem' }}>
-    <h2 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
-      {title}
-    </h2>
-    <p style={{ fontSize: '13px', color: '#64748b' }}>{subtitle}</p>
-  </div>
-)
-
 export default function SettingsPage() {
   const supabase = createClient()
   const router = useRouter()
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [orgId, setOrgId] = useState('')
   const [activeTab, setActiveTab] = useState('company')
+  const [uploadingLogo, setUploadingLogo] = useState(false)
+  const [logoPreview, setLogoPreview] = useState<string>('')
 
   const [form, setForm] = useState({
-    // Company
     name: '', trade_name: '', pan: '', business_type: '',
     phone: '', email: '', website: '',
     address_line1: '', address_line2: '',
     city: '', state: '', state_code: '', pincode: '',
-    // Invoice settings
+    logo_url: '',
     invoice_prefix: 'INV',
     invoice_footer: 'Thank You For Your Business!',
     invoice_declaration: '',
-    // Bank details
     bank_name: '', bank_branch: '',
     bank_account_number: '', bank_ifsc: '', bank_upi_id: '',
   })
@@ -82,6 +74,7 @@ export default function SettingsPage() {
           state: org.state || '',
           state_code: org.state_code || '',
           pincode: org.pincode || '',
+          logo_url: org.logo_url || '',
           invoice_prefix: org.invoice_prefix || 'INV',
           invoice_footer: org.invoice_footer || 'Thank You For Your Business!',
           invoice_declaration: org.invoice_declaration || '',
@@ -91,16 +84,67 @@ export default function SettingsPage() {
           bank_ifsc: org.bank_ifsc || '',
           bank_upi_id: org.bank_upi_id || '',
         })
+        if (org.logo_url) setLogoPreview(org.logo_url)
       }
       setLoading(false)
     }
     load()
   }, [])
 
+  async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (file.size > 2 * 1024 * 1024) {
+      alert('Logo must be under 2MB')
+      return
+    }
+
+    setUploadingLogo(true)
+    try {
+      const ext = file.name.split('.').pop()
+      const fileName = `${orgId}-logo.${ext}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('logos')
+        .upload(fileName, file, { upsert: true })
+
+      if (uploadError) throw uploadError
+
+      const { data: urlData } = supabase.storage
+        .from('logos')
+        .getPublicUrl(fileName)
+
+      const logoUrl = urlData.publicUrl
+      setLogoPreview(logoUrl)
+      setForm(p => ({ ...p, logo_url: logoUrl }))
+
+      // Save immediately
+      await supabase
+        .from('organizations')
+        .update({ logo_url: logoUrl })
+        .eq('id', orgId)
+
+      alert('Logo uploaded successfully!')
+    } catch (err: any) {
+      alert('Logo upload failed: ' + err.message)
+    } finally {
+      setUploadingLogo(false)
+    }
+  }
+
+  async function handleRemoveLogo() {
+    setLogoPreview('')
+    setForm(p => ({ ...p, logo_url: '' }))
+    await supabase
+      .from('organizations')
+      .update({ logo_url: '' })
+      .eq('id', orgId)
+  }
+
   async function handleSave() {
     setSaving(true)
     setSaved(false)
-
     try {
       const { error } = await supabase
         .from('organizations')
@@ -118,6 +162,7 @@ export default function SettingsPage() {
           state: form.state,
           state_code: form.state_code,
           pincode: form.pincode,
+          logo_url: form.logo_url,
           invoice_prefix: form.invoice_prefix,
           invoice_footer: form.invoice_footer,
           invoice_declaration: form.invoice_declaration,
@@ -167,39 +212,35 @@ export default function SettingsPage() {
             Manage your business profile and invoice settings
           </p>
         </div>
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          style={{
-            padding: '9px 24px',
-            background: saved ? '#059669' : saving ? '#93c5fd' : '#2563eb',
-            color: 'white', border: 'none', borderRadius: '8px',
-            fontSize: '14px', fontWeight: '600',
-            cursor: saving ? 'not-allowed' : 'pointer',
-            transition: 'background 0.2s'
-          }}
-        >
+        <button onClick={handleSave} disabled={saving} style={{
+          padding: '9px 24px',
+          background: saved ? '#059669' : saving ? '#93c5fd' : '#2563eb',
+          color: 'white', border: 'none', borderRadius: '8px',
+          fontSize: '14px', fontWeight: '600',
+          cursor: saving ? 'not-allowed' : 'pointer',
+          transition: 'background 0.2s'
+        }}>
           {saved ? '✓ Saved!' : saving ? 'Saving...' : 'Save Changes'}
         </button>
       </div>
 
       {/* Tabs */}
       <div style={{ borderBottom: '1px solid #e2e8f0', marginBottom: '1.5rem', display: 'flex', gap: '4px' }}>
-        <button style={tabStyle('company')} onClick={() => setActiveTab('company')}>
-          🏢 Company
-        </button>
-        <button style={tabStyle('invoice')} onClick={() => setActiveTab('invoice')}>
-          🧾 Invoice
-        </button>
-        <button style={tabStyle('bank')} onClick={() => setActiveTab('bank')}>
-          🏦 Bank Details
-        </button>
+        <button style={tabStyle('company')} onClick={() => setActiveTab('company')}>🏢 Company</button>
+        <button style={tabStyle('logo')} onClick={() => setActiveTab('logo')}>🖼️ Logo</button>
+        <button style={tabStyle('invoice')} onClick={() => setActiveTab('invoice')}>🧾 Invoice</button>
+        <button style={tabStyle('bank')} onClick={() => setActiveTab('bank')}>🏦 Bank Details</button>
       </div>
 
       {/* COMPANY TAB */}
       {activeTab === 'company' && (
         <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.5rem' }}>
-          {sectionTitle('Company Information', 'This appears on all your invoices and documents')}
+          <h2 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
+            Company Information
+          </h2>
+          <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '1.5rem' }}>
+            This appears on all your invoices and documents
+          </p>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
             <div>
@@ -212,7 +253,7 @@ export default function SettingsPage() {
               <label style={labelStyle}>Trade Name</label>
               <input style={inputStyle} value={form.trade_name}
                 onChange={e => setForm(p => ({ ...p, trade_name: e.target.value }))}
-                placeholder="ABC Traders (if different)" />
+                placeholder="ABC Traders" />
             </div>
           </div>
 
@@ -287,10 +328,119 @@ export default function SettingsPage() {
         </div>
       )}
 
+      {/* LOGO TAB */}
+      {activeTab === 'logo' && (
+        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.5rem' }}>
+          <h2 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
+            Company Logo
+          </h2>
+          <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '1.5rem' }}>
+            Your logo appears on all invoices, quotations and documents. PNG or JPG, max 2MB.
+          </p>
+
+          {/* Current logo */}
+          {logoPreview ? (
+            <div style={{
+              background: '#f8fafc', border: '1px solid #e2e8f0',
+              borderRadius: '12px', padding: '1.5rem',
+              display: 'flex', alignItems: 'center', gap: '1.5rem',
+              marginBottom: '1.5rem'
+            }}>
+              <img
+                src={logoPreview}
+                alt="Company logo"
+                style={{
+                  width: '120px', height: '80px',
+                  objectFit: 'contain', borderRadius: '8px',
+                  border: '1px solid #e2e8f0', background: 'white',
+                  padding: '8px'
+                }}
+              />
+              <div>
+                <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
+                  Logo uploaded ✓
+                </div>
+                <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '12px' }}>
+                  This logo will appear on your invoices
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    style={{
+                      padding: '7px 14px', background: '#2563eb',
+                      color: 'white', border: 'none', borderRadius: '6px',
+                      fontSize: '13px', cursor: 'pointer'
+                    }}
+                  >
+                    Change Logo
+                  </button>
+                  <button
+                    onClick={handleRemoveLogo}
+                    style={{
+                      padding: '7px 14px', background: '#fef2f2',
+                      color: '#dc2626', border: '1px solid #fecaca',
+                      borderRadius: '6px', fontSize: '13px', cursor: 'pointer'
+                    }}
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              style={{
+                border: '2px dashed #cbd5e1', borderRadius: '12px',
+                padding: '3rem', textAlign: 'center' as const,
+                cursor: 'pointer', marginBottom: '1.5rem',
+                background: '#f8fafc'
+              }}
+            >
+              <div style={{ fontSize: '48px', marginBottom: '1rem' }}>🖼️</div>
+              <div style={{ fontWeight: '600', color: '#374151', marginBottom: '4px' }}>
+                Click to upload your logo
+              </div>
+              <div style={{ fontSize: '13px', color: '#64748b' }}>
+                PNG, JPG or SVG — max 2MB — recommended 200×200px
+              </div>
+              {uploadingLogo && (
+                <div style={{ marginTop: '1rem', color: '#2563eb', fontSize: '13px' }}>
+                  Uploading...
+                </div>
+              )}
+            </div>
+          )}
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/jpg,image/svg+xml"
+            onChange={handleLogoUpload}
+            style={{ display: 'none' }}
+          />
+
+          {/* Preview how it looks on invoice */}
+          <div style={{
+            background: '#f0f9ff', border: '1px solid #bae6fd',
+            borderRadius: '8px', padding: '1rem',
+            fontSize: '12px', color: '#0369a1'
+          }}>
+            💡 <strong>Tip:</strong> Use a white or transparent background logo for best results on invoices.
+            Recommended size: 200×80px (landscape).
+          </div>
+        </div>
+      )}
+
       {/* INVOICE TAB */}
       {activeTab === 'invoice' && (
         <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.5rem' }}>
-          {sectionTitle('Invoice Settings', 'Customize how your invoices look and are numbered')}
+          <h2 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
+            Invoice Settings
+          </h2>
+          <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '1.5rem' }}>
+            Customize how your invoices look and are numbered
+          </p>
 
           <div style={{ marginBottom: '1rem' }}>
             <label style={labelStyle}>Invoice Number Prefix</label>
@@ -299,10 +449,11 @@ export default function SettingsPage() {
               onChange={e => setForm(p => ({ ...p, invoice_prefix: e.target.value.toUpperCase() }))}
               placeholder="INV" maxLength={10} />
             <p style={{ fontSize: '12px', color: '#64748b', marginTop: '6px' }}>
-              Your invoices will be numbered: <strong>{form.invoice_prefix || 'INV'}-2026-27-0001</strong>
+              Your invoices will be numbered:{' '}
+              <strong>{form.invoice_prefix || 'INV'}-2026-27-0001</strong>
             </p>
             <p style={{ fontSize: '12px', color: '#dc2626', marginTop: '4px' }}>
-              ⚠️ Changing this prefix only affects new invoices. Existing invoices keep their numbers.
+              ⚠️ Changing this only affects new invoices.
             </p>
           </div>
 
@@ -312,9 +463,6 @@ export default function SettingsPage() {
               value={form.invoice_footer}
               onChange={e => setForm(p => ({ ...p, invoice_footer: e.target.value }))}
               placeholder="Thank You For Your Business!" />
-            <p style={{ fontSize: '12px', color: '#64748b', marginTop: '6px' }}>
-              Shown at the bottom of every invoice
-            </p>
           </div>
 
           <div style={{ marginBottom: '1rem' }}>
@@ -323,30 +471,26 @@ export default function SettingsPage() {
               style={{ ...inputStyle, height: '100px', resize: 'vertical' as const }}
               value={form.invoice_declaration}
               onChange={e => setForm(p => ({ ...p, invoice_declaration: e.target.value }))}
-              placeholder={`1. Subject to local jurisdiction.\n2. Terms & conditions are subject to our trade policy.\n3. E. & O.E.`}
+              placeholder={`1. Subject to local jurisdiction.\n2. Terms & conditions subject to trade policy.\n3. E. & O.E.`}
             />
-            <p style={{ fontSize: '12px', color: '#64748b', marginTop: '6px' }}>
-              Legal declarations shown at the bottom of your invoices
-            </p>
           </div>
 
           {/* Preview */}
           <div style={{
             background: '#f8fafc', border: '1px solid #e2e8f0',
-            borderRadius: '8px', padding: '1rem', marginTop: '1rem'
+            borderRadius: '8px', padding: '1rem'
           }}>
-            <div style={{ fontSize: '12px', fontWeight: '600', color: '#94a3b8', marginBottom: '8px', textTransform: 'uppercase' as const }}>
+            <div style={{ fontSize: '11px', fontWeight: '700', color: '#94a3b8', marginBottom: '8px', textTransform: 'uppercase' as const }}>
               Preview
             </div>
-            <div style={{ fontSize: '13px', color: '#374151' }}>
-              <div style={{ fontWeight: '600', marginBottom: '4px' }}>Declaration</div>
+            <div style={{ fontSize: '12px', color: '#374151' }}>
               {form.invoice_declaration
                 ? form.invoice_declaration.split('\n').map((line, i) => (
                     <div key={i}>{line}</div>
                   ))
                 : <div style={{ color: '#94a3b8' }}>No declaration set</div>
               }
-              <div style={{ marginTop: '12px', textAlign: 'center' as const, fontStyle: 'italic', color: '#64748b' }}>
+              <div style={{ marginTop: '8px', textAlign: 'center' as const, fontStyle: 'italic', color: '#64748b' }}>
                 {form.invoice_footer}
               </div>
             </div>
@@ -357,7 +501,12 @@ export default function SettingsPage() {
       {/* BANK TAB */}
       {activeTab === 'bank' && (
         <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.5rem' }}>
-          {sectionTitle('Bank Details', 'These appear on your invoices so customers can make payments')}
+          <h2 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
+            Bank Details
+          </h2>
+          <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '1.5rem' }}>
+            These appear on your invoices so customers can make payments
+          </p>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
             <div>
@@ -396,13 +545,12 @@ export default function SettingsPage() {
               placeholder="yourid@upi" />
           </div>
 
-          {/* Bank details preview */}
           {(form.bank_name || form.bank_account_number) && (
             <div style={{
               background: '#f8fafc', border: '1px solid #e2e8f0',
-              borderRadius: '8px', padding: '1rem', marginTop: '1rem'
+              borderRadius: '8px', padding: '1rem'
             }}>
-              <div style={{ fontSize: '12px', fontWeight: '600', color: '#94a3b8', marginBottom: '8px', textTransform: 'uppercase' as const }}>
+              <div style={{ fontSize: '11px', fontWeight: '700', color: '#94a3b8', marginBottom: '8px', textTransform: 'uppercase' as const }}>
                 Preview on invoice
               </div>
               <div style={{ fontSize: '13px', color: '#374151' }}>
