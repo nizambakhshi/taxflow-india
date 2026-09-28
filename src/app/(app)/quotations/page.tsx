@@ -42,12 +42,12 @@ const emptyLine = (): LineItem => ({
   calculated: null,
 })
 
-const STATUS_CONFIG: Record<string, { label: string; bg: string; color: string }> = {
-  draft: { label: 'Draft', bg: '#f1f5f9', color: '#64748b' },
-  sent: { label: 'Sent', bg: '#eff6ff', color: '#1d4ed8' },
-  accepted: { label: 'Accepted', bg: '#f0fdf4', color: '#166534' },
-  rejected: { label: 'Rejected', bg: '#fef2f2', color: '#dc2626' },
-  converted: { label: 'Converted', bg: '#fef9c3', color: '#854d0e' },
+const STATUS_CONFIG: Record<string, { label: string; bg: string; color: string; desc: string }> = {
+  draft:     { label: 'Draft',     bg: '#f1f5f9', color: '#64748b', desc: 'Not yet sent to customer' },
+  sent:      { label: 'Sent',      bg: '#eff6ff', color: '#1d4ed8', desc: 'Shared with customer, awaiting response' },
+  accepted:  { label: 'Accepted',  bg: '#f0fdf4', color: '#166534', desc: 'Customer agreed — ready to convert' },
+  rejected:  { label: 'Rejected',  bg: '#fef2f2', color: '#dc2626', desc: 'Customer declined' },
+  converted: { label: 'Converted', bg: '#fef9c3', color: '#854d0e', desc: 'Invoice created from this quotation' },
 }
 
 export default function QuotationsPage() {
@@ -57,7 +57,6 @@ export default function QuotationsPage() {
   const [quotations, setQuotations] = useState<any[]>([])
   const [orgId, setOrgId] = useState('')
   const [orgStateCode, setOrgStateCode] = useState('')
-  const [orgName, setOrgName] = useState('')
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [showView, setShowView] = useState(false)
@@ -85,7 +84,6 @@ export default function QuotationsPage() {
   const [lineItems, setLineItems] = useState<LineItem[]>([emptyLine()])
   const [totals, setTotals] = useState<any>(null)
   const [gstType, setGstType] = useState<'cgst_sgst' | 'igst'>('cgst_sgst')
-  const [quotationNumber, setQuotationNumber] = useState('')
 
   useEffect(() => {
     async function load() {
@@ -103,7 +101,6 @@ export default function QuotationsPage() {
       setOrgId(membership.organization_id)
 
       const org = membership.organizations as any
-      setOrgName(org?.name || '')
       setOrgStateCode(org?.state_code || '')
 
       const { data: gstReg } = await supabase
@@ -112,48 +109,26 @@ export default function QuotationsPage() {
         .eq('organization_id', membership.organization_id)
         .eq('is_primary', true)
         .single()
-
       if (gstReg?.state_code) setOrgStateCode(gstReg.state_code)
 
-      await fetchQuotations(membership.organization_id)
-      await fetchCustomersAndProducts(membership.organization_id)
-
-      // Generate quotation number
-      const fy = getFinancialYear()
-      const { data: seq } = await supabase
-        .from('quotation_sequences')
-        .select('*')
-        .eq('organization_id', membership.organization_id)
-        .eq('financial_year', fy)
-        .single()
-
-      const next = seq ? seq.last_number + 1 : 1
-      setQuotationNumber(`QT-${fy}-${String(next).padStart(4, '0')}`)
-
+      await fetchAll(membership.organization_id)
       setLoading(false)
     }
     load()
   }, [])
 
-  async function fetchQuotations(oid: string) {
-    const { data } = await supabase
-      .from('quotations')
-      .select('*')
-      .eq('organization_id', oid)
-      .order('created_at', { ascending: false })
-    setQuotations(data || [])
-  }
-
-  async function fetchCustomersAndProducts(oid: string) {
-    const [{ data: custs }, { data: prods }] = await Promise.all([
+  async function fetchAll(oid: string) {
+    const [{ data: qData }, { data: cData }, { data: pData }] = await Promise.all([
+      supabase.from('quotations').select('*').eq('organization_id', oid).order('created_at', { ascending: false }),
       supabase.from('customers').select('*').eq('organization_id', oid).eq('is_active', true).order('name'),
       supabase.from('products').select('*').eq('organization_id', oid).eq('is_active', true).order('name'),
     ])
-    setCustomers(custs || [])
-    setProducts(prods || [])
+    setQuotations(qData || [])
+    setCustomers(cData || [])
+    setProducts(pData || [])
   }
 
-  // Recalculate on changes
+  // Recalculate GST live
   useEffect(() => {
     if (!orgStateCode || !placeOfSupply) return
     const gt = determineGSTType(orgStateCode, placeOfSupply, supplyType)
@@ -172,7 +147,6 @@ export default function QuotationsPage() {
       return { ...item, calculated: result }
     })
     setLineItems(calculated)
-
     const validItems = calculated.map(i => i.calculated).filter(Boolean) as LineItemResult[]
     setTotals(validItems.length > 0 ? calculateInvoiceTotals(validItems) : null)
   }, [
@@ -181,36 +155,33 @@ export default function QuotationsPage() {
   ])
 
   function handleCustomerChange(id: string) {
-    const customer = customers.find(c => c.id === id)
-    if (!customer) return
+    const c = customers.find(x => x.id === id)
+    if (!c) return
     setCustomerId(id)
-    setCustomerName(customer.name)
-    setCustomerGstin(customer.gstin || '')
-    setCustomerStateCode(customer.state_code || '')
-    setCustomerAddress([customer.address_line1, customer.city, customer.state].filter(Boolean).join(', '))
-    setSupplyType(customer.customer_type || 'b2b')
-    if (customer.state_code) {
-      setPlaceOfSupply(customer.state_code)
-      const s = INDIAN_STATES.find(x => x.value === customer.state_code)
+    setCustomerName(c.name)
+    setCustomerGstin(c.gstin || '')
+    setCustomerStateCode(c.state_code || '')
+    setCustomerAddress([c.address_line1, c.city, c.state].filter(Boolean).join(', '))
+    setSupplyType(c.customer_type || 'b2b')
+    if (c.state_code) {
+      setPlaceOfSupply(c.state_code)
+      const s = INDIAN_STATES.find(x => x.value === c.state_code)
       setPlaceOfSupplyName(s?.label || '')
     }
   }
 
   function handleProductSelect(index: number, productId: string) {
-    const product = products.find(p => p.id === productId)
-    if (!product) return
-    const updated = [...lineItems]
-    updated[index] = {
-      ...updated[index],
-      product_id: productId,
-      item_name: product.name,
-      hsn_sac: product.hsn_sac || '',
-      unit: product.unit || 'NOS',
-      rate: String(product.selling_price || ''),
-      gst_rate: String(product.gst_rate || 18),
-      cess_rate: String(product.cess_rate || 0),
-    }
-    setLineItems(updated)
+    const p = products.find(x => x.id === productId)
+    if (!p) return
+    const u = [...lineItems]
+    u[index] = { ...u[index], product_id: productId, item_name: p.name, hsn_sac: p.hsn_sac || '', unit: p.unit || 'NOS', rate: String(p.selling_price || ''), gst_rate: String(p.gst_rate || 18), cess_rate: String(p.cess_rate || 0) }
+    setLineItems(u)
+  }
+
+  function updateLine(index: number, field: string, value: string) {
+    const u = [...lineItems]
+    u[index] = { ...u[index], [field]: value }
+    setLineItems(u)
   }
 
   function resetForm() {
@@ -232,16 +203,9 @@ export default function QuotationsPage() {
 
     setSaving(true)
     setError('')
-
     try {
       const fy = getFinancialYear()
-      let { data: seq } = await supabase
-        .from('quotation_sequences')
-        .select('*')
-        .eq('organization_id', orgId)
-        .eq('financial_year', fy)
-        .single()
-
+      let { data: seq } = await supabase.from('quotation_sequences').select('*').eq('organization_id', orgId).eq('financial_year', fy).single()
       let nextNumber = 1
       if (seq) {
         nextNumber = seq.last_number + 1
@@ -249,51 +213,43 @@ export default function QuotationsPage() {
       } else {
         await supabase.from('quotation_sequences').insert({ organization_id: orgId, prefix: 'QT', financial_year: fy, last_number: 1 })
       }
-
       const finalNumber = `QT-${fy}-${String(nextNumber).padStart(4, '0')}`
 
-      const { data: quotation, error: qErr } = await supabase
-        .from('quotations')
-        .insert({
-          organization_id: orgId,
-          quotation_number: finalNumber,
-          quotation_date: quotationDate,
-          valid_until: validUntil || null,
-          status: 'draft',
-          customer_id: customerId,
-          customer_name: customerName,
-          customer_gstin: customerGstin,
-          customer_address: customerAddress,
-          customer_state: placeOfSupplyName,
-          customer_state_code: customerStateCode,
-          place_of_supply: placeOfSupply,
-          place_of_supply_name: placeOfSupplyName,
-          supply_type: supplyType,
-          subtotal: totals.subtotal,
-          discount_amount: totals.discount_amount,
-          taxable_amount: totals.taxable_amount,
-          cgst_amount: totals.cgst_amount,
-          sgst_amount: totals.sgst_amount,
-          igst_amount: totals.igst_amount,
-          cess_amount: totals.cess_amount,
-          total_tax: totals.total_tax,
-          round_off: totals.round_off,
-          grand_total: totals.grand_total,
-          notes, terms,
-        })
-        .select().single()
-
+      const { data: q, error: qErr } = await supabase.from('quotations').insert({
+        organization_id: orgId,
+        quotation_number: finalNumber,
+        quotation_date: quotationDate,
+        valid_until: validUntil || null,
+        status: 'draft',
+        customer_id: customerId,
+        customer_name: customerName,
+        customer_gstin: customerGstin,
+        customer_address: customerAddress,
+        customer_state: placeOfSupplyName,
+        customer_state_code: customerStateCode,
+        place_of_supply: placeOfSupply,
+        place_of_supply_name: placeOfSupplyName,
+        supply_type: supplyType,
+        subtotal: totals.subtotal,
+        discount_amount: totals.discount_amount,
+        taxable_amount: totals.taxable_amount,
+        cgst_amount: totals.cgst_amount,
+        sgst_amount: totals.sgst_amount,
+        igst_amount: totals.igst_amount,
+        cess_amount: totals.cess_amount,
+        total_tax: totals.total_tax,
+        round_off: totals.round_off,
+        grand_total: totals.grand_total,
+        notes, terms,
+      }).select().single()
       if (qErr) throw qErr
 
       await supabase.from('quotation_items').insert(
         validItems.map((item, idx) => ({
-          quotation_id: quotation.id,
-          organization_id: orgId,
+          quotation_id: q.id, organization_id: orgId,
           product_id: item.product_id || null,
-          item_name: item.item_name,
-          hsn_sac: item.hsn_sac,
-          quantity: parseFloat(item.quantity),
-          unit: item.unit,
+          item_name: item.item_name, hsn_sac: item.hsn_sac,
+          quantity: parseFloat(item.quantity), unit: item.unit,
           rate: parseFloat(item.rate),
           discount_percent: parseFloat(item.discount_percent) || 0,
           discount_amount: item.calculated?.discount_amount || 0,
@@ -312,11 +268,11 @@ export default function QuotationsPage() {
         }))
       )
 
-      await fetchQuotations(orgId)
+      await fetchAll(orgId)
       setShowForm(false)
       resetForm()
     } catch (err: any) {
-      setError(err.message || 'Failed to save quotation')
+      setError(err.message || 'Failed to save')
     } finally {
       setSaving(false)
     }
@@ -336,28 +292,21 @@ export default function QuotationsPage() {
   async function updateStatus(id: string, status: string) {
     await supabase.from('quotations').update({ status }).eq('id', id)
     setQuotations(prev => prev.map(q => q.id === id ? { ...q, status } : q))
-    if (selectedQuotation?.id === id) setSelectedQuotation((p: any) => ({ ...p, status }))
+    setSelectedQuotation((p: any) => p?.id === id ? { ...p, status } : p)
   }
 
   async function convertToInvoice(quotation: any) {
-    if (!confirm('Convert this quotation to an invoice?')) return
+    if (quotation.status !== 'accepted') {
+      alert('Please mark the quotation as Accepted before converting to invoice.')
+      return
+    }
+    if (!confirm(`Convert ${quotation.quotation_number} to an invoice?`)) return
     setConverting(true)
-
     try {
-      const { data: items } = await supabase
-        .from('quotation_items')
-        .select('*')
-        .eq('quotation_id', quotation.id)
-        .order('sort_order')
+      const { data: items } = await supabase.from('quotation_items').select('*').eq('quotation_id', quotation.id).order('sort_order')
 
       const fy = getFinancialYear()
-      let { data: seq } = await supabase
-        .from('invoice_sequences')
-        .select('*')
-        .eq('organization_id', orgId)
-        .eq('financial_year', fy)
-        .single()
-
+      let { data: seq } = await supabase.from('invoice_sequences').select('*').eq('organization_id', orgId).eq('financial_year', fy).single()
       let nextNumber = 1
       if (seq) {
         nextNumber = seq.last_number + 1
@@ -365,82 +314,65 @@ export default function QuotationsPage() {
       } else {
         await supabase.from('invoice_sequences').insert({ organization_id: orgId, prefix: 'INV', financial_year: fy, last_number: 1 })
       }
-
       const invoiceNumber = `INV-${fy}-${String(nextNumber).padStart(4, '0')}`
 
-      const { data: invoice, error: invErr } = await supabase
-        .from('invoices')
-        .insert({
-          organization_id: orgId,
-          invoice_number: invoiceNumber,
-          invoice_type: 'tax_invoice',
-          invoice_date: new Date().toISOString().split('T')[0],
-          customer_id: quotation.customer_id,
-          customer_name: quotation.customer_name,
-          customer_gstin: quotation.customer_gstin,
-          customer_address: quotation.customer_address,
-          customer_state: quotation.customer_state,
-          customer_state_code: quotation.customer_state_code,
-          place_of_supply: quotation.place_of_supply,
-          place_of_supply_name: quotation.place_of_supply_name,
-          supply_type: quotation.supply_type,
-          subtotal: quotation.subtotal,
-          discount_amount: quotation.discount_amount,
-          taxable_amount: quotation.taxable_amount,
-          cgst_amount: quotation.cgst_amount,
-          sgst_amount: quotation.sgst_amount,
-          igst_amount: quotation.igst_amount,
-          cess_amount: quotation.cess_amount,
-          total_tax: quotation.total_tax,
-          round_off: quotation.round_off,
-          grand_total: quotation.grand_total,
-          amount_paid: 0,
-          balance_due: quotation.grand_total,
-          payment_status: 'unpaid',
-          status: 'sent',
-          notes: quotation.notes,
-          terms: quotation.terms,
-        })
-        .select().single()
-
+      const { data: invoice, error: invErr } = await supabase.from('invoices').insert({
+        organization_id: orgId,
+        invoice_number: invoiceNumber,
+        invoice_type: 'tax_invoice',
+        invoice_date: new Date().toISOString().split('T')[0],
+        customer_id: quotation.customer_id,
+        customer_name: quotation.customer_name,
+        customer_gstin: quotation.customer_gstin,
+        customer_address: quotation.customer_address,
+        customer_state: quotation.customer_state,
+        customer_state_code: quotation.customer_state_code,
+        place_of_supply: quotation.place_of_supply,
+        place_of_supply_name: quotation.place_of_supply_name,
+        supply_type: quotation.supply_type,
+        subtotal: quotation.subtotal,
+        discount_amount: quotation.discount_amount,
+        taxable_amount: quotation.taxable_amount,
+        cgst_amount: quotation.cgst_amount,
+        sgst_amount: quotation.sgst_amount,
+        igst_amount: quotation.igst_amount,
+        cess_amount: quotation.cess_amount,
+        total_tax: quotation.total_tax,
+        round_off: quotation.round_off,
+        grand_total: quotation.grand_total,
+        amount_paid: 0,
+        balance_due: quotation.grand_total,
+        payment_status: 'unpaid',
+        status: 'sent',
+        notes: quotation.notes,
+        terms: quotation.terms,
+      }).select().single()
       if (invErr) throw invErr
 
-      // Copy line items
       await supabase.from('invoice_items').insert(
         (items || []).map((item: any, idx: number) => ({
-          invoice_id: invoice.id,
-          organization_id: orgId,
+          invoice_id: invoice.id, organization_id: orgId,
           product_id: item.product_id,
-          item_name: item.item_name,
-          hsn_sac: item.hsn_sac,
-          quantity: item.quantity,
-          unit: item.unit,
-          rate: item.rate,
+          item_name: item.item_name, hsn_sac: item.hsn_sac,
+          quantity: item.quantity, unit: item.unit, rate: item.rate,
           discount_percent: item.discount_percent,
           discount_amount: item.discount_amount,
           taxable_value: item.taxable_value,
           gst_rate: item.gst_rate,
-          cgst_rate: item.cgst_rate,
-          sgst_rate: item.sgst_rate,
-          igst_rate: item.igst_rate,
-          cgst_amount: item.cgst_amount,
-          sgst_amount: item.sgst_amount,
-          igst_amount: item.igst_amount,
-          cess_rate: item.cess_rate,
-          cess_amount: item.cess_amount,
-          total_amount: item.total_amount,
-          sort_order: idx,
+          cgst_rate: item.cgst_rate, sgst_rate: item.sgst_rate, igst_rate: item.igst_rate,
+          cgst_amount: item.cgst_amount, sgst_amount: item.sgst_amount, igst_amount: item.igst_amount,
+          cess_rate: item.cess_rate, cess_amount: item.cess_amount,
+          total_amount: item.total_amount, sort_order: idx,
         }))
       )
 
-      // Mark quotation as converted
       await supabase.from('quotations').update({
         status: 'converted',
         converted_to_invoice_id: invoice.id,
         converted_at: new Date().toISOString(),
       }).eq('id', quotation.id)
 
-      await fetchQuotations(orgId)
+      await fetchAll(orgId)
       setShowView(false)
       router.push(`/invoices/${invoice.id}`)
     } catch (err: any) {
@@ -467,6 +399,21 @@ export default function QuotationsPage() {
         }}>+ New Quotation</button>
       </div>
 
+      {/* Status guide */}
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '1.5rem', flexWrap: 'wrap' as const }}>
+        {Object.entries(STATUS_CONFIG).map(([key, sc]) => (
+          <div key={key} style={{
+            display: 'flex', alignItems: 'center', gap: '6px',
+            padding: '4px 10px', background: sc.bg,
+            borderRadius: '99px', fontSize: '11px'
+          }}>
+            <span style={{ fontWeight: '600', color: sc.color }}>{sc.label}</span>
+            <span style={{ color: '#94a3b8' }}>—</span>
+            <span style={{ color: '#64748b' }}>{sc.desc}</span>
+          </div>
+        ))}
+      </div>
+
       {/* List */}
       {quotations.length === 0 ? (
         <div style={{
@@ -475,7 +422,7 @@ export default function QuotationsPage() {
         }}>
           <div style={{ fontSize: '40px', marginBottom: '1rem' }}>📋</div>
           <div style={{ fontSize: '16px', fontWeight: '500', color: '#64748b', marginBottom: '8px' }}>No quotations yet</div>
-          <div style={{ fontSize: '13px', marginBottom: '1.5rem' }}>Create quotations and convert them to invoices</div>
+          <div style={{ fontSize: '13px', marginBottom: '1.5rem' }}>Create a quotation → mark as Accepted → convert to Invoice</div>
           <button onClick={() => { resetForm(); setShowForm(true) }} style={{
             padding: '10px 20px', background: '#2563eb', color: 'white',
             border: 'none', borderRadius: '8px', fontSize: '13px',
@@ -497,24 +444,20 @@ export default function QuotationsPage() {
           {quotations.map(q => {
             const sc = STATUS_CONFIG[q.status] || STATUS_CONFIG.draft
             return (
-              <div key={q.id}
-                onClick={() => openView(q)}
-                style={{
-                  display: 'grid', gridTemplateColumns: '1.5fr 2fr 1fr 1fr 1fr 1fr',
-                  gap: '12px', padding: '12px 16px',
-                  borderBottom: '1px solid #f1f5f9',
-                  alignItems: 'center', fontSize: '13px', cursor: 'pointer'
-                }}>
+              <div key={q.id} onClick={() => openView(q)} style={{
+                display: 'grid', gridTemplateColumns: '1.5fr 2fr 1fr 1fr 1fr 1fr',
+                gap: '12px', padding: '12px 16px',
+                borderBottom: '1px solid #f1f5f9',
+                alignItems: 'center', fontSize: '13px', cursor: 'pointer'
+              }}>
                 <div style={{ fontWeight: '600', color: '#2563eb' }}>{q.quotation_number}</div>
                 <div style={{ color: '#1e293b' }}>{q.customer_name}</div>
                 <div style={{ color: '#64748b' }}>{new Date(q.quotation_date).toLocaleDateString('en-IN')}</div>
-                <div style={{ color: '#64748b' }}>
-                  {q.valid_until ? new Date(q.valid_until).toLocaleDateString('en-IN') : '—'}
-                </div>
+                <div style={{ color: '#64748b' }}>{q.valid_until ? new Date(q.valid_until).toLocaleDateString('en-IN') : '—'}</div>
                 <div style={{ fontWeight: '500' }}>₹{formatINR(q.grand_total)}</div>
                 <div>
                   <span style={{
-                    fontSize: '11px', padding: '2px 8px', borderRadius: '99px',
+                    fontSize: '11px', padding: '3px 10px', borderRadius: '99px',
                     fontWeight: '600', background: sc.bg, color: sc.color
                   }}>{sc.label}</span>
                 </div>
@@ -524,22 +467,19 @@ export default function QuotationsPage() {
         </div>
       )}
 
-      {/* ── VIEW QUOTATION MODAL ── */}
+      {/* ── VIEW / MANAGE QUOTATION MODAL ── */}
       {showView && selectedQuotation && (
         <div style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
           display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
           zIndex: 100, padding: '2rem 1rem', overflowY: 'auto'
         }}>
-          <div style={{
-            background: 'white', borderRadius: '16px',
-            width: '100%', maxWidth: '800px', overflow: 'hidden'
-          }}>
+          <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '800px', overflow: 'hidden' }}>
+
             {/* Modal header */}
             <div style={{
-              display: 'flex', justifyContent: 'space-between',
-              alignItems: 'center', padding: '1rem 1.5rem',
-              borderBottom: '1px solid #e2e8f0'
+              padding: '1rem 1.5rem', borderBottom: '1px solid #e2e8f0',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center'
             }}>
               <div>
                 <div style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>
@@ -549,85 +489,124 @@ export default function QuotationsPage() {
                   {selectedQuotation.customer_name} · ₹{formatINR(selectedQuotation.grand_total)}
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                {/* Status update */}
-                <select
-                  value={selectedQuotation.status}
-                  onChange={e => updateStatus(selectedQuotation.id, e.target.value)}
-                  onClick={e => e.stopPropagation()}
-                  style={{
-                    padding: '6px 10px', border: '1px solid #e2e8f0',
-                    borderRadius: '6px', fontSize: '12px', cursor: 'pointer',
-                    background: 'white', color: '#374151'
-                  }}
-                >
-                  <option value="draft">Draft</option>
-                  <option value="sent">Sent</option>
-                  <option value="accepted">Accepted</option>
-                  <option value="rejected">Rejected</option>
-                </select>
+              <button onClick={() => { setShowView(false); setSelectedQuotation(null) }}
+                style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#94a3b8' }}>✕</button>
+            </div>
 
-                {/* Convert to invoice */}
-                {selectedQuotation.status !== 'converted' && selectedQuotation.status !== 'rejected' && (
-                  <button
-                    onClick={() => convertToInvoice(selectedQuotation)}
-                    disabled={converting}
-                    style={{
-                      padding: '7px 14px', background: '#059669',
-                      color: 'white', border: 'none', borderRadius: '6px',
-                      fontSize: '12px', fontWeight: '600',
-                      cursor: converting ? 'not-allowed' : 'pointer'
-                    }}
-                  >
-                    {converting ? 'Converting...' : '→ Convert to Invoice'}
+            {/* Status workflow strip */}
+            <div style={{
+              padding: '12px 1.5rem', background: '#f8fafc',
+              borderBottom: '1px solid #e2e8f0'
+            }}>
+              <div style={{ fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '8px' }}>
+                Quotation Workflow
+              </div>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' as const }}>
+
+                {/* Step 1 — Mark as Sent */}
+                {selectedQuotation.status === 'draft' && (
+                  <button onClick={() => updateStatus(selectedQuotation.id, 'sent')} style={{
+                    padding: '7px 14px', background: '#eff6ff', color: '#1d4ed8',
+                    border: '1px solid #bfdbfe', borderRadius: '6px',
+                    fontSize: '12px', fontWeight: '600', cursor: 'pointer'
+                  }}>
+                    📤 Mark as Sent to Customer
                   </button>
                 )}
 
-                {selectedQuotation.converted_to_invoice_id && (
-                  <button
-                    onClick={() => { setShowView(false); router.push(`/invoices/${selectedQuotation.converted_to_invoice_id}`) }}
-                    style={{
-                      padding: '7px 14px', background: '#eff6ff',
-                      color: '#1d4ed8', border: '1px solid #bfdbfe',
-                      borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer'
-                    }}
-                  >
+                {/* Step 2 — Mark Accepted or Rejected */}
+                {selectedQuotation.status === 'sent' && (
+                  <>
+                    <button onClick={() => updateStatus(selectedQuotation.id, 'accepted')} style={{
+                      padding: '7px 14px', background: '#f0fdf4', color: '#166534',
+                      border: '1px solid #bbf7d0', borderRadius: '6px',
+                      fontSize: '12px', fontWeight: '600', cursor: 'pointer'
+                    }}>
+                      ✓ Customer Accepted
+                    </button>
+                    <button onClick={() => updateStatus(selectedQuotation.id, 'rejected')} style={{
+                      padding: '7px 14px', background: '#fef2f2', color: '#dc2626',
+                      border: '1px solid #fecaca', borderRadius: '6px',
+                      fontSize: '12px', fontWeight: '600', cursor: 'pointer'
+                    }}>
+                      ✗ Customer Rejected
+                    </button>
+                  </>
+                )}
+
+                {/* Step 3 — Convert to Invoice */}
+                {selectedQuotation.status === 'accepted' && (
+                  <button onClick={() => convertToInvoice(selectedQuotation)} disabled={converting} style={{
+                    padding: '7px 16px', background: '#059669', color: 'white',
+                    border: 'none', borderRadius: '6px',
+                    fontSize: '12px', fontWeight: '700',
+                    cursor: converting ? 'not-allowed' : 'pointer'
+                  }}>
+                    {converting ? 'Creating Invoice...' : '🧾 Convert to Invoice'}
+                  </button>
+                )}
+
+                {/* Already converted */}
+                {selectedQuotation.status === 'converted' && selectedQuotation.converted_to_invoice_id && (
+                  <button onClick={() => { setShowView(false); router.push(`/invoices/${selectedQuotation.converted_to_invoice_id}`) }} style={{
+                    padding: '7px 14px', background: '#fef9c3', color: '#854d0e',
+                    border: '1px solid #fde68a', borderRadius: '6px',
+                    fontSize: '12px', fontWeight: '600', cursor: 'pointer'
+                  }}>
                     View Invoice →
                   </button>
                 )}
 
-                <button
-                  onClick={() => { setShowView(false); setSelectedQuotation(null) }}
-                  style={{
-                    background: 'none', border: 'none',
-                    fontSize: '20px', cursor: 'pointer', color: '#94a3b8'
-                  }}
-                >✕</button>
+                {/* Rejected — allow resetting to draft */}
+                {selectedQuotation.status === 'rejected' && (
+                  <button onClick={() => updateStatus(selectedQuotation.id, 'draft')} style={{
+                    padding: '7px 14px', background: '#f1f5f9', color: '#64748b',
+                    border: '1px solid #e2e8f0', borderRadius: '6px',
+                    fontSize: '12px', cursor: 'pointer'
+                  }}>
+                    ↩ Reset to Draft
+                  </button>
+                )}
+
+                {/* Current status badge */}
+                <div style={{ marginLeft: 'auto' }}>
+                  <span style={{
+                    fontSize: '11px', padding: '4px 12px', borderRadius: '99px',
+                    fontWeight: '700',
+                    background: STATUS_CONFIG[selectedQuotation.status]?.bg,
+                    color: STATUS_CONFIG[selectedQuotation.status]?.color,
+                  }}>
+                    {STATUS_CONFIG[selectedQuotation.status]?.label}
+                  </span>
+                </div>
+              </div>
+
+              {/* Workflow hint */}
+              <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '8px' }}>
+                {STATUS_CONFIG[selectedQuotation.status]?.desc}
+                {selectedQuotation.status === 'draft' && ' → Send it to your customer, then mark as Sent.'}
+                {selectedQuotation.status === 'sent' && ' → Once customer responds, mark accordingly.'}
+                {selectedQuotation.status === 'accepted' && ' → Click Convert to Invoice to create a GST invoice.'}
               </div>
             </div>
 
             {/* Quotation document */}
             <div style={{ padding: '1.5rem', fontSize: '12px' }}>
-              {/* Header */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
                 <div>
                   <div style={{ fontSize: '20px', fontWeight: '700', color: '#2563eb' }}>QUOTATION</div>
-                  {selectedQuotation.status === 'converted' && (
-                    <div style={{ fontSize: '11px', color: '#854d0e', marginTop: '4px' }}>
-                      ✓ Converted to Invoice
-                    </div>
-                  )}
                 </div>
                 <div style={{ textAlign: 'right' as const }}>
                   <div style={{ fontWeight: '700', fontSize: '15px' }}>{selectedQuotation.quotation_number}</div>
                   <div style={{ color: '#64748b' }}>Date: {new Date(selectedQuotation.quotation_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
                   {selectedQuotation.valid_until && (
-                    <div style={{ color: '#64748b' }}>Valid until: {new Date(selectedQuotation.valid_until).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+                    <div style={{ color: '#dc2626', fontSize: '11px' }}>
+                      Valid until: {new Date(selectedQuotation.valid_until).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    </div>
                   )}
                 </div>
               </div>
 
-              {/* Bill To */}
               <div style={{ marginBottom: '1rem' }}>
                 <div style={{ fontSize: '10px', fontWeight: '700', color: '#94a3b8', marginBottom: '4px', textTransform: 'uppercase' as const }}>Bill To</div>
                 <div style={{ fontWeight: '600' }}>{selectedQuotation.customer_name}</div>
@@ -635,22 +614,21 @@ export default function QuotationsPage() {
                 {selectedQuotation.customer_address && <div style={{ color: '#64748b' }}>{selectedQuotation.customer_address}</div>}
               </div>
 
-              {/* Items table */}
               <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '1rem' }}>
                 <thead>
                   <tr style={{ background: '#f8fafc' }}>
-                    {['#', 'Item', 'HSN/SAC', 'Qty', 'Rate', 'Taxable', 'GST', 'Total'].map(h => (
+                    {['#', 'Item', 'HSN/SAC', 'Qty', 'Rate', 'Taxable', 'Tax', 'Total'].map(h => (
                       <th key={h} style={{
                         padding: '6px 8px', border: '1px solid #e2e8f0',
                         fontSize: '11px', fontWeight: '600', color: '#374151',
-                        textAlign: ['Rate', 'Taxable', 'GST', 'Total'].includes(h) ? 'right' as const : 'left' as const
+                        textAlign: ['Rate', 'Taxable', 'Tax', 'Total'].includes(h) ? 'right' as const : 'left' as const
                       }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {selectedItems.map((item, idx) => (
-                    <tr key={item.id}>
+                    <tr key={item.id} style={{ background: idx % 2 === 0 ? 'white' : '#fafafa' }}>
                       <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', fontSize: '11px' }}>{idx + 1}</td>
                       <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', fontSize: '11px', fontWeight: '500' }}>{item.item_name}</td>
                       <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', fontSize: '11px', fontFamily: 'monospace' }}>{item.hsn_sac || '—'}</td>
@@ -658,7 +636,9 @@ export default function QuotationsPage() {
                       <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', fontSize: '11px', textAlign: 'right' as const }}>₹{formatINR(item.rate)}</td>
                       <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', fontSize: '11px', textAlign: 'right' as const }}>₹{formatINR(item.taxable_value)}</td>
                       <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', fontSize: '11px', textAlign: 'right' as const }}>
-                        {item.cgst_amount > 0 ? `₹${formatINR(Number(item.cgst_amount) + Number(item.sgst_amount))}` : `₹${formatINR(item.igst_amount)}`}
+                        {Number(item.cgst_amount) > 0
+                          ? `₹${formatINR(Number(item.cgst_amount) + Number(item.sgst_amount))}`
+                          : `₹${formatINR(item.igst_amount)}`}
                       </td>
                       <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', fontSize: '11px', textAlign: 'right' as const, fontWeight: '600' }}>₹{formatINR(item.total_amount)}</td>
                     </tr>
@@ -666,21 +646,19 @@ export default function QuotationsPage() {
                 </tbody>
               </table>
 
-              {/* Totals */}
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
                 <div style={{ width: '260px' }}>
                   {[
-                    { label: 'Taxable Amount', value: selectedQuotation.taxable_amount },
-                    Number(selectedQuotation.cgst_amount) > 0 && { label: 'CGST', value: selectedQuotation.cgst_amount },
-                    Number(selectedQuotation.sgst_amount) > 0 && { label: 'SGST', value: selectedQuotation.sgst_amount },
-                    Number(selectedQuotation.igst_amount) > 0 && { label: 'IGST', value: selectedQuotation.igst_amount },
-                  ].filter(Boolean).map((row: any) => (
+                    { label: 'Taxable Amount', value: selectedQuotation.taxable_amount, show: true },
+                    { label: 'CGST', value: selectedQuotation.cgst_amount, show: Number(selectedQuotation.cgst_amount) > 0 },
+                    { label: 'SGST', value: selectedQuotation.sgst_amount, show: Number(selectedQuotation.sgst_amount) > 0 },
+                    { label: 'IGST', value: selectedQuotation.igst_amount, show: Number(selectedQuotation.igst_amount) > 0 },
+                  ].filter(r => r.show).map((row: any) => (
                     <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '12px', borderBottom: '1px solid #f1f5f9', color: '#64748b' }}>
-                      <span>{row.label}</span>
-                      <span>₹{formatINR(row.value)}</span>
+                      <span>{row.label}</span><span>₹{formatINR(row.value)}</span>
                     </div>
                   ))}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', fontSize: '14px', fontWeight: '700', color: '#1e293b', borderTop: '2px solid #1e293b', marginTop: '4px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', fontSize: '15px', fontWeight: '700', borderTop: '2px solid #1e293b', marginTop: '4px', color: '#1e293b' }}>
                     <span>Grand Total</span>
                     <span style={{ color: '#2563eb' }}>₹{formatINR(selectedQuotation.grand_total)}</span>
                   </div>
@@ -690,57 +668,42 @@ export default function QuotationsPage() {
                 </div>
               </div>
 
-              {selectedQuotation.notes && (
-                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
-                  <strong>Notes:</strong> {selectedQuotation.notes}
-                </div>
-              )}
-              {selectedQuotation.terms && (
-                <div style={{ fontSize: '12px', color: '#64748b' }}>
-                  <strong>Terms:</strong> {selectedQuotation.terms}
-                </div>
-              )}
+              {selectedQuotation.notes && <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}><strong>Notes:</strong> {selectedQuotation.notes}</div>}
+              {selectedQuotation.terms && <div style={{ fontSize: '12px', color: '#64748b' }}><strong>Terms:</strong> {selectedQuotation.terms}</div>}
             </div>
           </div>
         </div>
       )}
 
-      {/* ── CREATE QUOTATION FORM MODAL ── */}
+      {/* ── CREATE FORM MODAL ── */}
       {showForm && (
         <div style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
           display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
           zIndex: 100, padding: '2rem 1rem', overflowY: 'auto'
         }}>
-          <div style={{
-            background: 'white', borderRadius: '16px',
-            padding: '2rem', width: '100%', maxWidth: '900px'
-          }}>
+          <div style={{ background: 'white', borderRadius: '16px', padding: '2rem', width: '100%', maxWidth: '900px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
               <h2 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>New Quotation</h2>
               <button onClick={() => { setShowForm(false); resetForm() }}
                 style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#94a3b8' }}>✕</button>
             </div>
 
-            {/* Customer + dates */}
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
               <div>
                 <label style={labelStyle}>Customer *</label>
-                <select style={{ ...inputStyle, cursor: 'pointer' }} value={customerId}
-                  onChange={e => handleCustomerChange(e.target.value)}>
+                <select style={{ ...inputStyle, cursor: 'pointer' }} value={customerId} onChange={e => handleCustomerChange(e.target.value)}>
                   <option value="">Select customer...</option>
                   {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
               <div>
                 <label style={labelStyle}>Quotation Date *</label>
-                <input style={inputStyle} type="date" value={quotationDate}
-                  onChange={e => setQuotationDate(e.target.value)} />
+                <input style={inputStyle} type="date" value={quotationDate} onChange={e => setQuotationDate(e.target.value)} />
               </div>
               <div>
                 <label style={labelStyle}>Valid Until</label>
-                <input style={inputStyle} type="date" value={validUntil}
-                  onChange={e => setValidUntil(e.target.value)} />
+                <input style={inputStyle} type="date" value={validUntil} onChange={e => setValidUntil(e.target.value)} />
               </div>
             </div>
 
@@ -759,8 +722,7 @@ export default function QuotationsPage() {
               </div>
               <div>
                 <label style={labelStyle}>Supply Type</label>
-                <select style={{ ...inputStyle, cursor: 'pointer' }} value={supplyType}
-                  onChange={e => setSupplyType(e.target.value)}>
+                <select style={{ ...inputStyle, cursor: 'pointer' }} value={supplyType} onChange={e => setSupplyType(e.target.value)}>
                   <option value="b2b">B2B</option>
                   <option value="b2c">B2C</option>
                   <option value="export">Export</option>
@@ -774,8 +736,7 @@ export default function QuotationsPage() {
                 padding: '8px 12px', borderRadius: '6px', marginBottom: '1rem',
                 background: gstType === 'cgst_sgst' ? '#f0fdf4' : '#eff6ff',
                 border: `1px solid ${gstType === 'cgst_sgst' ? '#bbf7d0' : '#bfdbfe'}`,
-                fontSize: '12px',
-                color: gstType === 'cgst_sgst' ? '#166534' : '#1d4ed8',
+                fontSize: '12px', color: gstType === 'cgst_sgst' ? '#166534' : '#1d4ed8',
               }}>
                 {gstType === 'cgst_sgst' ? '✓ Same state — CGST + SGST' : '✓ Interstate — IGST'}
               </div>
@@ -784,73 +745,32 @@ export default function QuotationsPage() {
             {/* Line items */}
             <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '1rem', marginBottom: '1rem' }}>
               <div style={{ fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '8px' }}>Line Items</div>
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: '2fr 1fr 0.7fr 1fr 0.6fr 0.6fr 1fr 32px',
-                gap: '6px', marginBottom: '6px',
-                fontSize: '11px', fontWeight: '600', color: '#94a3b8'
-              }}>
-                <span>Item</span><span>HSN/SAC</span><span>Qty</span>
-                <span>Rate</span><span>Disc%</span><span>GST%</span>
-                <span>Amount</span><span></span>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 0.7fr 1fr 0.6fr 0.6fr 1fr 32px', gap: '6px', marginBottom: '6px', fontSize: '11px', fontWeight: '600', color: '#94a3b8' }}>
+                <span>Item</span><span>HSN/SAC</span><span>Qty</span><span>Rate</span><span>Disc%</span><span>GST%</span><span>Amount</span><span></span>
               </div>
 
               {lineItems.map((item, index) => (
                 <div key={index} style={{ marginBottom: '8px' }}>
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: '2fr 1fr 0.7fr 1fr 0.6fr 0.6fr 1fr 32px',
-                    gap: '6px', alignItems: 'center'
-                  }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 0.7fr 1fr 0.6fr 0.6fr 1fr 32px', gap: '6px', alignItems: 'center' }}>
                     <div>
-                      <select style={{ ...inputStyle, marginBottom: '4px', cursor: 'pointer', fontSize: '12px' }}
-                        value={item.product_id}
-                        onChange={e => handleProductSelect(index, e.target.value)}>
+                      <select style={{ ...inputStyle, marginBottom: '4px', cursor: 'pointer', fontSize: '12px' }} value={item.product_id} onChange={e => handleProductSelect(index, e.target.value)}>
                         <option value="">Select product...</option>
                         {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select>
-                      <input style={{ ...inputStyle, fontSize: '12px' }} value={item.item_name}
-                        onChange={e => {
-                          const updated = [...lineItems]
-                          updated[index] = { ...updated[index], item_name: e.target.value }
-                          setLineItems(updated)
-                        }}
-                        placeholder="Item name" />
+                      <input style={{ ...inputStyle, fontSize: '12px' }} value={item.item_name} onChange={e => updateLine(index, 'item_name', e.target.value)} placeholder="Item name" />
                     </div>
-                    <input style={{ ...inputStyle, fontSize: '12px' }} value={item.hsn_sac}
-                      onChange={e => { const u = [...lineItems]; u[index] = { ...u[index], hsn_sac: e.target.value }; setLineItems(u) }}
-                      placeholder="HSN/SAC" />
-                    <input style={{ ...inputStyle, fontSize: '12px' }} type="number" value={item.quantity}
-                      onChange={e => { const u = [...lineItems]; u[index] = { ...u[index], quantity: e.target.value }; setLineItems(u) }}
-                      min="0" />
-                    <input style={{ ...inputStyle, fontSize: '12px' }} type="number" value={item.rate}
-                      onChange={e => { const u = [...lineItems]; u[index] = { ...u[index], rate: e.target.value }; setLineItems(u) }}
-                      placeholder="0.00" min="0" />
-                    <input style={{ ...inputStyle, fontSize: '12px' }} type="number" value={item.discount_percent}
-                      onChange={e => { const u = [...lineItems]; u[index] = { ...u[index], discount_percent: e.target.value }; setLineItems(u) }}
-                      min="0" max="100" />
-                    <select style={{ ...inputStyle, fontSize: '12px', cursor: 'pointer' }} value={item.gst_rate}
-                      onChange={e => { const u = [...lineItems]; u[index] = { ...u[index], gst_rate: e.target.value }; setLineItems(u) }}>
+                    <input style={{ ...inputStyle, fontSize: '12px' }} value={item.hsn_sac} onChange={e => updateLine(index, 'hsn_sac', e.target.value)} placeholder="HSN/SAC" />
+                    <input style={{ ...inputStyle, fontSize: '12px' }} type="number" value={item.quantity} onChange={e => updateLine(index, 'quantity', e.target.value)} min="0" />
+                    <input style={{ ...inputStyle, fontSize: '12px' }} type="number" value={item.rate} onChange={e => updateLine(index, 'rate', e.target.value)} placeholder="0.00" min="0" />
+                    <input style={{ ...inputStyle, fontSize: '12px' }} type="number" value={item.discount_percent} onChange={e => updateLine(index, 'discount_percent', e.target.value)} min="0" max="100" />
+                    <select style={{ ...inputStyle, fontSize: '12px', cursor: 'pointer' }} value={item.gst_rate} onChange={e => updateLine(index, 'gst_rate', e.target.value)}>
                       {[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}
                     </select>
-                    <div style={{
-                      padding: '8px 10px', background: 'white',
-                      border: '1px solid #e2e8f0', borderRadius: '6px',
-                      fontSize: '12px', fontWeight: '500', textAlign: 'right' as const
-                    }}>
+                    <div style={{ padding: '8px 10px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '12px', fontWeight: '500', textAlign: 'right' as const }}>
                       {item.calculated ? `₹${formatINR(item.calculated.total_amount)}` : '—'}
                     </div>
-                    <button
-                      onClick={() => setLineItems(lineItems.filter((_, i) => i !== index))}
-                      disabled={lineItems.length === 1}
-                      style={{
-                        width: '28px', height: '28px',
-                        border: '1px solid #fecaca', background: '#fef2f2',
-                        borderRadius: '6px', cursor: 'pointer',
-                        color: '#dc2626', fontSize: '14px',
-                        opacity: lineItems.length === 1 ? 0.4 : 1
-                      }}
-                    >×</button>
+                    <button onClick={() => setLineItems(lineItems.filter((_, i) => i !== index))} disabled={lineItems.length === 1}
+                      style={{ width: '28px', height: '28px', border: '1px solid #fecaca', background: '#fef2f2', borderRadius: '6px', cursor: 'pointer', color: '#dc2626', fontSize: '14px', opacity: lineItems.length === 1 ? 0.4 : 1 }}>×</button>
                   </div>
                   {item.calculated && (
                     <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px', paddingLeft: '4px', display: 'flex', gap: '12px' }}>
@@ -862,13 +782,7 @@ export default function QuotationsPage() {
                   )}
                 </div>
               ))}
-
-              <button onClick={() => setLineItems([...lineItems, emptyLine()])} style={{
-                marginTop: '6px', padding: '7px 14px',
-                background: 'white', border: '1px dashed #cbd5e1',
-                borderRadius: '6px', fontSize: '12px',
-                cursor: 'pointer', color: '#2563eb', fontWeight: '500'
-              }}>+ Add Line</button>
+              <button onClick={() => setLineItems([...lineItems, emptyLine()])} style={{ marginTop: '6px', padding: '7px 14px', background: 'white', border: '1px dashed #cbd5e1', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', color: '#2563eb', fontWeight: '500' }}>+ Add Line</button>
             </div>
 
             {/* Totals */}
@@ -882,8 +796,7 @@ export default function QuotationsPage() {
                     { label: 'IGST', value: totals.igst_amount, show: totals.igst_amount > 0 },
                   ].filter(r => r.show).map(row => (
                     <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '13px', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>
-                      <span>{row.label}</span>
-                      <span>₹{formatINR(row.value)}</span>
+                      <span>{row.label}</span><span>₹{formatINR(row.value)}</span>
                     </div>
                   ))}
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 0', fontSize: '15px', fontWeight: '700', color: '#1e293b' }}>
@@ -897,41 +810,25 @@ export default function QuotationsPage() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
               <div>
                 <label style={labelStyle}>Notes</label>
-                <textarea style={{ ...inputStyle, height: '60px', resize: 'vertical' as const }}
-                  value={notes} onChange={e => setNotes(e.target.value)}
-                  placeholder="Any notes for the customer..." />
+                <textarea style={{ ...inputStyle, height: '60px', resize: 'vertical' as const }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes for customer..." />
               </div>
               <div>
                 <label style={labelStyle}>Terms & Conditions</label>
-                <textarea style={{ ...inputStyle, height: '60px', resize: 'vertical' as const }}
-                  value={terms} onChange={e => setTerms(e.target.value)}
-                  placeholder="Payment terms, validity, etc." />
+                <textarea style={{ ...inputStyle, height: '60px', resize: 'vertical' as const }} value={terms} onChange={e => setTerms(e.target.value)} placeholder="Payment terms, validity..." />
               </div>
             </div>
 
             {error && (
-              <div style={{
-                background: '#fef2f2', border: '1px solid #fecaca',
-                color: '#dc2626', padding: '10px 12px',
-                borderRadius: '8px', fontSize: '13px', marginBottom: '1rem'
-              }}>{error}</div>
+              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', padding: '10px 12px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{error}</div>
             )}
 
             <div style={{ display: 'flex', gap: '12px' }}>
               <button onClick={handleSave} disabled={saving} style={{
-                flex: 1, padding: '11px',
-                background: saving ? '#93c5fd' : '#2563eb',
-                color: 'white', border: 'none', borderRadius: '8px',
-                fontSize: '14px', fontWeight: '600',
-                cursor: saving ? 'not-allowed' : 'pointer'
-              }}>
-                {saving ? 'Saving...' : 'Save Quotation'}
-              </button>
-              <button onClick={() => { setShowForm(false); resetForm() }} style={{
-                padding: '11px 20px', background: 'white', color: '#374151',
-                border: '1px solid #e2e8f0', borderRadius: '8px',
-                fontSize: '14px', cursor: 'pointer'
-              }}>Cancel</button>
+                flex: 1, padding: '11px', background: saving ? '#93c5fd' : '#2563eb',
+                color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px',
+                fontWeight: '600', cursor: saving ? 'not-allowed' : 'pointer'
+              }}>{saving ? 'Saving...' : 'Save Quotation'}</button>
+              <button onClick={() => { setShowForm(false); resetForm() }} style={{ padding: '11px 20px', background: 'white', color: '#374151', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', cursor: 'pointer' }}>Cancel</button>
             </div>
           </div>
         </div>

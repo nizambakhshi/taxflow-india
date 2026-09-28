@@ -18,9 +18,10 @@ const NAV_ITEMS = [
       { label: 'Invoices', href: '/invoices', icon: '🧾' },
       { label: 'Quotations', href: '/quotations', icon: '📋' },
       { label: 'Credit Notes', href: '/credit-notes', icon: '📝' },
+      { label: 'Debit Notes', href: '/debit-notes', icon: '📄' },
     ]
   },
-    {
+  {
     section: 'Purchases',
     items: [
       { label: 'Bills', href: '/bills', icon: '🛒' },
@@ -33,7 +34,7 @@ const NAV_ITEMS = [
       { label: 'Receivables & Payables', href: '/payments', icon: '💳' },
     ]
   },
-    {
+  {
     section: 'Masters',
     items: [
       { label: 'Customers', href: '/customers', icon: '👥' },
@@ -50,7 +51,7 @@ const NAV_ITEMS = [
       { label: 'GSTR-3B', href: '/gst/gstr3b', icon: '📑' },
     ]
   },
-    {
+  {
     section: 'Reports',
     items: [
       { label: 'Reports', href: '/reports', icon: '📈' },
