@@ -13,3 +13,121 @@ body {
   background: #f8fafc;
   color: #1e293b;
 }
+
+/* ── RESPONSIVE TABLE → CARDS ── */
+/* Wrap tables in this class to make them card-based on mobile */
+.responsive-table {
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  /* Hide table headers on mobile */
+  .responsive-table .table-header {
+    display: none !important;
+  }
+
+  /* Each row becomes a card */
+  .responsive-table .table-row {
+    display: block !important;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 1rem;
+    margin-bottom: 10px;
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Label each cell with data-label attribute */
+  .responsive-table .table-row [data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 2px;
+  }
+
+  /* Page padding on mobile */
+  .page-container {
+    padding: 1rem !important;
+  }
+
+  /* Form grids collapse to single column */
+  .form-grid-2,
+  .form-grid-3 {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Metric card grids */
+  .metric-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  /* Hide less important columns on mobile */
+  .hide-mobile {
+    display: none !important;
+  }
+
+  /* Full width buttons on mobile */
+  .btn-group {
+    flex-direction: column !important;
+    width: 100% !important;
+  }
+
+  .btn-group button,
+  .btn-group a {
+    width: 100% !important;
+    text-align: center !important;
+  }
+
+  /* Modal full screen on mobile */
+  .modal-container {
+    padding: 0 !important;
+    align-items: flex-end !important;
+  }
+
+  .modal-content {
+    border-radius: 16px 16px 0 0 !important;
+    max-height: 95vh !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+}
+
+/* ── SCROLLABLE TABLES ON MOBILE ── */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── TOUCH FRIENDLY TARGETS ── */
+@media (max-width: 768px) {
+  button, a, select, input {
+    min-height: 40px;
+  }
+
+  input[type="checkbox"] {
+    min-height: unset;
+    width: 18px;
+    height: 18px;
+  }
+}
+
+/* ── PRINT — hide everything except invoice ── */
+@media print {
+  .desktop-sidebar,
+  .mobile-topbar,
+  .mobile-bottom-nav,
+  #action-bar,
+  #cancel-banner {
+    display: none !important;
+  }
+
+  .main-content {
+    margin-left: 0 !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+  }
+}
