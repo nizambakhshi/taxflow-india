@@ -203,7 +203,7 @@ export default function PaymentsPage() {
   )
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '1100px' }}>
+    <div className="page-container" style={{ maxWidth: '1100px' }}>
       <div style={{ marginBottom: '1.5rem' }}>
         <h1 style={{ fontSize: '22px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
           Payments
@@ -214,7 +214,7 @@ export default function PaymentsPage() {
       </div>
 
       {/* Summary cards */}
-      <div style={{
+      <div className="metric-grid" style={{
         display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
         gap: '1rem', marginBottom: '1.5rem'
       }}>
@@ -260,7 +260,7 @@ export default function PaymentsPage() {
       </div>
 
       {/* Tabs */}
-      <div style={{
+      <div className="tab-bar" style={{
         display: 'flex', gap: '4px',
         borderBottom: '1px solid #e2e8f0', marginBottom: '1rem'
       }}>
@@ -299,11 +299,11 @@ export default function PaymentsPage() {
               </div>
             </div>
           ) : (
-            <div style={{
+            <div className="responsive-table table-frame" style={{
               background: 'white', border: '1px solid #e2e8f0',
               borderRadius: '12px', overflow: 'hidden'
             }}>
-              <div style={{
+              <div className="table-header" style={{
                 display: 'grid',
                 gridTemplateColumns: '1.5fr 2fr 1fr 1fr 1fr 1fr 100px',
                 gap: '12px', padding: '10px 16px', background: '#f8fafc',
@@ -322,25 +322,25 @@ export default function PaymentsPage() {
               {invoices.map(inv => {
                 const age = getAgeing(inv.due_date || inv.invoice_date)
                 return (
-                  <div key={inv.id} style={{
+                  <div key={inv.id} className="table-row" style={{
                     display: 'grid',
                     gridTemplateColumns: '1.5fr 2fr 1fr 1fr 1fr 1fr 100px',
                     gap: '12px', padding: '12px 16px',
                     borderBottom: '1px solid #f1f5f9',
                     alignItems: 'center', fontSize: '13px'
                   }}>
-                    <div style={{ fontWeight: '600', color: '#2563eb' }}>
+                    <div data-label="Invoice" style={{ fontWeight: '600', color: '#2563eb' }}>
                       {inv.invoice_number}
                     </div>
-                    <div style={{ color: '#1e293b' }}>{inv.customer_name}</div>
-                    <div style={{ color: '#64748b' }}>
+                    <div data-label="Customer" style={{ color: '#1e293b' }}>{inv.customer_name}</div>
+                    <div data-label="Date" style={{ color: '#64748b' }}>
                       {new Date(inv.invoice_date).toLocaleDateString('en-IN')}
                     </div>
-                    <div>₹{formatINR(inv.grand_total)}</div>
-                    <div style={{ fontWeight: '600', color: '#dc2626' }}>
+                    <div data-label="Total">₹{formatINR(inv.grand_total)}</div>
+                    <div data-label="Balance Due" style={{ fontWeight: '600', color: '#dc2626' }}>
                       ₹{formatINR(inv.balance_due)}
                     </div>
-                    <div>
+                    <div data-label="Ageing">
                       <span style={{
                         fontSize: '11px', padding: '2px 8px',
                         borderRadius: '99px',
@@ -349,17 +349,19 @@ export default function PaymentsPage() {
                         {age.label}
                       </span>
                     </div>
-                    <button
-                      onClick={() => openPaymentForm(inv, undefined)}
-                      style={{
-                        padding: '5px 12px', background: '#2563eb',
-                        color: 'white', border: 'none',
-                        borderRadius: '6px', fontSize: '12px',
-                        cursor: 'pointer', fontWeight: '500'
-                      }}
-                    >
-                      + Payment
-                    </button>
+                    <div data-label="Actions" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                      <button
+                        onClick={() => openPaymentForm(inv, undefined)}
+                        style={{
+                          width: '100%', padding: '5px 12px', background: '#2563eb',
+                          color: 'white', border: 'none',
+                          borderRadius: '6px', fontSize: '12px',
+                          cursor: 'pointer', fontWeight: '500'
+                        }}
+                      >
+                        + Payment
+                      </button>
+                    </div>
                   </div>
                 )
               })}
@@ -386,11 +388,11 @@ export default function PaymentsPage() {
               </div>
             </div>
           ) : (
-            <div style={{
+            <div className="responsive-table table-frame" style={{
               background: 'white', border: '1px solid #e2e8f0',
               borderRadius: '12px', overflow: 'hidden'
             }}>
-              <div style={{
+              <div className="table-header" style={{
                 display: 'grid',
                 gridTemplateColumns: '1.5fr 2fr 1fr 1fr 1fr 1fr 100px',
                 gap: '12px', padding: '10px 16px', background: '#f8fafc',
@@ -409,25 +411,25 @@ export default function PaymentsPage() {
               {bills.map(bill => {
                 const age = getAgeing(bill.due_date || bill.bill_date)
                 return (
-                  <div key={bill.id} style={{
+                  <div key={bill.id} className="table-row" style={{
                     display: 'grid',
                     gridTemplateColumns: '1.5fr 2fr 1fr 1fr 1fr 1fr 100px',
                     gap: '12px', padding: '12px 16px',
                     borderBottom: '1px solid #f1f5f9',
                     alignItems: 'center', fontSize: '13px'
                   }}>
-                    <div style={{ fontWeight: '600', color: '#374151' }}>
+                    <div data-label="Bill No." style={{ fontWeight: '600', color: '#374151' }}>
                       {bill.bill_number}
                     </div>
-                    <div style={{ color: '#1e293b' }}>{bill.vendor_name}</div>
-                    <div style={{ color: '#64748b' }}>
+                    <div data-label="Vendor" style={{ color: '#1e293b' }}>{bill.vendor_name}</div>
+                    <div data-label="Date" style={{ color: '#64748b' }}>
                       {new Date(bill.bill_date).toLocaleDateString('en-IN')}
                     </div>
-                    <div>₹{formatINR(bill.grand_total)}</div>
-                    <div style={{ fontWeight: '600', color: '#dc2626' }}>
+                    <div data-label="Total">₹{formatINR(bill.grand_total)}</div>
+                    <div data-label="Balance Due" style={{ fontWeight: '600', color: '#dc2626' }}>
                       ₹{formatINR(bill.balance_due)}
                     </div>
-                    <div>
+                    <div data-label="Ageing">
                       <span style={{
                         fontSize: '11px', padding: '2px 8px',
                         borderRadius: '99px',
@@ -436,17 +438,19 @@ export default function PaymentsPage() {
                         {age.label}
                       </span>
                     </div>
-                    <button
-                      onClick={() => openPaymentForm(undefined, bill)}
-                      style={{
-                        padding: '5px 12px', background: '#7c3aed',
-                        color: 'white', border: 'none',
-                        borderRadius: '6px', fontSize: '12px',
-                        cursor: 'pointer', fontWeight: '500'
-                      }}
-                    >
-                      + Payment
-                    </button>
+                    <div data-label="Actions" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                      <button
+                        onClick={() => openPaymentForm(undefined, bill)}
+                        style={{
+                          width: '100%', padding: '5px 12px', background: '#7c3aed',
+                          color: 'white', border: 'none',
+                          borderRadius: '6px', fontSize: '12px',
+                          cursor: 'pointer', fontWeight: '500'
+                        }}
+                      >
+                        + Payment
+                      </button>
+                    </div>
                   </div>
                 )
               })}
@@ -464,11 +468,11 @@ export default function PaymentsPage() {
           }}>
             Recent Payments
           </h2>
-          <div style={{
+          <div className="responsive-table table-frame" style={{
             background: 'white', border: '1px solid #e2e8f0',
             borderRadius: '12px', overflow: 'hidden'
           }}>
-            <div style={{
+            <div className="table-header" style={{
               display: 'grid',
               gridTemplateColumns: '1fr 2fr 1fr 1fr 1fr',
               gap: '12px', padding: '10px 16px', background: '#f8fafc',
@@ -482,21 +486,21 @@ export default function PaymentsPage() {
               <span>Amount</span>
             </div>
             {payments.map(p => (
-              <div key={p.id} style={{
+              <div key={p.id} className="table-row" style={{
                 display: 'grid',
                 gridTemplateColumns: '1fr 2fr 1fr 1fr 1fr',
                 gap: '12px', padding: '10px 16px',
                 borderBottom: '1px solid #f1f5f9',
                 alignItems: 'center', fontSize: '13px'
               }}>
-                <div style={{ color: '#64748b' }}>
+                <div data-label="Date" style={{ color: '#64748b' }}>
                   {new Date(p.payment_date).toLocaleDateString('en-IN')}
                 </div>
-                <div style={{ color: '#1e293b' }}>{p.party_name}</div>
-                <div style={{ color: '#64748b', fontSize: '12px' }}>
+                <div data-label="Party" style={{ color: '#1e293b' }}>{p.party_name}</div>
+                <div data-label="Mode" style={{ color: '#64748b', fontSize: '12px' }}>
                   {p.payment_mode}
                 </div>
-                <div>
+                <div data-label="Type">
                   <span style={{
                     fontSize: '11px', padding: '2px 8px',
                     borderRadius: '99px',
@@ -506,7 +510,7 @@ export default function PaymentsPage() {
                     {p.payment_type === 'received' ? '↓ Received' : '↑ Made'}
                   </span>
                 </div>
-                <div style={{ fontWeight: '600', color: '#1e293b' }}>
+                <div data-label="Amount" style={{ fontWeight: '600', color: '#1e293b' }}>
                   ₹{formatINR(p.amount)}
                 </div>
               </div>
@@ -517,14 +521,15 @@ export default function PaymentsPage() {
 
       {/* Record Payment Modal */}
       {showPaymentForm && (
-        <div style={{
+        <div className="modal-container" style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
           display: 'flex', alignItems: 'center',
           justifyContent: 'center', zIndex: 100, padding: '1rem'
         }}>
-          <div style={{
+          <div className="modal-content" style={{
             background: 'white', borderRadius: '16px',
-            padding: '2rem', width: '100%', maxWidth: '480px'
+            padding: '2rem', width: '100%', maxWidth: '480px',
+            maxHeight: '90vh', overflowY: 'auto'
           }}>
             <div style={{
               display: 'flex', justifyContent: 'space-between',
@@ -556,7 +561,7 @@ export default function PaymentsPage() {
                 {' — '}
                 {selectedInvoice?.customer_name || selectedBill?.vendor_name}
               </div>
-              <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: '#64748b' }}>
+              <div className="toolbar" style={{ display: 'flex', gap: '16px', fontSize: '12px', color: '#64748b' }}>
                 <span>Total: ₹{formatINR(selectedInvoice?.grand_total || selectedBill?.grand_total)}</span>
                 <span>Already paid: ₹{formatINR(selectedInvoice?.amount_paid || selectedBill?.amount_paid || 0)}</span>
                 <span style={{ color: '#dc2626', fontWeight: '600' }}>
@@ -565,7 +570,7 @@ export default function PaymentsPage() {
               </div>
             </div>
 
-            <div style={{
+            <div className="form-grid-2" style={{
               display: 'grid', gridTemplateColumns: '1fr 1fr',
               gap: '1rem', marginBottom: '1rem'
             }}>
@@ -584,7 +589,7 @@ export default function PaymentsPage() {
               </div>
             </div>
 
-            <div style={{
+            <div className="form-grid-2" style={{
               display: 'grid', gridTemplateColumns: '1fr 1fr',
               gap: '1rem', marginBottom: '1rem'
             }}>
@@ -626,7 +631,7 @@ export default function PaymentsPage() {
               }}>{error}</div>
             )}
 
-            <div style={{ display: 'flex', gap: '12px' }}>
+            <div className="btn-group" style={{ display: 'flex', gap: '12px' }}>
               <button
                 onClick={handleRecordPayment}
                 disabled={saving}

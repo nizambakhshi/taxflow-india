@@ -205,9 +205,9 @@ export default function CustomersPage() {
   )
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '1100px' }}>
+    <div className="page-container" style={{ maxWidth: '1100px' }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
         <div>
           <h1 style={{ fontSize: '22px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
             Customers
@@ -260,14 +260,14 @@ export default function CustomersPage() {
           </div>
         </div>
       ) : (
-        <div style={{
+        <div className="responsive-table table-frame" style={{
           background: 'white',
           border: '1px solid #e2e8f0',
           borderRadius: '12px',
           overflow: 'hidden'
         }}>
           {/* Table header */}
-          <div style={{
+          <div className="table-header" style={{
             display: 'grid',
             gridTemplateColumns: '2fr 2fr 1.5fr 1fr 1fr 80px',
             gap: '12px',
@@ -287,7 +287,7 @@ export default function CustomersPage() {
           </div>
 
           {filtered.map((customer) => (
-            <div key={customer.id} style={{
+            <div key={customer.id} className="table-row" style={{
               display: 'grid',
               gridTemplateColumns: '2fr 2fr 1.5fr 1fr 1fr 80px',
               gap: '12px',
@@ -296,20 +296,20 @@ export default function CustomersPage() {
               alignItems: 'center',
               fontSize: '13px'
             }}>
-              <div>
+              <div data-label="Name">
                 <div style={{ fontWeight: '500', color: '#1e293b' }}>{customer.name}</div>
                 {customer.business_name && (
                   <div style={{ fontSize: '12px', color: '#64748b' }}>{customer.business_name}</div>
                 )}
               </div>
-              <div style={{ fontFamily: 'monospace', fontSize: '12px', color: '#374151' }}>
+              <div data-label="GSTIN" style={{ fontFamily: 'monospace', fontSize: '12px', color: '#374151' }}>
                 {customer.gstin || '—'}
               </div>
-              <div>
+              <div data-label="Phone / Email">
                 <div style={{ color: '#374151' }}>{customer.phone || '—'}</div>
                 <div style={{ fontSize: '12px', color: '#64748b' }}>{customer.email || ''}</div>
               </div>
-              <div>
+              <div data-label="Type">
                 <span style={{
                   fontSize: '11px',
                   padding: '2px 8px',
@@ -322,7 +322,7 @@ export default function CustomersPage() {
                   {customer.customer_type}
                 </span>
               </div>
-              <div>
+              <div data-label="Status">
                 <span style={{
                   fontSize: '11px',
                   padding: '2px 8px',
@@ -333,7 +333,7 @@ export default function CustomersPage() {
                   {customer.is_active ? 'Active' : 'Inactive'}
                 </span>
               </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div data-label="Actions" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 <button
                   onClick={() => handleEdit(customer)}
                   style={{
@@ -356,7 +356,7 @@ export default function CustomersPage() {
 
       {/* Add/Edit Form Modal */}
       {showForm && (
-        <div style={{
+        <div className="modal-container" style={{
           position: 'fixed',
           inset: 0,
           background: 'rgba(0,0,0,0.4)',
@@ -366,7 +366,7 @@ export default function CustomersPage() {
           zIndex: 100,
           padding: '1rem'
         }}>
-          <div style={{
+          <div className="modal-content" style={{
             background: 'white',
             borderRadius: '16px',
             padding: '2rem',
@@ -388,7 +388,7 @@ export default function CustomersPage() {
             </div>
 
             <form onSubmit={handleSubmit}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+              <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                 <div>
                   <label style={labelStyle}>Contact Name *</label>
                   <input style={inputStyle} value={form.name}
@@ -403,7 +403,7 @@ export default function CustomersPage() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+              <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                 <div>
                   <label style={labelStyle}>GSTIN</label>
                   <input style={inputStyle} value={form.gstin}
@@ -418,7 +418,7 @@ export default function CustomersPage() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+              <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                 <div>
                   <label style={labelStyle}>Customer Type *</label>
                   <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.customer_type}
@@ -444,7 +444,7 @@ export default function CustomersPage() {
                   placeholder="Building / Street" />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+              <div className="form-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                 <div>
                   <label style={labelStyle}>City</label>
                   <input style={inputStyle} value={form.city}
@@ -472,7 +472,7 @@ export default function CustomersPage() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+              <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                 <div>
                   <label style={labelStyle}>Phone</label>
                   <input style={inputStyle} value={form.phone}
@@ -505,7 +505,7 @@ export default function CustomersPage() {
                 </div>
               )}
 
-              <div style={{ display: 'flex', gap: '12px' }}>
+              <div className="btn-group" style={{ display: 'flex', gap: '12px' }}>
                 <button type="submit" disabled={saving} style={{
                   flex: 1, padding: '11px',
                   background: saving ? '#93c5fd' : '#2563eb',

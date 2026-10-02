@@ -178,9 +178,9 @@ export default function GSTR1Page() {
   )
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '1100px' }}>
+    <div className="page-container" style={{ maxWidth: '1100px' }}>
       {/* Header */}
-      <div style={{
+      <div className="page-header" style={{
         display: 'flex', justifyContent: 'space-between',
         alignItems: 'center', marginBottom: '1.5rem'
       }}>
@@ -192,7 +192,7 @@ export default function GSTR1Page() {
             Outward supplies — Details of sales for GST return
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+        <div className="toolbar" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           <select
             style={{
               padding: '8px 14px', border: '1px solid #e2e8f0',
@@ -217,7 +217,7 @@ export default function GSTR1Page() {
       </div>
 
       {/* Summary cards */}
-      <div style={{
+      <div className="metric-grid" style={{
         display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
         gap: '1rem', marginBottom: '1.5rem'
       }}>
@@ -244,7 +244,7 @@ export default function GSTR1Page() {
       </div>
 
       {/* Tabs */}
-      <div style={{
+      <div className="tab-bar" style={{
         borderBottom: '1px solid #e2e8f0', marginBottom: '1rem',
         display: 'flex', gap: '4px'
       }}>
@@ -264,7 +264,7 @@ export default function GSTR1Page() {
 
       {/* B2B */}
       {activeTab === 'b2b' && (
-        <div style={{
+        <div className="responsive-table table-frame" style={{
           background: 'white', border: '1px solid #e2e8f0',
           borderRadius: '12px', overflow: 'hidden'
         }}>
@@ -274,7 +274,7 @@ export default function GSTR1Page() {
             </div>
           ) : (
             <>
-              <div style={{
+              <div className="table-header" style={{
                 display: 'grid',
                 gridTemplateColumns: '1.2fr 1fr 1.5fr 1.5fr 1fr 1fr 1fr 1fr',
                 gap: '8px', padding: '10px 16px', background: '#f8fafc',
@@ -285,39 +285,39 @@ export default function GSTR1Page() {
                 <span>Date</span>
                 <span>Customer</span>
                 <span>GSTIN</span>
-                <span>Place</span>
+                <span className="hide-mobile">Place</span>
                 <span>Taxable</span>
-                <span>Tax</span>
+                <span className="hide-mobile">Tax</span>
                 <span>Total</span>
               </div>
               {b2bInvoices.map(inv => (
-                <div key={inv.id} style={{
+                <div key={inv.id} className="table-row" style={{
                   display: 'grid',
                   gridTemplateColumns: '1.2fr 1fr 1.5fr 1.5fr 1fr 1fr 1fr 1fr',
                   gap: '8px', padding: '10px 16px',
                   borderBottom: '1px solid #f1f5f9',
                   fontSize: '12px', alignItems: 'center'
                 }}>
-                  <span style={{ fontWeight: '600', color: '#2563eb' }}>
+                  <span data-label="Invoice No." style={{ fontWeight: '600', color: '#2563eb' }}>
                     {inv.invoice_number}
                   </span>
-                  <span style={{ color: '#64748b' }}>
+                  <span data-label="Date" style={{ color: '#64748b' }}>
                     {new Date(inv.invoice_date).toLocaleDateString('en-IN')}
                   </span>
-                  <span style={{ color: '#1e293b' }}>{inv.customer_name}</span>
-                  <span style={{
+                  <span data-label="Customer" style={{ color: '#1e293b' }}>{inv.customer_name}</span>
+                  <span data-label="GSTIN" style={{
                     fontFamily: 'monospace', fontSize: '11px', color: '#374151'
                   }}>
                     {inv.customer_gstin || '—'}
                   </span>
-                  <span style={{ color: '#64748b' }}>{inv.place_of_supply}</span>
-                  <span>₹{formatINR(inv.taxable_amount)}</span>
-                  <span>₹{formatINR(inv.total_tax)}</span>
-                  <span style={{ fontWeight: '600' }}>₹{formatINR(inv.grand_total)}</span>
+                  <span data-label="Place" className="hide-mobile" style={{ color: '#64748b' }}>{inv.place_of_supply}</span>
+                  <span data-label="Taxable">₹{formatINR(inv.taxable_amount)}</span>
+                  <span className="hide-mobile">₹{formatINR(inv.total_tax)}</span>
+                  <span data-label="Total" style={{ fontWeight: '600' }}>₹{formatINR(inv.grand_total)}</span>
                 </div>
               ))}
               {/* Totals row */}
-              <div style={{
+              <div className="table-row" style={{
                 display: 'grid',
                 gridTemplateColumns: '1.2fr 1fr 1.5fr 1.5fr 1fr 1fr 1fr 1fr',
                 gap: '8px', padding: '10px 16px',
@@ -327,9 +327,9 @@ export default function GSTR1Page() {
               }}>
                 <span>Total</span>
                 <span></span><span></span><span></span><span></span>
-                <span>₹{formatINR(b2bInvoices.reduce((s, i) => s + Number(i.taxable_amount), 0))}</span>
-                <span>₹{formatINR(b2bInvoices.reduce((s, i) => s + Number(i.total_tax), 0))}</span>
-                <span>₹{formatINR(b2bInvoices.reduce((s, i) => s + Number(i.grand_total), 0))}</span>
+                <span data-label="Taxable">₹{formatINR(b2bInvoices.reduce((s, i) => s + Number(i.taxable_amount), 0))}</span>
+                <span className="hide-mobile">₹{formatINR(b2bInvoices.reduce((s, i) => s + Number(i.total_tax), 0))}</span>
+                <span data-label="Total">₹{formatINR(b2bInvoices.reduce((s, i) => s + Number(i.grand_total), 0))}</span>
               </div>
             </>
           )}
@@ -338,7 +338,7 @@ export default function GSTR1Page() {
 
       {/* B2C */}
       {activeTab === 'b2c' && (
-        <div style={{
+        <div className="responsive-table table-frame" style={{
           background: 'white', border: '1px solid #e2e8f0',
           borderRadius: '12px', overflow: 'hidden'
         }}>
@@ -348,7 +348,7 @@ export default function GSTR1Page() {
             </div>
           ) : (
             <>
-              <div style={{
+              <div className="table-header" style={{
                 display: 'grid',
                 gridTemplateColumns: '1.5fr 1fr 2fr 1fr 1fr 1fr 1fr',
                 gap: '8px', padding: '10px 16px', background: '#f8fafc',
@@ -360,28 +360,28 @@ export default function GSTR1Page() {
                 <span>Customer</span>
                 <span>Place</span>
                 <span>Taxable</span>
-                <span>Tax</span>
+                <span className="hide-mobile">Tax</span>
                 <span>Total</span>
               </div>
               {b2cInvoices.map(inv => (
-                <div key={inv.id} style={{
+                <div key={inv.id} className="table-row" style={{
                   display: 'grid',
                   gridTemplateColumns: '1.5fr 1fr 2fr 1fr 1fr 1fr 1fr',
                   gap: '8px', padding: '10px 16px',
                   borderBottom: '1px solid #f1f5f9',
                   fontSize: '12px', alignItems: 'center'
                 }}>
-                  <span style={{ fontWeight: '600', color: '#2563eb' }}>
+                  <span data-label="Invoice No." style={{ fontWeight: '600', color: '#2563eb' }}>
                     {inv.invoice_number}
                   </span>
-                  <span style={{ color: '#64748b' }}>
+                  <span data-label="Date" style={{ color: '#64748b' }}>
                     {new Date(inv.invoice_date).toLocaleDateString('en-IN')}
                   </span>
-                  <span>{inv.customer_name}</span>
-                  <span style={{ color: '#64748b' }}>{inv.place_of_supply}</span>
-                  <span>₹{formatINR(inv.taxable_amount)}</span>
-                  <span>₹{formatINR(inv.total_tax)}</span>
-                  <span style={{ fontWeight: '600' }}>₹{formatINR(inv.grand_total)}</span>
+                  <span data-label="Customer">{inv.customer_name}</span>
+                  <span data-label="Place" style={{ color: '#64748b' }}>{inv.place_of_supply}</span>
+                  <span data-label="Taxable">₹{formatINR(inv.taxable_amount)}</span>
+                  <span className="hide-mobile">₹{formatINR(inv.total_tax)}</span>
+                  <span data-label="Total" style={{ fontWeight: '600' }}>₹{formatINR(inv.grand_total)}</span>
                 </div>
               ))}
             </>
@@ -391,7 +391,7 @@ export default function GSTR1Page() {
 
       {/* Exports */}
       {activeTab === 'export' && (
-        <div style={{
+        <div className="responsive-table table-frame" style={{
           background: 'white', border: '1px solid #e2e8f0',
           borderRadius: '12px', overflow: 'hidden'
         }}>
@@ -401,7 +401,7 @@ export default function GSTR1Page() {
             </div>
           ) : (
             <>
-              <div style={{
+              <div className="table-header" style={{
                 display: 'grid',
                 gridTemplateColumns: '1.5fr 1fr 2fr 1fr 1fr 1fr 1fr',
                 gap: '8px', padding: '10px 16px', background: '#f8fafc',
@@ -417,21 +417,21 @@ export default function GSTR1Page() {
                 <span>Total</span>
               </div>
               {exportInvoices.map(inv => (
-                <div key={inv.id} style={{
+                <div key={inv.id} className="table-row" style={{
                   display: 'grid',
                   gridTemplateColumns: '1.5fr 1fr 2fr 1fr 1fr 1fr 1fr',
                   gap: '8px', padding: '10px 16px',
                   borderBottom: '1px solid #f1f5f9',
                   fontSize: '12px', alignItems: 'center'
                 }}>
-                  <span style={{ fontWeight: '600', color: '#2563eb' }}>
+                  <span data-label="Invoice No." style={{ fontWeight: '600', color: '#2563eb' }}>
                     {inv.invoice_number}
                   </span>
-                  <span style={{ color: '#64748b' }}>
+                  <span data-label="Date" style={{ color: '#64748b' }}>
                     {new Date(inv.invoice_date).toLocaleDateString('en-IN')}
                   </span>
-                  <span>{inv.customer_name}</span>
-                  <span>
+                  <span data-label="Customer">{inv.customer_name}</span>
+                  <span data-label="Type">
                     <span style={{
                       fontSize: '11px', padding: '2px 6px',
                       borderRadius: '99px', background: '#eff6ff',
@@ -440,9 +440,9 @@ export default function GSTR1Page() {
                       {inv.supply_type}
                     </span>
                   </span>
-                  <span>₹{formatINR(inv.taxable_amount)}</span>
-                  <span>₹{formatINR(inv.igst_amount)}</span>
-                  <span style={{ fontWeight: '600' }}>₹{formatINR(inv.grand_total)}</span>
+                  <span data-label="Taxable">₹{formatINR(inv.taxable_amount)}</span>
+                  <span data-label="IGST">₹{formatINR(inv.igst_amount)}</span>
+                  <span data-label="Total" style={{ fontWeight: '600' }}>₹{formatINR(inv.grand_total)}</span>
                 </div>
               ))}
             </>
@@ -452,7 +452,7 @@ export default function GSTR1Page() {
 
       {/* HSN Summary */}
       {activeTab === 'hsn' && (
-        <div style={{
+        <div className="responsive-table table-frame" style={{
           background: 'white', border: '1px solid #e2e8f0',
           borderRadius: '12px', overflow: 'hidden'
         }}>
@@ -462,7 +462,7 @@ export default function GSTR1Page() {
             </div>
           ) : (
             <>
-              <div style={{
+              <div className="table-header" style={{
                 display: 'grid',
                 gridTemplateColumns: '1fr 2fr 1fr 1fr 1fr 1fr 1fr 1fr',
                 gap: '8px', padding: '10px 16px', background: '#f8fafc',
@@ -471,7 +471,7 @@ export default function GSTR1Page() {
               }}>
                 <span>HSN/SAC</span>
                 <span>Description</span>
-                <span>UOM</span>
+                <span className="hide-mobile">UOM</span>
                 <span>Qty</span>
                 <span>Taxable Value</span>
                 <span>IGST</span>
@@ -479,23 +479,23 @@ export default function GSTR1Page() {
                 <span>SGST</span>
               </div>
               {hsnSummary.map(h => (
-                <div key={h.hsn} style={{
+                <div key={h.hsn} className="table-row" style={{
                   display: 'grid',
                   gridTemplateColumns: '1fr 2fr 1fr 1fr 1fr 1fr 1fr 1fr',
                   gap: '8px', padding: '10px 16px',
                   borderBottom: '1px solid #f1f5f9',
                   fontSize: '12px', alignItems: 'center'
                 }}>
-                  <span style={{ fontFamily: 'monospace', fontWeight: '600' }}>
+                  <span data-label="HSN/SAC" style={{ fontFamily: 'monospace', fontWeight: '600' }}>
                     {h.hsn}
                   </span>
-                  <span style={{ color: '#374151' }}>{h.description}</span>
-                  <span style={{ color: '#64748b' }}>{h.uom}</span>
-                  <span>{Number(h.totalQty).toFixed(2)}</span>
-                  <span>₹{formatINR(h.taxableValue)}</span>
-                  <span>₹{formatINR(h.igst)}</span>
-                  <span>₹{formatINR(h.cgst)}</span>
-                  <span>₹{formatINR(h.sgst)}</span>
+                  <span data-label="Description" style={{ color: '#374151' }}>{h.description}</span>
+                  <span data-label="UOM" className="hide-mobile" style={{ color: '#64748b' }}>{h.uom}</span>
+                  <span data-label="Qty">{Number(h.totalQty).toFixed(2)}</span>
+                  <span data-label="Taxable Value">₹{formatINR(h.taxableValue)}</span>
+                  <span data-label="IGST">₹{formatINR(h.igst)}</span>
+                  <span data-label="CGST">₹{formatINR(h.cgst)}</span>
+                  <span data-label="SGST">₹{formatINR(h.sgst)}</span>
                 </div>
               ))}
             </>

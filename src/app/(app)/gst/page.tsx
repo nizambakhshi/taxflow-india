@@ -206,9 +206,9 @@ export default function GSTDashboardPage() {
   )
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '1100px' }}>
+    <div className="page-container" style={{ maxWidth: '1100px' }}>
       {/* Header */}
-      <div style={{
+      <div className="page-header" style={{
         display: 'flex', justifyContent: 'space-between',
         alignItems: 'center', marginBottom: '1.5rem'
       }}>
@@ -249,7 +249,7 @@ export default function GSTDashboardPage() {
         }}>
           Output Tax (Sales)
         </div>
-        <div style={{
+        <div className="metric-grid" style={{
           display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '1rem'
         }}>
           {[
@@ -299,7 +299,7 @@ export default function GSTDashboardPage() {
         }}>
           Input Tax Credit (Purchases)
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem' }}>
+        <div className="metric-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem' }}>
           {[
             { label: 'Total Purchases', value: summary.totalPurchases, color: '#374151' },
             { label: 'CGST ITC', value: summary.itcCGST, color: '#059669' },
@@ -381,7 +381,7 @@ export default function GSTDashboardPage() {
           {returnStatus.map(ret => {
             const sc = statusConfig[ret.status] || statusConfig.not_started
             return (
-              <div key={ret.type} style={{
+              <div key={ret.type} className="toolbar" style={{
                 display: 'flex', alignItems: 'center',
                 justifyContent: 'space-between',
                 padding: '1rem 1.25rem',
@@ -397,7 +397,7 @@ export default function GSTDashboardPage() {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div className="btn-group" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <span style={{
                     fontSize: '11px', padding: '3px 10px',
                     borderRadius: '99px', fontWeight: '600',
@@ -442,7 +442,7 @@ export default function GSTDashboardPage() {
       </div>
 
       {/* Quick links */}
-      <div style={{
+      <div className="form-grid-2" style={{
         display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem'
       }}>
         <Link href="/gst/gstr1" style={{ textDecoration: 'none' }}>

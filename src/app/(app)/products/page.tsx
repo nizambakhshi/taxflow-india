@@ -169,8 +169,8 @@ export default function ProductsPage() {
   if (loading) return <div style={{ padding: '2rem', color: '#64748b', fontSize: '14px' }}>Loading...</div>
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '1100px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+    <div className="page-container" style={{ maxWidth: '1100px' }}>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
         <div>
           <h1 style={{ fontSize: '22px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
             Products & Services
@@ -189,7 +189,7 @@ export default function ProductsPage() {
       </div>
 
       {/* Filters */}
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '1rem' }}>
+      <div className="toolbar" style={{ display: 'flex', gap: '8px', marginBottom: '1rem' }}>
         <input style={{ ...inputStyle, maxWidth: '300px' }}
           placeholder="Search products..." value={search}
           onChange={e => setSearch(e.target.value)} />
@@ -219,8 +219,8 @@ export default function ProductsPage() {
           <div style={{ fontSize: '13px' }}>Add products or services to include them in invoices</div>
         </div>
       ) : (
-        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
-          <div style={{
+        <div className="responsive-table table-frame" style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
+          <div className="table-header" style={{
             display: 'grid', gridTemplateColumns: '2.5fr 1fr 1fr 1fr 1fr 80px',
             gap: '12px', padding: '10px 16px', background: '#f8fafc',
             fontSize: '12px', fontWeight: '600', color: '#64748b',
@@ -231,26 +231,26 @@ export default function ProductsPage() {
             <span>Type</span><span>Actions</span>
           </div>
           {filtered.map((product) => (
-            <div key={product.id} style={{
+            <div key={product.id} className="table-row" style={{
               display: 'grid', gridTemplateColumns: '2.5fr 1fr 1fr 1fr 1fr 80px',
               gap: '12px', padding: '12px 16px',
               borderBottom: '1px solid #f1f5f9',
               alignItems: 'center', fontSize: '13px'
             }}>
-              <div>
+              <div data-label="Name">
                 <div style={{ fontWeight: '500', color: '#1e293b' }}>{product.name}</div>
                 <div style={{ fontSize: '12px', color: '#64748b' }}>
                   {product.unit}
                   {product.track_inventory && ` · Stock: ${product.current_stock}`}
                 </div>
               </div>
-              <div style={{ fontFamily: 'monospace', fontSize: '12px', color: '#374151' }}>
+              <div data-label="HSN/SAC" style={{ fontFamily: 'monospace', fontSize: '12px', color: '#374151' }}>
                 {product.hsn_sac || '—'}
               </div>
-              <div style={{ fontWeight: '500', color: '#1e293b' }}>
+              <div data-label="Selling Price" style={{ fontWeight: '500', color: '#1e293b' }}>
                 ₹{Number(product.selling_price).toLocaleString('en-IN')}
               </div>
-              <div>
+              <div data-label="GST Rate">
                 <span style={{
                   fontSize: '11px', padding: '2px 8px', borderRadius: '99px',
                   background: '#eff6ff', color: '#1d4ed8', fontWeight: '600'
@@ -258,7 +258,7 @@ export default function ProductsPage() {
                   {product.gst_rate}%
                 </span>
               </div>
-              <div>
+              <div data-label="Type">
                 <span style={{
                   fontSize: '11px', padding: '2px 8px', borderRadius: '99px',
                   background: product.type === 'goods' ? '#fef9c3' : '#f0fdf4',
@@ -267,7 +267,7 @@ export default function ProductsPage() {
                   {product.type === 'goods' ? '📦 Goods' : '⚙️ Service'}
                 </span>
               </div>
-              <div>
+              <div data-label="Actions" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                 <button onClick={() => handleEdit(product)} style={{
                   padding: '4px 10px', background: '#f1f5f9',
                   border: '1px solid #e2e8f0', borderRadius: '6px',
@@ -281,12 +281,12 @@ export default function ProductsPage() {
 
       {/* Form Modal */}
       {showForm && (
-        <div style={{
+        <div className="modal-container" style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           zIndex: 100, padding: '1rem'
         }}>
-          <div style={{
+          <div className="modal-content" style={{
             background: 'white', borderRadius: '16px', padding: '2rem',
             width: '100%', maxWidth: '640px', maxHeight: '90vh', overflowY: 'auto'
           }}>
@@ -316,7 +316,7 @@ export default function ProductsPage() {
                 ))}
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+              <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                 <div>
                   <label style={labelStyle}>Name *</label>
                   <input style={inputStyle} value={form.name}
@@ -331,7 +331,7 @@ export default function ProductsPage() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+              <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                 <div>
                   <label style={labelStyle}>{form.type === 'goods' ? 'HSN Code' : 'SAC Code'}</label>
                   <input style={inputStyle} value={form.hsn_sac}
@@ -347,7 +347,7 @@ export default function ProductsPage() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+              <div className="form-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                 <div>
                   <label style={labelStyle}>Purchase Price (₹)</label>
                   <input style={inputStyle} type="number" value={form.purchase_price}
@@ -382,7 +382,7 @@ export default function ProductsPage() {
                     </span>
                   </label>
                   {form.track_inventory && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                    <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                       <div>
                         <label style={labelStyle}>Opening Stock</label>
                         <input style={inputStyle} type="number" value={form.opening_stock}
@@ -416,7 +416,7 @@ export default function ProductsPage() {
                 }}>{error}</div>
               )}
 
-              <div style={{ display: 'flex', gap: '12px' }}>
+              <div className="btn-group" style={{ display: 'flex', gap: '12px' }}>
                 <button type="submit" disabled={saving} style={{
                   flex: 1, padding: '11px',
                   background: saving ? '#93c5fd' : '#2563eb',

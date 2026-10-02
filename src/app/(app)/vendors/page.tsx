@@ -168,8 +168,8 @@ export default function VendorsPage() {
   if (loading) return <div style={{ padding: '2rem', color: '#64748b', fontSize: '14px' }}>Loading...</div>
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '1100px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+    <div className="page-container" style={{ maxWidth: '1100px' }}>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
         <div>
           <h1 style={{ fontSize: '22px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>Vendors</h1>
           <p style={{ fontSize: '14px', color: '#64748b' }}>{vendors.length} vendor{vendors.length !== 1 ? 's' : ''}</p>
@@ -197,8 +197,8 @@ export default function VendorsPage() {
           <div style={{ fontSize: '13px' }}>Add vendors to track your purchases and ITC</div>
         </div>
       ) : (
-        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
-          <div style={{
+        <div className="responsive-table table-frame" style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
+          <div className="table-header" style={{
             display: 'grid', gridTemplateColumns: '2fr 2fr 1.5fr 1fr 80px',
             gap: '12px', padding: '10px 16px', background: '#f8fafc',
             fontSize: '12px', fontWeight: '600', color: '#64748b',
@@ -208,22 +208,22 @@ export default function VendorsPage() {
             <span>Status</span><span>Actions</span>
           </div>
           {filtered.map((vendor) => (
-            <div key={vendor.id} style={{
+            <div key={vendor.id} className="table-row" style={{
               display: 'grid', gridTemplateColumns: '2fr 2fr 1.5fr 1fr 80px',
               gap: '12px', padding: '12px 16px',
               borderBottom: '1px solid #f1f5f9',
               alignItems: 'center', fontSize: '13px'
             }}>
-              <div>
+              <div data-label="Name">
                 <div style={{ fontWeight: '500', color: '#1e293b' }}>{vendor.name}</div>
                 {vendor.business_name && <div style={{ fontSize: '12px', color: '#64748b' }}>{vendor.business_name}</div>}
               </div>
-              <div style={{ fontFamily: 'monospace', fontSize: '12px', color: '#374151' }}>{vendor.gstin || '—'}</div>
-              <div>
+              <div data-label="GSTIN" style={{ fontFamily: 'monospace', fontSize: '12px', color: '#374151' }}>{vendor.gstin || '—'}</div>
+              <div data-label="Phone / Email">
                 <div style={{ color: '#374151' }}>{vendor.phone || '—'}</div>
                 <div style={{ fontSize: '12px', color: '#64748b' }}>{vendor.email || ''}</div>
               </div>
-              <div>
+              <div data-label="Status">
                 <span style={{
                   fontSize: '11px', padding: '2px 8px', borderRadius: '99px',
                   background: vendor.is_active ? '#f0fdf4' : '#f8fafc',
@@ -232,7 +232,7 @@ export default function VendorsPage() {
                   {vendor.is_active ? 'Active' : 'Inactive'}
                 </span>
               </div>
-              <div>
+              <div data-label="Actions" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                 <button onClick={() => handleEdit(vendor)} style={{
                   padding: '4px 10px', background: '#f1f5f9',
                   border: '1px solid #e2e8f0', borderRadius: '6px',
@@ -245,12 +245,12 @@ export default function VendorsPage() {
       )}
 
       {showForm && (
-        <div style={{
+        <div className="modal-container" style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           zIndex: 100, padding: '1rem'
         }}>
-          <div style={{
+          <div className="modal-content" style={{
             background: 'white', borderRadius: '16px', padding: '2rem',
             width: '100%', maxWidth: '620px', maxHeight: '90vh', overflowY: 'auto'
           }}>
@@ -263,7 +263,7 @@ export default function VendorsPage() {
             </div>
 
             <form onSubmit={handleSubmit}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+              <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                 <div>
                   <label style={labelStyle}>Vendor Name *</label>
                   <input style={inputStyle} value={form.name}
@@ -278,7 +278,7 @@ export default function VendorsPage() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+              <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                 <div>
                   <label style={labelStyle}>GSTIN</label>
                   <input style={inputStyle} value={form.gstin}
@@ -300,7 +300,7 @@ export default function VendorsPage() {
                   placeholder="Street / Building" />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+              <div className="form-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                 <div>
                   <label style={labelStyle}>City</label>
                   <input style={inputStyle} value={form.city}
@@ -328,7 +328,7 @@ export default function VendorsPage() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
+              <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
                 <div>
                   <label style={labelStyle}>Phone</label>
                   <input style={inputStyle} value={form.phone}
@@ -351,7 +351,7 @@ export default function VendorsPage() {
                 }}>{error}</div>
               )}
 
-              <div style={{ display: 'flex', gap: '12px' }}>
+              <div className="btn-group" style={{ display: 'flex', gap: '12px' }}>
                 <button type="submit" disabled={saving} style={{
                   flex: 1, padding: '11px',
                   background: saving ? '#93c5fd' : '#2563eb',

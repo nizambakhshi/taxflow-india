@@ -275,8 +275,8 @@ export default function DebitNotesPage() {
   if (loading) return <div style={{ padding: '2rem', color: '#64748b', fontSize: '14px' }}>Loading...</div>
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '1100px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+    <div className="page-container" style={{ maxWidth: '1100px' }}>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
         <div>
           <h1 style={{ fontSize: '22px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>Debit Notes</h1>
           <p style={{ fontSize: '14px', color: '#64748b' }}>
@@ -310,8 +310,8 @@ export default function DebitNotesPage() {
           <div style={{ fontSize: '13px' }}>Issue debit notes for purchase returns or vendor corrections</div>
         </div>
       ) : (
-        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
-          <div style={{
+        <div className="responsive-table table-frame" style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
+          <div className="table-header" style={{
             display: 'grid', gridTemplateColumns: '1.5fr 2fr 1fr 1.5fr 1fr 1fr',
             gap: '12px', padding: '10px 16px', background: '#f8fafc',
             fontSize: '12px', fontWeight: '600', color: '#64748b',
@@ -322,17 +322,17 @@ export default function DebitNotesPage() {
             <span>Reason</span><span>Amount</span>
           </div>
           {debitNotes.map(dn => (
-            <div key={dn.id} style={{
+            <div key={dn.id} className="table-row" style={{
               display: 'grid', gridTemplateColumns: '1.5fr 2fr 1fr 1.5fr 1fr 1fr',
               gap: '12px', padding: '12px 16px',
               borderBottom: '1px solid #f1f5f9',
               alignItems: 'center', fontSize: '13px'
             }}>
-              <div style={{ fontWeight: '600', color: '#d97706' }}>{dn.debit_note_number}</div>
-              <div style={{ color: '#1e293b' }}>{dn.vendor_name}</div>
-              <div style={{ color: '#64748b' }}>{new Date(dn.debit_note_date).toLocaleDateString('en-IN')}</div>
-              <div style={{ color: '#64748b', fontSize: '12px' }}>{dn.bill_number || '—'}</div>
-              <div>
+              <div data-label="Debit Note No." style={{ fontWeight: '600', color: '#d97706' }}>{dn.debit_note_number}</div>
+              <div data-label="Vendor" style={{ color: '#1e293b' }}>{dn.vendor_name}</div>
+              <div data-label="Date" style={{ color: '#64748b' }}>{new Date(dn.debit_note_date).toLocaleDateString('en-IN')}</div>
+              <div data-label="Against Bill" style={{ color: '#64748b', fontSize: '12px' }}>{dn.bill_number || '—'}</div>
+              <div data-label="Reason">
                 <span style={{
                   fontSize: '11px', padding: '2px 8px', borderRadius: '99px',
                   background: '#fef9c3', color: '#854d0e'

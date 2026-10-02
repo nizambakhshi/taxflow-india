@@ -14,12 +14,47 @@ body {
   color: #1e293b;
 }
 
+/* ── PAGE LAYOUT ── */
+/* Add to page root divs; controls padding at each breakpoint */
+.page-container {
+  padding: 1.5rem;
+}
+
 /* ── RESPONSIVE TABLE → CARDS ── */
-/* Wrap tables in this class to make them card-based on mobile */
+/* Wrap table-like grids in this class to make them card-based on mobile.
+   Header row: .table-header. Data rows: .table-row with data-label on each cell. */
 .responsive-table {
   width: 100%;
 }
 
+/* Outer wrapper that frames the table on desktop, transparent on mobile */
+.table-frame {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+/* ── HORIZONTAL SCROLL AREAS ── */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Tab bars scroll horizontally instead of wrapping/crushing */
+.tab-bar {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 2px;
+}
+
+.tab-bar > * {
+  flex-shrink: 0;
+}
+
+/* ── MOBILE (<768px) ── */
 @media (max-width: 768px) {
   /* Hide table headers on mobile */
   .responsive-table .table-header {
@@ -30,11 +65,19 @@ body {
   .responsive-table .table-row {
     display: block !important;
     background: white;
-    border: 1px solid #e2e8f0;
+    border: 1px solid #e2e8f0 !important;
     border-radius: 12px;
-    padding: 1rem;
+    padding: 1rem !important;
     margin-bottom: 10px;
     grid-template-columns: 1fr !important;
+  }
+
+  /* Table frame is invisible when rows are cards */
+  .table-frame {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    overflow: visible;
   }
 
   /* Label each cell with data-label attribute */
@@ -60,17 +103,17 @@ body {
     grid-template-columns: 1fr !important;
   }
 
-  /* Metric card grids */
+  /* Metric card grids: 2-across on mobile */
   .metric-grid {
     grid-template-columns: 1fr 1fr !important;
   }
 
-  /* Hide less important columns on mobile */
+  /* Hide less important columns/elements on mobile */
   .hide-mobile {
     display: none !important;
   }
 
-  /* Full width buttons on mobile */
+  /* Stacked full-width buttons on mobile */
   .btn-group {
     flex-direction: column !important;
     width: 100% !important;
@@ -82,7 +125,62 @@ body {
     text-align: center !important;
   }
 
-  /* Modal full screen on mobile */
+  /* Page header (title + actions) stacks vertically */
+  .page-header {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+  }
+
+  /* Toolbars wrap instead of overflowing */
+  .toolbar {
+    flex-wrap: wrap;
+  }
+
+  .toolbar > * {
+    flex: 1 1 160px;
+  }
+
+  /* ── LINE ITEM EDITORS ──
+     Header row: .line-items-head (hidden on mobile).
+     Each item row: .line-item-row with data-label wrappers on cells.
+     .li-full spans both columns (item name, delete button). */
+  .line-items-head {
+    display: none !important;
+  }
+
+  .line-item-row {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 10px !important;
+    align-items: end;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 12px;
+    margin-bottom: 10px;
+  }
+
+  .line-item-row > * {
+    min-width: 0;
+  }
+
+  .line-item-row [data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 2px;
+  }
+
+  .line-item-row .li-full {
+    grid-column: 1 / -1;
+  }
+
+  /* ── MODALS: bottom sheet on mobile ── */
   .modal-container {
     padding: 0 !important;
     align-items: flex-end !important;
@@ -90,16 +188,30 @@ body {
 
   .modal-content {
     border-radius: 16px 16px 0 0 !important;
-    max-height: 95vh !important;
+    max-height: 92vh !important;
     width: 100% !important;
     max-width: 100% !important;
   }
 }
 
-/* ── SCROLLABLE TABLES ON MOBILE ── */
-.table-scroll {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
+/* ── TABLET (769px–1024px) ── */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .page-container {
+    padding: 1.25rem !important;
+  }
+
+  .form-grid-3 {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  .metric-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* Hide less important columns on tablet */
+  .hide-tablet {
+    display: none !important;
+  }
 }
 
 /* ── TOUCH FRIENDLY TARGETS ── */

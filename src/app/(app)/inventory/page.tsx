@@ -209,9 +209,9 @@ export default function InventoryPage() {
   )
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '1100px' }}>
+    <div className="page-container" style={{ maxWidth: '1100px' }}>
       {/* Header */}
-      <div style={{
+      <div className="page-header" style={{
         display: 'flex', justifyContent: 'space-between',
         alignItems: 'center', marginBottom: '1.5rem'
       }}>
@@ -236,7 +236,7 @@ export default function InventoryPage() {
       </div>
 
       {/* Summary cards */}
-      <div style={{
+      <div className="metric-grid" style={{
         display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
         gap: '1rem', marginBottom: '1.5rem'
       }}>
@@ -276,7 +276,7 @@ export default function InventoryPage() {
       </div>
 
       {/* Tabs */}
-      <div style={{ borderBottom: '1px solid #e2e8f0', marginBottom: '1rem', display: 'flex' }}>
+      <div className="tab-bar" style={{ borderBottom: '1px solid #e2e8f0', marginBottom: '1rem', display: 'flex' }}>
         <button style={tabStyle('stock')} onClick={() => setActiveTab('stock')}>
           📦 Stock Levels
         </button>
@@ -289,7 +289,7 @@ export default function InventoryPage() {
       {activeTab === 'stock' && (
         <>
           {/* Filters */}
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '1rem' }}>
+          <div className="toolbar" style={{ display: 'flex', gap: '8px', marginBottom: '1rem' }}>
             <input
               style={{ ...inputStyle, maxWidth: '280px' }}
               placeholder="Search products..."
@@ -346,11 +346,11 @@ export default function InventoryPage() {
               No products match your filter
             </div>
           ) : (
-            <div style={{
+            <div className="responsive-table table-frame" style={{
               background: 'white', border: '1px solid #e2e8f0',
               borderRadius: '12px', overflow: 'hidden'
             }}>
-              <div style={{
+              <div className="table-header" style={{
                 display: 'grid',
                 gridTemplateColumns: '2.5fr 1fr 1fr 1fr 1fr 1fr 120px',
                 gap: '12px', padding: '10px 16px', background: '#f8fafc',
@@ -373,7 +373,7 @@ export default function InventoryPage() {
                 const stockValue = product.current_stock * product.selling_price
 
                 return (
-                  <div key={product.id} style={{
+                  <div key={product.id} className="table-row" style={{
                     display: 'grid',
                     gridTemplateColumns: '2.5fr 1fr 1fr 1fr 1fr 1fr 120px',
                     gap: '12px', padding: '12px 16px',
@@ -381,7 +381,7 @@ export default function InventoryPage() {
                     alignItems: 'center', fontSize: '13px',
                     background: isOut ? '#fff5f5' : isLow ? '#fffbeb' : 'white'
                   }}>
-                    <div>
+                    <div data-label="Product">
                       <div style={{ fontWeight: '500', color: '#1e293b' }}>
                         {product.name}
                       </div>
@@ -396,20 +396,20 @@ export default function InventoryPage() {
                         </div>
                       )}
                     </div>
-                    <div style={{ color: '#64748b' }}>{product.unit}</div>
-                    <div style={{
+                    <div data-label="Unit" style={{ color: '#64748b' }}>{product.unit}</div>
+                    <div data-label="Current Stock" style={{
                       fontWeight: '700', fontSize: '15px',
                       color: isOut ? '#dc2626' : isLow ? '#d97706' : '#059669'
                     }}>
                       {Number(product.current_stock).toFixed(2)}
                     </div>
-                    <div style={{ color: '#64748b' }}>
+                    <div data-label="Min Stock" style={{ color: '#64748b' }}>
                       {Number(product.minimum_stock).toFixed(2)}
                     </div>
-                    <div style={{ fontWeight: '500', color: '#374151' }}>
+                    <div data-label="Stock Value" style={{ fontWeight: '500', color: '#374151' }}>
                       ₹{formatINR(stockValue)}
                     </div>
-                    <div>
+                    <div data-label="Status">
                       {isOut ? (
                         <span style={{
                           fontSize: '11px', padding: '3px 8px',
@@ -430,7 +430,7 @@ export default function InventoryPage() {
                         }}>In Stock</span>
                       )}
                     </div>
-                    <div style={{ display: 'flex', gap: '6px' }}>
+                    <div data-label="Actions" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                       <button
                         onClick={() => {
                           setSelectedProduct(product)
@@ -475,7 +475,7 @@ export default function InventoryPage() {
       {/* MOVEMENTS TAB */}
       {activeTab === 'movements' && (
         <>
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '1rem' }}>
+          <div className="toolbar" style={{ display: 'flex', gap: '8px', marginBottom: '1rem' }}>
             <select
               style={{ ...inputStyle, maxWidth: '280px', cursor: 'pointer' }}
               value={movementProduct}
@@ -504,11 +504,11 @@ export default function InventoryPage() {
               </div>
             </div>
           ) : (
-            <div style={{
+            <div className="responsive-table table-frame" style={{
               background: 'white', border: '1px solid #e2e8f0',
               borderRadius: '12px', overflow: 'hidden'
             }}>
-              <div style={{
+              <div className="table-header" style={{
                 display: 'grid',
                 gridTemplateColumns: '1.5fr 2fr 1fr 1fr 1fr 1.5fr',
                 gap: '12px', padding: '10px 16px', background: '#f8fafc',
@@ -529,14 +529,14 @@ export default function InventoryPage() {
                 }
                 const product = m.products as any
                 return (
-                  <div key={m.id} style={{
+                  <div key={m.id} className="table-row" style={{
                     display: 'grid',
                     gridTemplateColumns: '1.5fr 2fr 1fr 1fr 1fr 1.5fr',
                     gap: '12px', padding: '11px 16px',
                     borderBottom: '1px solid #f1f5f9',
                     alignItems: 'center', fontSize: '13px'
                   }}>
-                    <div style={{ color: '#64748b' }}>
+                    <div data-label="Date" style={{ color: '#64748b' }}>
                       {new Date(m.created_at).toLocaleDateString('en-IN', {
                         day: '2-digit', month: 'short', year: 'numeric'
                       })}
@@ -546,13 +546,13 @@ export default function InventoryPage() {
                         })}
                       </div>
                     </div>
-                    <div style={{ fontWeight: '500', color: '#1e293b' }}>
+                    <div data-label="Product" style={{ fontWeight: '500', color: '#1e293b' }}>
                       {product?.name || '—'}
                       <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: '400' }}>
                         {product?.unit || ''}
                       </div>
                     </div>
-                    <div>
+                    <div data-label="Type">
                       <span style={{
                         fontSize: '11px', padding: '2px 8px',
                         borderRadius: '99px', fontWeight: '600',
@@ -561,16 +561,16 @@ export default function InventoryPage() {
                         {mc.label}
                       </span>
                     </div>
-                    <div style={{
+                    <div data-label="Qty Change" style={{
                       fontWeight: '600', fontSize: '14px',
                       color: Number(m.quantity) > 0 ? '#059669' : '#dc2626'
                     }}>
                       {Number(m.quantity) > 0 ? '+' : ''}{Number(m.quantity).toFixed(2)}
                     </div>
-                    <div style={{ fontWeight: '500', color: '#374151' }}>
+                    <div data-label="Balance" style={{ fontWeight: '500', color: '#374151' }}>
                       {Number(m.balance_after).toFixed(2)}
                     </div>
-                    <div style={{ color: '#64748b', fontSize: '12px' }}>
+                    <div data-label="Reference" style={{ color: '#64748b', fontSize: '12px' }}>
                       {m.reference_number || m.notes || '—'}
                     </div>
                   </div>
@@ -583,12 +583,12 @@ export default function InventoryPage() {
 
       {/* Adjustment Modal */}
       {showAdjustForm && selectedProduct && (
-        <div style={{
+        <div className="modal-container" style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
           display: 'flex', alignItems: 'center',
           justifyContent: 'center', zIndex: 100, padding: '1rem'
         }}>
-          <div style={{
+          <div className="modal-content" style={{
             background: 'white', borderRadius: '16px',
             padding: '2rem', width: '100%', maxWidth: '440px'
           }}>
@@ -713,7 +713,7 @@ export default function InventoryPage() {
               }}>{adjustError}</div>
             )}
 
-            <div style={{ display: 'flex', gap: '12px' }}>
+            <div className="btn-group" style={{ display: 'flex', gap: '12px' }}>
               <button
                 onClick={handleAdjustment}
                 disabled={adjusting}

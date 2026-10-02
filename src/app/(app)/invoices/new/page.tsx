@@ -413,9 +413,9 @@ export default function NewInvoicePage() {
   }
 
   return (
-    <div style={{ padding: '1.5rem', maxWidth: '1100px' }}>
+    <div className="page-container" style={{ maxWidth: '1100px' }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
         <div>
           <button onClick={() => router.push('/invoices')} style={{
             background: 'none', border: 'none', color: '#2563eb',
@@ -424,7 +424,7 @@ export default function NewInvoicePage() {
           }}>← Back to Invoices</button>
           <h1 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b' }}>New Tax Invoice</h1>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div className="btn-group" style={{ display: 'flex', gap: '8px' }}>
           <button onClick={() => handleSave('draft')} disabled={saving} style={{
             padding: '9px 18px', background: 'white', color: '#374151',
             border: '1px solid #e2e8f0', borderRadius: '8px',
@@ -449,7 +449,7 @@ export default function NewInvoicePage() {
         }}>{error}</div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+      <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
         {/* Seller details */}
         <div style={{
           background: 'white', border: '1px solid #e2e8f0',
@@ -471,7 +471,7 @@ export default function NewInvoicePage() {
           <div style={{ fontSize: '11px', fontWeight: '600', color: '#94a3b8', marginBottom: '8px', textTransform: 'uppercase' as const }}>
             Invoice Details
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+          <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
             <div>
               <label style={labelStyle}>Invoice Number</label>
               <input style={{ ...inputStyle, background: '#f8fafc', fontWeight: '600' }}
@@ -509,7 +509,7 @@ export default function NewInvoicePage() {
         <div style={{ fontSize: '11px', fontWeight: '600', color: '#94a3b8', marginBottom: '10px', textTransform: 'uppercase' as const }}>
           Bill To (Customer)
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '10px' }}>
+        <div className="form-grid-3" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '10px' }}>
           <div>
             <label style={labelStyle}>Select Customer *</label>
             <select style={{ ...inputStyle, cursor: 'pointer' }} value={customerId}
@@ -575,7 +575,7 @@ export default function NewInvoicePage() {
         </div>
 
         {/* Column headers */}
-        <div style={{
+        <div className="line-items-head" style={{
           display: 'grid',
           gridTemplateColumns: '2fr 1fr 0.8fr 1fr 0.7fr 0.7fr 1fr 36px',
           gap: '6px', marginBottom: '6px',
@@ -593,13 +593,13 @@ export default function NewInvoicePage() {
 
         {lineItems.map((item, index) => (
           <div key={index} style={{ marginBottom: '8px' }}>
-            <div style={{
+            <div className="line-item-row" style={{
               display: 'grid',
               gridTemplateColumns: '2fr 1fr 0.8fr 1fr 0.7fr 0.7fr 1fr 36px',
               gap: '6px', alignItems: 'center'
             }}>
               {/* Item name / product select */}
-              <div>
+              <div className="li-full" data-label="Item *">
                 <select
                   style={{ ...inputStyle, marginBottom: '4px', cursor: 'pointer' }}
                   value={item.product_id}
@@ -615,29 +615,39 @@ export default function NewInvoicePage() {
                   placeholder="Or type item name" />
               </div>
 
-              <input style={inputStyle} value={item.hsn_sac}
-                onChange={e => updateLineItem(index, 'hsn_sac', e.target.value)}
-                placeholder="HSN/SAC" />
+              <div data-label="HSN/SAC">
+                <input style={inputStyle} value={item.hsn_sac}
+                  onChange={e => updateLineItem(index, 'hsn_sac', e.target.value)}
+                  placeholder="HSN/SAC" />
+              </div>
 
-              <input style={inputStyle} type="number" value={item.quantity}
-                onChange={e => updateLineItem(index, 'quantity', e.target.value)}
-                min="0" step="0.001" />
+              <div data-label="Qty *">
+                <input style={inputStyle} type="number" value={item.quantity}
+                  onChange={e => updateLineItem(index, 'quantity', e.target.value)}
+                  min="0" step="0.001" />
+              </div>
 
-              <input style={inputStyle} type="number" value={item.rate}
-                onChange={e => updateLineItem(index, 'rate', e.target.value)}
-                placeholder="0.00" min="0" step="0.01" />
+              <div data-label="Rate (₹) *">
+                <input style={inputStyle} type="number" value={item.rate}
+                  onChange={e => updateLineItem(index, 'rate', e.target.value)}
+                  placeholder="0.00" min="0" step="0.01" />
+              </div>
 
-              <input style={inputStyle} type="number" value={item.discount_percent}
-                onChange={e => updateLineItem(index, 'discount_percent', e.target.value)}
-                min="0" max="100" step="0.01" />
+              <div data-label="Disc %">
+                <input style={inputStyle} type="number" value={item.discount_percent}
+                  onChange={e => updateLineItem(index, 'discount_percent', e.target.value)}
+                  min="0" max="100" step="0.01" />
+              </div>
 
-              <select style={{ ...inputStyle, cursor: 'pointer' }} value={item.gst_rate}
-                onChange={e => updateLineItem(index, 'gst_rate', e.target.value)}>
-                {[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}
-              </select>
+              <div data-label="GST %">
+                <select style={{ ...inputStyle, cursor: 'pointer' }} value={item.gst_rate}
+                  onChange={e => updateLineItem(index, 'gst_rate', e.target.value)}>
+                  {[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}
+                </select>
+              </div>
 
               {/* Calculated total */}
-              <div style={{
+              <div data-label="Amount" style={{
                 padding: '8px 10px', background: '#f8fafc',
                 border: '1px solid #e2e8f0', borderRadius: '6px',
                 fontSize: '13px', fontWeight: '500', color: '#1e293b',
@@ -646,13 +656,15 @@ export default function NewInvoicePage() {
                 {item.calculated ? `₹${formatINR(item.calculated.total_amount)}` : '—'}
               </div>
 
-              <button onClick={() => removeLine(index)} style={{
-                width: '32px', height: '32px', border: '1px solid #fecaca',
-                background: '#fef2f2', borderRadius: '6px',
-                cursor: lineItems.length === 1 ? 'not-allowed' : 'pointer',
-                color: '#dc2626', fontSize: '16px',
-                opacity: lineItems.length === 1 ? 0.4 : 1
-              }}>×</button>
+              <div className="li-full" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button onClick={() => removeLine(index)} style={{
+                  width: '32px', height: '32px', border: '1px solid #fecaca',
+                  background: '#fef2f2', borderRadius: '6px',
+                  cursor: lineItems.length === 1 ? 'not-allowed' : 'pointer',
+                  color: '#dc2626', fontSize: '16px',
+                  opacity: lineItems.length === 1 ? 0.4 : 1
+                }}>×</button>
+              </div>
             </div>
 
             {/* Tax breakdown for this line */}
@@ -681,7 +693,7 @@ export default function NewInvoicePage() {
         </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+      <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
         {/* Notes & Terms */}
         <div style={{
           background: 'white', border: '1px solid #e2e8f0',
@@ -750,7 +762,7 @@ export default function NewInvoicePage() {
       </div>
 
       {/* Save buttons */}
-      <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+      <div className="btn-group" style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
         <button onClick={() => router.push('/invoices')} style={{
           padding: '10px 20px', background: 'white', color: '#374151',
           border: '1px solid #e2e8f0', borderRadius: '8px',

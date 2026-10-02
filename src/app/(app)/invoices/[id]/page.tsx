@@ -241,7 +241,7 @@ export default function InvoiceDetailPage() {
           ← Back to Invoices
         </button>
 
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {invoice.status === 'sent' && invoice.payment_status !== 'paid' && (
             <button onClick={handleMarkPaid} style={{
               padding: '8px 16px', background: '#f0fdf4',
@@ -300,18 +300,22 @@ export default function InvoiceDetailPage() {
       )}
 
       {/* ── PAGE WRAPPER ── */}
-      <div style={{ padding: '1.5rem 2rem' }}>
+      <div className="page-container">
 
         {/*
           invoice-capture: this is what html2canvas screenshots.
           The 24px padding here becomes the white margin in the PDF.
+          min-width keeps the document (and the generated PDF) at a fixed
+          layout width; the scroll wrapper lets small screens pan through it.
         */}
+        <div className="table-scroll">
         <div
           id="invoice-capture"
           style={{
             background: 'white',
             padding: '24px',
             maxWidth: '760px',
+            minWidth: '700px',
             margin: '0 auto',
             boxSizing: 'border-box' as const,
           }}
@@ -722,12 +726,18 @@ export default function InvoiceDetailPage() {
 
         </div>
         {/* end invoice-capture */}
+        </div>
+        {/* end table-scroll */}
 
       </div>
       {/* end page wrapper */}
 
       {/* ── PRINT STYLES ── */}
       <style>{`
+        @media (max-width: 768px) {
+          #action-bar { padding: 10px 1rem !important; }
+        }
+
         @media print {
           body { margin: 0 !important; background: white !important; }
           #action-bar { display: none !important; }
@@ -737,6 +747,7 @@ export default function InvoiceDetailPage() {
           #invoice-capture {
             padding: 0 !important;
             max-width: 100% !important;
+            min-width: 0 !important;
             margin: 0 !important;
           }
           #invoice-document {

@@ -385,9 +385,9 @@ export default function QuotationsPage() {
   if (loading) return <div style={{ padding: '2rem', color: '#64748b', fontSize: '14px' }}>Loading...</div>
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '1100px' }}>
+    <div className="page-container" style={{ maxWidth: '1100px' }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
         <div>
           <h1 style={{ fontSize: '22px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>Quotations</h1>
           <p style={{ fontSize: '14px', color: '#64748b' }}>{quotations.length} quotation{quotations.length !== 1 ? 's' : ''}</p>
@@ -430,8 +430,8 @@ export default function QuotationsPage() {
           }}>Create Quotation</button>
         </div>
       ) : (
-        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
-          <div style={{
+        <div className="responsive-table table-frame" style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
+          <div className="table-header" style={{
             display: 'grid', gridTemplateColumns: '1.5fr 2fr 1fr 1fr 1fr 1fr',
             gap: '12px', padding: '10px 16px', background: '#f8fafc',
             fontSize: '12px', fontWeight: '600', color: '#64748b',
@@ -444,18 +444,18 @@ export default function QuotationsPage() {
           {quotations.map(q => {
             const sc = STATUS_CONFIG[q.status] || STATUS_CONFIG.draft
             return (
-              <div key={q.id} onClick={() => openView(q)} style={{
+              <div key={q.id} onClick={() => openView(q)} className="table-row" style={{
                 display: 'grid', gridTemplateColumns: '1.5fr 2fr 1fr 1fr 1fr 1fr',
                 gap: '12px', padding: '12px 16px',
                 borderBottom: '1px solid #f1f5f9',
                 alignItems: 'center', fontSize: '13px', cursor: 'pointer'
               }}>
-                <div style={{ fontWeight: '600', color: '#2563eb' }}>{q.quotation_number}</div>
-                <div style={{ color: '#1e293b' }}>{q.customer_name}</div>
-                <div style={{ color: '#64748b' }}>{new Date(q.quotation_date).toLocaleDateString('en-IN')}</div>
-                <div style={{ color: '#64748b' }}>{q.valid_until ? new Date(q.valid_until).toLocaleDateString('en-IN') : '—'}</div>
-                <div style={{ fontWeight: '500' }}>₹{formatINR(q.grand_total)}</div>
-                <div>
+                <div data-label="Quotation No." style={{ fontWeight: '600', color: '#2563eb' }}>{q.quotation_number}</div>
+                <div data-label="Customer" style={{ color: '#1e293b' }}>{q.customer_name}</div>
+                <div data-label="Date" style={{ color: '#64748b' }}>{new Date(q.quotation_date).toLocaleDateString('en-IN')}</div>
+                <div data-label="Valid Until" style={{ color: '#64748b' }}>{q.valid_until ? new Date(q.valid_until).toLocaleDateString('en-IN') : '—'}</div>
+                <div data-label="Amount" style={{ fontWeight: '500' }}>₹{formatINR(q.grand_total)}</div>
+                <div data-label="Status">
                   <span style={{
                     fontSize: '11px', padding: '3px 10px', borderRadius: '99px',
                     fontWeight: '600', background: sc.bg, color: sc.color
@@ -469,12 +469,12 @@ export default function QuotationsPage() {
 
       {/* ── VIEW / MANAGE QUOTATION MODAL ── */}
       {showView && selectedQuotation && (
-        <div style={{
+        <div className="modal-container" style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
           display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
           zIndex: 100, padding: '2rem 1rem', overflowY: 'auto'
         }}>
-          <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '800px', overflow: 'hidden' }}>
+          <div className="modal-content" style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '800px', overflowX: 'hidden', overflowY: 'auto' }}>
 
             {/* Modal header */}
             <div style={{
@@ -614,7 +614,8 @@ export default function QuotationsPage() {
                 {selectedQuotation.customer_address && <div style={{ color: '#64748b' }}>{selectedQuotation.customer_address}</div>}
               </div>
 
-              <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '1rem' }}>
+              <div className="table-scroll">
+              <table style={{ width: '100%', minWidth: '600px', borderCollapse: 'collapse', marginBottom: '1rem' }}>
                 <thead>
                   <tr style={{ background: '#f8fafc' }}>
                     {['#', 'Item', 'HSN/SAC', 'Qty', 'Rate', 'Taxable', 'Tax', 'Total'].map(h => (
@@ -645,6 +646,7 @@ export default function QuotationsPage() {
                   ))}
                 </tbody>
               </table>
+              </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
                 <div style={{ width: '260px' }}>
@@ -677,19 +679,19 @@ export default function QuotationsPage() {
 
       {/* ── CREATE FORM MODAL ── */}
       {showForm && (
-        <div style={{
+        <div className="modal-container" style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
           display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
           zIndex: 100, padding: '2rem 1rem', overflowY: 'auto'
         }}>
-          <div style={{ background: 'white', borderRadius: '16px', padding: '2rem', width: '100%', maxWidth: '900px' }}>
+          <div className="modal-content" style={{ background: 'white', borderRadius: '16px', padding: '2rem', width: '100%', maxWidth: '900px', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
               <h2 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>New Quotation</h2>
               <button onClick={() => { setShowForm(false); resetForm() }}
                 style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#94a3b8' }}>✕</button>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+            <div className="form-grid-3" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
               <div>
                 <label style={labelStyle}>Customer *</label>
                 <select style={{ ...inputStyle, cursor: 'pointer' }} value={customerId} onChange={e => handleCustomerChange(e.target.value)}>
@@ -707,7 +709,7 @@ export default function QuotationsPage() {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+            <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
               <div>
                 <label style={labelStyle}>Place of Supply *</label>
                 <select style={{ ...inputStyle, cursor: 'pointer' }} value={placeOfSupply}
@@ -745,32 +747,44 @@ export default function QuotationsPage() {
             {/* Line items */}
             <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '1rem', marginBottom: '1rem' }}>
               <div style={{ fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '8px' }}>Line Items</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 0.7fr 1fr 0.6fr 0.6fr 1fr 32px', gap: '6px', marginBottom: '6px', fontSize: '11px', fontWeight: '600', color: '#94a3b8' }}>
+              <div className="line-items-head" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 0.7fr 1fr 0.6fr 0.6fr 1fr 32px', gap: '6px', marginBottom: '6px', fontSize: '11px', fontWeight: '600', color: '#94a3b8' }}>
                 <span>Item</span><span>HSN/SAC</span><span>Qty</span><span>Rate</span><span>Disc%</span><span>GST%</span><span>Amount</span><span></span>
               </div>
 
               {lineItems.map((item, index) => (
                 <div key={index} style={{ marginBottom: '8px' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 0.7fr 1fr 0.6fr 0.6fr 1fr 32px', gap: '6px', alignItems: 'center' }}>
-                    <div>
+                  <div className="line-item-row" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 0.7fr 1fr 0.6fr 0.6fr 1fr 32px', gap: '6px', alignItems: 'center' }}>
+                    <div className="li-full" data-label="Item">
                       <select style={{ ...inputStyle, marginBottom: '4px', cursor: 'pointer', fontSize: '12px' }} value={item.product_id} onChange={e => handleProductSelect(index, e.target.value)}>
                         <option value="">Select product...</option>
                         {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select>
                       <input style={{ ...inputStyle, fontSize: '12px' }} value={item.item_name} onChange={e => updateLine(index, 'item_name', e.target.value)} placeholder="Item name" />
                     </div>
-                    <input style={{ ...inputStyle, fontSize: '12px' }} value={item.hsn_sac} onChange={e => updateLine(index, 'hsn_sac', e.target.value)} placeholder="HSN/SAC" />
-                    <input style={{ ...inputStyle, fontSize: '12px' }} type="number" value={item.quantity} onChange={e => updateLine(index, 'quantity', e.target.value)} min="0" />
-                    <input style={{ ...inputStyle, fontSize: '12px' }} type="number" value={item.rate} onChange={e => updateLine(index, 'rate', e.target.value)} placeholder="0.00" min="0" />
-                    <input style={{ ...inputStyle, fontSize: '12px' }} type="number" value={item.discount_percent} onChange={e => updateLine(index, 'discount_percent', e.target.value)} min="0" max="100" />
-                    <select style={{ ...inputStyle, fontSize: '12px', cursor: 'pointer' }} value={item.gst_rate} onChange={e => updateLine(index, 'gst_rate', e.target.value)}>
-                      {[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}
-                    </select>
-                    <div style={{ padding: '8px 10px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '12px', fontWeight: '500', textAlign: 'right' as const }}>
+                    <div data-label="HSN/SAC">
+                      <input style={{ ...inputStyle, fontSize: '12px' }} value={item.hsn_sac} onChange={e => updateLine(index, 'hsn_sac', e.target.value)} placeholder="HSN/SAC" />
+                    </div>
+                    <div data-label="Qty">
+                      <input style={{ ...inputStyle, fontSize: '12px' }} type="number" value={item.quantity} onChange={e => updateLine(index, 'quantity', e.target.value)} min="0" />
+                    </div>
+                    <div data-label="Rate">
+                      <input style={{ ...inputStyle, fontSize: '12px' }} type="number" value={item.rate} onChange={e => updateLine(index, 'rate', e.target.value)} placeholder="0.00" min="0" />
+                    </div>
+                    <div data-label="Disc %">
+                      <input style={{ ...inputStyle, fontSize: '12px' }} type="number" value={item.discount_percent} onChange={e => updateLine(index, 'discount_percent', e.target.value)} min="0" max="100" />
+                    </div>
+                    <div data-label="GST %">
+                      <select style={{ ...inputStyle, fontSize: '12px', cursor: 'pointer' }} value={item.gst_rate} onChange={e => updateLine(index, 'gst_rate', e.target.value)}>
+                        {[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}
+                      </select>
+                    </div>
+                    <div data-label="Amount" style={{ padding: '8px 10px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '12px', fontWeight: '500', textAlign: 'right' as const }}>
                       {item.calculated ? `₹${formatINR(item.calculated.total_amount)}` : '—'}
                     </div>
-                    <button onClick={() => setLineItems(lineItems.filter((_, i) => i !== index))} disabled={lineItems.length === 1}
-                      style={{ width: '28px', height: '28px', border: '1px solid #fecaca', background: '#fef2f2', borderRadius: '6px', cursor: 'pointer', color: '#dc2626', fontSize: '14px', opacity: lineItems.length === 1 ? 0.4 : 1 }}>×</button>
+                    <div className="li-full" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                      <button onClick={() => setLineItems(lineItems.filter((_, i) => i !== index))} disabled={lineItems.length === 1}
+                        style={{ width: '28px', height: '28px', border: '1px solid #fecaca', background: '#fef2f2', borderRadius: '6px', cursor: 'pointer', color: '#dc2626', fontSize: '14px', opacity: lineItems.length === 1 ? 0.4 : 1 }}>×</button>
+                    </div>
                   </div>
                   {item.calculated && (
                     <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px', paddingLeft: '4px', display: 'flex', gap: '12px' }}>
@@ -807,7 +821,7 @@ export default function QuotationsPage() {
               </div>
             )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+            <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
               <div>
                 <label style={labelStyle}>Notes</label>
                 <textarea style={{ ...inputStyle, height: '60px', resize: 'vertical' as const }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes for customer..." />
@@ -822,7 +836,7 @@ export default function QuotationsPage() {
               <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', padding: '10px 12px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{error}</div>
             )}
 
-            <div style={{ display: 'flex', gap: '12px' }}>
+            <div className="btn-group" style={{ display: 'flex', gap: '12px' }}>
               <button onClick={handleSave} disabled={saving} style={{
                 flex: 1, padding: '11px', background: saving ? '#93c5fd' : '#2563eb',
                 color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px',
