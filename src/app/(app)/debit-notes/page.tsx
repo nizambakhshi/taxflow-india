@@ -340,7 +340,7 @@ export default function DebitNotesPage() {
                   {DEBIT_REASONS.find(r => r.value === dn.reason)?.label || dn.reason || '—'}
                 </span>
               </div>
-              <div style={{ fontWeight: '600', color: '#d97706' }}>₹{formatINR(dn.grand_total)}</div>
+              <div data-label="Amount" style={{ fontWeight: '600', color: '#d97706' }}>₹{formatINR(dn.grand_total)}</div>
             </div>
           ))}
         </div>
@@ -348,12 +348,12 @@ export default function DebitNotesPage() {
 
       {/* CREATE FORM MODAL */}
       {showForm && (
-        <div style={{
+        <div className="modal-container" style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
           display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
           zIndex: 100, padding: '2rem 1rem', overflowY: 'auto'
         }}>
-          <div style={{
+          <div className="modal-content" style={{
             background: 'white', borderRadius: '16px',
             padding: '2rem', width: '100%', maxWidth: '820px'
           }}>
@@ -379,7 +379,7 @@ export default function DebitNotesPage() {
               </select>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+            <div className="form-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
               <div>
                 <label style={labelStyle}>Debit Note Date *</label>
                 <input style={inputStyle} type="date" value={debitDate}
@@ -407,7 +407,7 @@ export default function DebitNotesPage() {
             </div>
 
             {!billId && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+              <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                 <div>
                   <label style={labelStyle}>Vendor Name *</label>
                   <input style={inputStyle} value={vendorName}
@@ -449,7 +449,7 @@ export default function DebitNotesPage() {
             {/* Line items */}
             <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '1rem', marginBottom: '1rem' }}>
               <div style={{ fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '8px' }}>Items Being Returned</div>
-              <div style={{
+              <div className="line-items-head" style={{
                 display: 'grid', gridTemplateColumns: '2fr 1fr 0.7fr 1fr 0.6fr 1fr 32px',
                 gap: '6px', marginBottom: '6px',
                 fontSize: '11px', fontWeight: '600', color: '#94a3b8'
@@ -460,11 +460,11 @@ export default function DebitNotesPage() {
 
               {lineItems.map((item, index) => (
                 <div key={index} style={{ marginBottom: '8px' }}>
-                  <div style={{
+                  <div className="line-item-row" style={{
                     display: 'grid', gridTemplateColumns: '2fr 1fr 0.7fr 1fr 0.6fr 1fr 32px',
                     gap: '6px', alignItems: 'center'
                   }}>
-                    <div>
+                    <div className="li-full" data-label="Item">
                       <select style={{ ...inputStyle, marginBottom: '4px', cursor: 'pointer', fontSize: '12px' }}
                         value={item.product_id}
                         onChange={e => handleProductSelect(index, e.target.value)}>
@@ -475,37 +475,47 @@ export default function DebitNotesPage() {
                         onChange={e => { const u = [...lineItems]; u[index] = { ...u[index], item_name: e.target.value }; setLineItems(u) }}
                         placeholder="Item name" />
                     </div>
-                    <input style={{ ...inputStyle, fontSize: '12px' }} value={item.hsn_sac}
-                      onChange={e => { const u = [...lineItems]; u[index] = { ...u[index], hsn_sac: e.target.value }; setLineItems(u) }}
-                      placeholder="HSN/SAC" />
-                    <input style={{ ...inputStyle, fontSize: '12px' }} type="number" value={item.quantity}
-                      onChange={e => { const u = [...lineItems]; u[index] = { ...u[index], quantity: e.target.value }; setLineItems(u) }}
-                      min="0" />
-                    <input style={{ ...inputStyle, fontSize: '12px' }} type="number" value={item.rate}
-                      onChange={e => { const u = [...lineItems]; u[index] = { ...u[index], rate: e.target.value }; setLineItems(u) }}
-                      placeholder="0.00" min="0" />
-                    <select style={{ ...inputStyle, fontSize: '12px', cursor: 'pointer' }} value={item.gst_rate}
-                      onChange={e => { const u = [...lineItems]; u[index] = { ...u[index], gst_rate: e.target.value }; setLineItems(u) }}>
-                      {[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}
-                    </select>
-                    <div style={{
+                    <div data-label="HSN/SAC">
+                      <input style={{ ...inputStyle, fontSize: '12px' }} value={item.hsn_sac}
+                        onChange={e => { const u = [...lineItems]; u[index] = { ...u[index], hsn_sac: e.target.value }; setLineItems(u) }}
+                        placeholder="HSN/SAC" />
+                    </div>
+                    <div data-label="Qty">
+                      <input style={{ ...inputStyle, fontSize: '12px' }} type="number" value={item.quantity}
+                        onChange={e => { const u = [...lineItems]; u[index] = { ...u[index], quantity: e.target.value }; setLineItems(u) }}
+                        min="0" />
+                    </div>
+                    <div data-label="Rate (₹)">
+                      <input style={{ ...inputStyle, fontSize: '12px' }} type="number" value={item.rate}
+                        onChange={e => { const u = [...lineItems]; u[index] = { ...u[index], rate: e.target.value }; setLineItems(u) }}
+                        placeholder="0.00" min="0" />
+                    </div>
+                    <div data-label="GST %">
+                      <select style={{ ...inputStyle, fontSize: '12px', cursor: 'pointer' }} value={item.gst_rate}
+                        onChange={e => { const u = [...lineItems]; u[index] = { ...u[index], gst_rate: e.target.value }; setLineItems(u) }}>
+                        {[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}
+                      </select>
+                    </div>
+                    <div data-label="Amount" style={{
                       padding: '8px 10px', background: 'white',
                       border: '1px solid #e2e8f0', borderRadius: '6px',
                       fontSize: '12px', fontWeight: '500', textAlign: 'right' as const
                     }}>
                       {item.calculated ? `₹${formatINR(item.calculated.total_amount)}` : '—'}
                     </div>
-                    <button
-                      onClick={() => setLineItems(lineItems.filter((_, i) => i !== index))}
-                      disabled={lineItems.length === 1}
-                      style={{
-                        width: '28px', height: '28px',
-                        border: '1px solid #fecaca', background: '#fef2f2',
-                        borderRadius: '6px', cursor: 'pointer',
-                        color: '#dc2626', fontSize: '14px',
-                        opacity: lineItems.length === 1 ? 0.4 : 1
-                      }}
-                    >×</button>
+                    <div className="li-full" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                      <button
+                        onClick={() => setLineItems(lineItems.filter((_, i) => i !== index))}
+                        disabled={lineItems.length === 1}
+                        style={{
+                          width: '28px', height: '28px',
+                          border: '1px solid #fecaca', background: '#fef2f2',
+                          borderRadius: '6px', cursor: 'pointer',
+                          color: '#dc2626', fontSize: '14px',
+                          opacity: lineItems.length === 1 ? 0.4 : 1
+                        }}
+                      >×</button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -556,7 +566,7 @@ export default function DebitNotesPage() {
               }}>{error}</div>
             )}
 
-            <div style={{ display: 'flex', gap: '12px' }}>
+            <div className="btn-group" style={{ display: 'flex', gap: '12px' }}>
               <button onClick={handleSave} disabled={saving} style={{
                 flex: 1, padding: '11px',
                 background: saving ? '#93c5fd' : '#2563eb',

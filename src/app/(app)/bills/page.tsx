@@ -361,9 +361,9 @@ export default function BillsPage() {
   )
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '1100px' }}>
+    <div className="page-container" style={{ padding: '2rem', maxWidth: '1100px' }}>
       {/* Header */}
-      <div style={{
+      <div className="page-header" style={{
         display: 'flex', justifyContent: 'space-between',
         alignItems: 'center', marginBottom: '1.5rem'
       }}>
@@ -389,7 +389,7 @@ export default function BillsPage() {
 
       {/* ITC Summary card */}
       {bills.length > 0 && (
-        <div style={{
+        <div className="metric-grid" style={{
           display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
           gap: '1rem', marginBottom: '1.5rem'
         }}>
@@ -449,11 +449,11 @@ export default function BillsPage() {
           </div>
         </div>
       ) : (
-        <div style={{
+        <div className="responsive-table table-frame" style={{
           background: 'white', border: '1px solid #e2e8f0',
           borderRadius: '12px', overflow: 'hidden'
         }}>
-          <div style={{
+          <div className="table-header" style={{
             display: 'grid',
             gridTemplateColumns: '1.5fr 2fr 1fr 1fr 1fr 1fr 100px',
             gap: '12px', padding: '10px 16px', background: '#f8fafc',
@@ -470,24 +470,24 @@ export default function BillsPage() {
           </div>
 
           {bills.map(bill => (
-            <div key={bill.id} style={{
+            <div key={bill.id} className="table-row" style={{
               display: 'grid',
               gridTemplateColumns: '1.5fr 2fr 1fr 1fr 1fr 1fr 100px',
               gap: '12px', padding: '12px 16px',
               borderBottom: '1px solid #f1f5f9',
               alignItems: 'center', fontSize: '13px'
             }}>
-              <div style={{ fontWeight: '600', color: '#374151' }}>
+              <div data-label="Bill No." style={{ fontWeight: '600', color: '#374151' }}>
                 {bill.bill_number}
               </div>
-              <div style={{ color: '#1e293b' }}>{bill.vendor_name}</div>
-              <div style={{ color: '#64748b' }}>
+              <div data-label="Vendor" style={{ color: '#1e293b' }}>{bill.vendor_name}</div>
+              <div data-label="Date" style={{ color: '#64748b' }}>
                 {new Date(bill.bill_date).toLocaleDateString('en-IN')}
               </div>
-              <div style={{ fontWeight: '500' }}>
+              <div data-label="Amount" style={{ fontWeight: '500' }}>
                 ₹{formatINR(bill.grand_total)}
               </div>
-              <div>
+              <div data-label="ITC">
                 <span style={{
                   fontSize: '11px', padding: '2px 8px',
                   borderRadius: '99px',
@@ -499,7 +499,7 @@ export default function BillsPage() {
                     : 'Not eligible'}
                 </span>
               </div>
-              <div>
+              <div data-label="Status">
                 <span style={{
                   fontSize: '11px', padding: '2px 8px',
                   borderRadius: '99px',
@@ -509,7 +509,7 @@ export default function BillsPage() {
                   {bill.payment_status}
                 </span>
               </div>
-              <div>
+              <div data-label="Action">
                 {bill.payment_status !== 'paid' && bill.status !== 'cancelled' && (
                   <button
                     onClick={() => markBillPaid(bill)}
@@ -531,13 +531,13 @@ export default function BillsPage() {
 
       {/* Add Bill Form Modal */}
       {showForm && (
-        <div style={{
+        <div className="modal-container" style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
           display: 'flex', alignItems: 'flex-start',
           justifyContent: 'center', zIndex: 100,
           padding: '2rem 1rem', overflowY: 'auto'
         }}>
-          <div style={{
+          <div className="modal-content" style={{
             background: 'white', borderRadius: '16px',
             padding: '2rem', width: '100%', maxWidth: '820px',
           }}>
@@ -558,7 +558,7 @@ export default function BillsPage() {
             </div>
 
             {/* Vendor & Bill details */}
-            <div style={{
+            <div className="form-grid-2" style={{
               display: 'grid', gridTemplateColumns: '1fr 1fr',
               gap: '1rem', marginBottom: '1rem'
             }}>
@@ -583,7 +583,7 @@ export default function BillsPage() {
               </div>
             </div>
 
-            <div style={{
+            <div className="form-grid-3" style={{
               display: 'grid', gridTemplateColumns: '1fr 1fr 1fr',
               gap: '1rem', marginBottom: '1rem'
             }}>
@@ -611,7 +611,7 @@ export default function BillsPage() {
               </div>
             </div>
 
-            <div style={{
+            <div className="form-grid-2" style={{
               display: 'grid', gridTemplateColumns: '1fr 1fr',
               gap: '1rem', marginBottom: '1rem'
             }}>
@@ -675,7 +675,7 @@ export default function BillsPage() {
                 Line Items
               </div>
 
-              <div style={{
+              <div className="line-items-head" style={{
                 display: 'grid',
                 gridTemplateColumns: '2fr 1fr 0.7fr 1fr 0.6fr 0.6fr 1fr 32px',
                 gap: '6px', marginBottom: '6px',
@@ -688,12 +688,12 @@ export default function BillsPage() {
 
               {lineItems.map((item, index) => (
                 <div key={index} style={{ marginBottom: '8px' }}>
-                  <div style={{
+                  <div className="line-item-row" style={{
                     display: 'grid',
                     gridTemplateColumns: '2fr 1fr 0.7fr 1fr 0.6fr 0.6fr 1fr 32px',
                     gap: '6px', alignItems: 'center'
                   }}>
-                    <div>
+                    <div className="li-full" data-label="Item">
                       <select
                         style={{ ...inputStyle, marginBottom: '4px', cursor: 'pointer', fontSize: '12px' }}
                         value={item.product_id}
@@ -710,30 +710,40 @@ export default function BillsPage() {
                         onChange={e => updateLine(index, 'item_name', e.target.value)}
                         placeholder="Item name" />
                     </div>
-                    <input style={{ ...inputStyle, fontSize: '12px' }}
-                      value={item.hsn_sac}
-                      onChange={e => updateLine(index, 'hsn_sac', e.target.value)}
-                      placeholder="HSN/SAC" />
-                    <input style={{ ...inputStyle, fontSize: '12px' }}
-                      type="number" value={item.quantity}
-                      onChange={e => updateLine(index, 'quantity', e.target.value)}
-                      min="0" step="0.001" />
-                    <input style={{ ...inputStyle, fontSize: '12px' }}
-                      type="number" value={item.rate}
-                      onChange={e => updateLine(index, 'rate', e.target.value)}
-                      placeholder="0.00" min="0" step="0.01" />
-                    <input style={{ ...inputStyle, fontSize: '12px' }}
-                      type="number" value={item.discount_percent}
-                      onChange={e => updateLine(index, 'discount_percent', e.target.value)}
-                      min="0" max="100" />
-                    <select style={{ ...inputStyle, fontSize: '12px', cursor: 'pointer' }}
-                      value={item.gst_rate}
-                      onChange={e => updateLine(index, 'gst_rate', e.target.value)}>
-                      {[0, 5, 12, 18, 28].map(r => (
-                        <option key={r} value={r}>{r}%</option>
-                      ))}
-                    </select>
-                    <div style={{
+                    <div data-label="HSN/SAC">
+                      <input style={{ ...inputStyle, fontSize: '12px' }}
+                        value={item.hsn_sac}
+                        onChange={e => updateLine(index, 'hsn_sac', e.target.value)}
+                        placeholder="HSN/SAC" />
+                    </div>
+                    <div data-label="Qty">
+                      <input style={{ ...inputStyle, fontSize: '12px' }}
+                        type="number" value={item.quantity}
+                        onChange={e => updateLine(index, 'quantity', e.target.value)}
+                        min="0" step="0.001" />
+                    </div>
+                    <div data-label="Rate (₹)">
+                      <input style={{ ...inputStyle, fontSize: '12px' }}
+                        type="number" value={item.rate}
+                        onChange={e => updateLine(index, 'rate', e.target.value)}
+                        placeholder="0.00" min="0" step="0.01" />
+                    </div>
+                    <div data-label="Disc %">
+                      <input style={{ ...inputStyle, fontSize: '12px' }}
+                        type="number" value={item.discount_percent}
+                        onChange={e => updateLine(index, 'discount_percent', e.target.value)}
+                        min="0" max="100" />
+                    </div>
+                    <div data-label="GST %">
+                      <select style={{ ...inputStyle, fontSize: '12px', cursor: 'pointer' }}
+                        value={item.gst_rate}
+                        onChange={e => updateLine(index, 'gst_rate', e.target.value)}>
+                        {[0, 5, 12, 18, 28].map(r => (
+                          <option key={r} value={r}>{r}%</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div data-label="Amount" style={{
                       padding: '8px 10px', background: 'white',
                       border: '1px solid #e2e8f0', borderRadius: '6px',
                       fontSize: '12px', fontWeight: '500', color: '#1e293b',
@@ -743,17 +753,19 @@ export default function BillsPage() {
                         ? `₹${formatINR(item.calculated.total_amount)}`
                         : '—'}
                     </div>
-                    <button
-                      onClick={() => setLineItems(lineItems.filter((_, i) => i !== index))}
-                      disabled={lineItems.length === 1}
-                      style={{
-                        width: '28px', height: '28px',
-                        border: '1px solid #fecaca', background: '#fef2f2',
-                        borderRadius: '6px', cursor: 'pointer',
-                        color: '#dc2626', fontSize: '14px',
-                        opacity: lineItems.length === 1 ? 0.4 : 1
-                      }}
-                    >×</button>
+                    <div className="li-full" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                      <button
+                        onClick={() => setLineItems(lineItems.filter((_, i) => i !== index))}
+                        disabled={lineItems.length === 1}
+                        style={{
+                          width: '28px', height: '28px',
+                          border: '1px solid #fecaca', background: '#fef2f2',
+                          borderRadius: '6px', cursor: 'pointer',
+                          color: '#dc2626', fontSize: '14px',
+                          opacity: lineItems.length === 1 ? 0.4 : 1
+                        }}
+                      >×</button>
+                    </div>
                   </div>
                   {item.calculated && (
                     <div style={{
@@ -855,7 +867,7 @@ export default function BillsPage() {
               }}>{error}</div>
             )}
 
-            <div style={{ display: 'flex', gap: '12px' }}>
+            <div className="btn-group" style={{ display: 'flex', gap: '12px' }}>
               <button
                 onClick={handleSave}
                 disabled={saving}

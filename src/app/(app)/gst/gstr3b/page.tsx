@@ -219,9 +219,9 @@ export default function GSTR3BPage() {
   )
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '800px' }}>
+    <div className="page-container" style={{ padding: '2rem', maxWidth: '800px' }}>
       {/* Header */}
-      <div style={{
+      <div className="page-header" style={{
         display: 'flex', justifyContent: 'space-between',
         alignItems: 'center', marginBottom: '1.5rem'
       }}>
@@ -233,7 +233,7 @@ export default function GSTR3BPage() {
             Monthly summary return — tax liability and ITC
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div className="toolbar" style={{ display: 'flex', gap: '8px' }}>
           <select
             style={{
               padding: '8px 14px', border: '1px solid #e2e8f0',
@@ -258,9 +258,9 @@ export default function GSTR3BPage() {
       </div>
 
       {/* 3.1 Outward supplies */}
-      <div style={sectionStyle}>
+      <div className="responsive-table" style={sectionStyle}>
         {sectionTitle('3.1', 'Details of Outward Supplies and Inward Supplies liable to Reverse Charge')}
-        <div style={{
+        <div className="table-header" style={{
           display: 'grid',
           gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr',
           gap: '8px', padding: '8px 0',
@@ -294,38 +294,38 @@ export default function GSTR3BPage() {
             igst: 0, cgst: 0, sgst: 0
           },
         ].map((r, i) => (
-          <div key={i} style={{
+          <div key={i} className="table-row" style={{
             display: 'grid',
             gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr',
             gap: '8px', padding: '8px 0',
             fontSize: '12px', borderBottom: '1px solid #f8fafc'
           }}>
-            <span style={{ color: '#374151' }}>{r.label}</span>
-            <span style={{ textAlign: 'right' as const }}>₹{formatINR(r.taxable)}</span>
-            <span style={{ textAlign: 'right' as const }}>₹{formatINR(r.igst)}</span>
-            <span style={{ textAlign: 'right' as const }}>₹{formatINR(r.cgst)}</span>
-            <span style={{ textAlign: 'right' as const }}>₹{formatINR(r.sgst)}</span>
+            <span data-label="Nature of Supplies" style={{ color: '#374151' }}>{r.label}</span>
+            <span data-label="Taxable Value" style={{ textAlign: 'right' as const }}>₹{formatINR(r.taxable)}</span>
+            <span data-label="IGST" style={{ textAlign: 'right' as const }}>₹{formatINR(r.igst)}</span>
+            <span data-label="CGST" style={{ textAlign: 'right' as const }}>₹{formatINR(r.cgst)}</span>
+            <span data-label="SGST/UTGST" style={{ textAlign: 'right' as const }}>₹{formatINR(r.sgst)}</span>
           </div>
         ))}
 
-        <div style={{
+        <div className="table-row" style={{
           display: 'grid',
           gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr',
           gap: '8px', padding: '10px 0 0',
           fontSize: '13px', fontWeight: '700', color: '#1e293b'
         }}>
           <span>Total</span>
-          <span style={{ textAlign: 'right' as const }}>₹{formatINR(data.totalOutwardTaxable)}</span>
-          <span style={{ textAlign: 'right' as const }}>₹{formatINR(data.outwardIGST)}</span>
-          <span style={{ textAlign: 'right' as const }}>₹{formatINR(data.outwardCGST)}</span>
-          <span style={{ textAlign: 'right' as const }}>₹{formatINR(data.outwardSGST)}</span>
+          <span data-label="Taxable Value" style={{ textAlign: 'right' as const }}>₹{formatINR(data.totalOutwardTaxable)}</span>
+          <span data-label="IGST" style={{ textAlign: 'right' as const }}>₹{formatINR(data.outwardIGST)}</span>
+          <span data-label="CGST" style={{ textAlign: 'right' as const }}>₹{formatINR(data.outwardCGST)}</span>
+          <span data-label="SGST/UTGST" style={{ textAlign: 'right' as const }}>₹{formatINR(data.outwardSGST)}</span>
         </div>
       </div>
 
       {/* Section 4 — ITC */}
-      <div style={sectionStyle}>
+      <div className="responsive-table" style={sectionStyle}>
         {sectionTitle('4', 'Eligible ITC')}
-        <div style={{
+        <div className="table-header" style={{
           display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr',
           gap: '8px', padding: '8px 0',
           fontSize: '12px', fontWeight: '600', color: '#94a3b8',
@@ -336,32 +336,32 @@ export default function GSTR3BPage() {
           <span style={{ textAlign: 'right' as const }}>CGST</span>
           <span style={{ textAlign: 'right' as const }}>SGST/UTGST</span>
         </div>
-        <div style={{
+        <div className="table-row" style={{
           display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr',
           gap: '8px', padding: '8px 0',
           fontSize: '12px', borderBottom: '1px solid #f8fafc'
         }}>
-          <span style={{ color: '#374151' }}>(A) ITC Available — Inputs (Purchases)</span>
-          <span style={{ textAlign: 'right' as const }}>₹{formatINR(data.itcIGST)}</span>
-          <span style={{ textAlign: 'right' as const }}>₹{formatINR(data.itcCGST)}</span>
-          <span style={{ textAlign: 'right' as const }}>₹{formatINR(data.itcSGST)}</span>
+          <span data-label="Details" style={{ color: '#374151' }}>(A) ITC Available — Inputs (Purchases)</span>
+          <span data-label="IGST" style={{ textAlign: 'right' as const }}>₹{formatINR(data.itcIGST)}</span>
+          <span data-label="CGST" style={{ textAlign: 'right' as const }}>₹{formatINR(data.itcCGST)}</span>
+          <span data-label="SGST/UTGST" style={{ textAlign: 'right' as const }}>₹{formatINR(data.itcSGST)}</span>
         </div>
-        <div style={{
+        <div className="table-row" style={{
           display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr',
           gap: '8px', padding: '10px 0 0',
           fontSize: '13px', fontWeight: '700', color: '#059669'
         }}>
           <span>Total ITC Available</span>
-          <span style={{ textAlign: 'right' as const }}>₹{formatINR(data.itcIGST)}</span>
-          <span style={{ textAlign: 'right' as const }}>₹{formatINR(data.itcCGST)}</span>
-          <span style={{ textAlign: 'right' as const }}>₹{formatINR(data.itcSGST)}</span>
+          <span data-label="IGST" style={{ textAlign: 'right' as const }}>₹{formatINR(data.itcIGST)}</span>
+          <span data-label="CGST" style={{ textAlign: 'right' as const }}>₹{formatINR(data.itcCGST)}</span>
+          <span data-label="SGST/UTGST" style={{ textAlign: 'right' as const }}>₹{formatINR(data.itcSGST)}</span>
         </div>
       </div>
 
       {/* Section 6 — Net payable */}
-      <div style={sectionStyle}>
+      <div className="responsive-table" style={sectionStyle}>
         {sectionTitle('6.1', 'Payment of Tax')}
-        <div style={{
+        <div className="table-header" style={{
           display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr',
           gap: '8px', padding: '8px 0',
           fontSize: '12px', fontWeight: '600', color: '#94a3b8',
@@ -386,22 +386,22 @@ export default function GSTR3BPage() {
             sgst: data.itcSGST, total: data.totalITC
           },
         ].map((r, i) => (
-          <div key={i} style={{
+          <div key={i} className="table-row" style={{
             display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr',
             gap: '8px', padding: '8px 0',
             fontSize: '12px', borderBottom: '1px solid #f8fafc'
           }}>
-            <span style={{ color: '#374151' }}>{r.label}</span>
-            <span style={{ textAlign: 'right' as const }}>₹{formatINR(r.igst)}</span>
-            <span style={{ textAlign: 'right' as const }}>₹{formatINR(r.cgst)}</span>
-            <span style={{ textAlign: 'right' as const }}>₹{formatINR(r.sgst)}</span>
-            <span style={{ textAlign: 'right' as const, fontWeight: '600' }}>
+            <span data-label="Description" style={{ color: '#374151' }}>{r.label}</span>
+            <span data-label="IGST" style={{ textAlign: 'right' as const }}>₹{formatINR(r.igst)}</span>
+            <span data-label="CGST" style={{ textAlign: 'right' as const }}>₹{formatINR(r.cgst)}</span>
+            <span data-label="SGST" style={{ textAlign: 'right' as const }}>₹{formatINR(r.sgst)}</span>
+            <span data-label="Total" style={{ textAlign: 'right' as const, fontWeight: '600' }}>
               ₹{formatINR(r.total)}
             </span>
           </div>
         ))}
 
-        <div style={{
+        <div className="table-row" style={{
           display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr',
           gap: '8px', padding: '12px 0 0',
           fontSize: '14px', fontWeight: '700',
@@ -409,10 +409,10 @@ export default function GSTR3BPage() {
           borderTop: '2px solid #e2e8f0', marginTop: '8px'
         }}>
           <span>Net Tax Payable (Cash)</span>
-          <span style={{ textAlign: 'right' as const }}>₹{formatINR(data.igstPayable)}</span>
-          <span style={{ textAlign: 'right' as const }}>₹{formatINR(data.cgstPayable)}</span>
-          <span style={{ textAlign: 'right' as const }}>₹{formatINR(data.sgstPayable)}</span>
-          <span style={{ textAlign: 'right' as const }}>₹{formatINR(data.totalPayable)}</span>
+          <span data-label="IGST" style={{ textAlign: 'right' as const }}>₹{formatINR(data.igstPayable)}</span>
+          <span data-label="CGST" style={{ textAlign: 'right' as const }}>₹{formatINR(data.cgstPayable)}</span>
+          <span data-label="SGST" style={{ textAlign: 'right' as const }}>₹{formatINR(data.sgstPayable)}</span>
+          <span data-label="Total" style={{ textAlign: 'right' as const }}>₹{formatINR(data.totalPayable)}</span>
         </div>
       </div>
 

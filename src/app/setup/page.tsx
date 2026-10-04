@@ -214,7 +214,7 @@ export default function SetupPage() {
   }
 
   return (
-    <div style={{
+    <div className="page-container" style={{
       minHeight: '100vh',
       background: '#f8fafc',
       display: 'flex',
@@ -237,6 +237,8 @@ export default function SetupPage() {
       <div style={{
         display: 'flex',
         alignItems: 'center',
+        flexWrap: 'wrap',
+        justifyContent: 'center',
         gap: '8px',
         marginBottom: '2rem'
       }}>
@@ -293,7 +295,7 @@ export default function SetupPage() {
               Company Details
             </h2>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+            <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
               <div>
                 <label style={labelStyle}>Legal Business Name *</label>
                 <input
@@ -315,7 +317,7 @@ export default function SetupPage() {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+            <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
               <div>
                 <label style={labelStyle}>PAN</label>
                 <input
@@ -363,7 +365,7 @@ export default function SetupPage() {
               />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+            <div className="form-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
               <div>
                 <label style={labelStyle}>City *</label>
                 <input
@@ -401,7 +403,7 @@ export default function SetupPage() {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
+            <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
               <div>
                 <label style={labelStyle}>Phone *</label>
                 <input
@@ -504,7 +506,7 @@ export default function SetupPage() {
               </p>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+            <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
               <div>
                 <label style={labelStyle}>Registration Type *</label>
                 <select

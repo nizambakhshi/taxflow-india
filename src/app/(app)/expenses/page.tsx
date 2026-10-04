@@ -185,9 +185,9 @@ export default function ExpensesPage() {
   )
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '1100px' }}>
+    <div className="page-container" style={{ padding: '2rem', maxWidth: '1100px' }}>
       {/* Header */}
-      <div style={{
+      <div className="page-header" style={{
         display: 'flex', justifyContent: 'space-between',
         alignItems: 'center', marginBottom: '1.5rem'
       }}>
@@ -213,7 +213,7 @@ export default function ExpensesPage() {
 
       {/* Summary cards */}
       {expenses.length > 0 && (
-        <div style={{
+        <div className="metric-grid" style={{
           display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
           gap: '1rem', marginBottom: '1.5rem'
         }}>
@@ -254,11 +254,11 @@ export default function ExpensesPage() {
           </div>
         </div>
       ) : (
-        <div style={{
+        <div className="responsive-table table-frame" style={{
           background: 'white', border: '1px solid #e2e8f0',
           borderRadius: '12px', overflow: 'hidden'
         }}>
-          <div style={{
+          <div className="table-header" style={{
             display: 'grid',
             gridTemplateColumns: '1fr 1.5fr 1.5fr 1fr 1fr 1fr',
             gap: '12px', padding: '10px 16px', background: '#f8fafc',
@@ -274,17 +274,17 @@ export default function ExpensesPage() {
           </div>
 
           {expenses.map(exp => (
-            <div key={exp.id} style={{
+            <div key={exp.id} className="table-row" style={{
               display: 'grid',
               gridTemplateColumns: '1fr 1.5fr 1.5fr 1fr 1fr 1fr',
               gap: '12px', padding: '12px 16px',
               borderBottom: '1px solid #f1f5f9',
               alignItems: 'center', fontSize: '13px'
             }}>
-              <div style={{ color: '#64748b' }}>
+              <div data-label="Date" style={{ color: '#64748b' }}>
                 {new Date(exp.expense_date).toLocaleDateString('en-IN')}
               </div>
-              <div>
+              <div data-label="Category">
                 <span style={{
                   fontSize: '11px', padding: '2px 8px',
                   borderRadius: '99px', background: '#f1f5f9',
@@ -293,14 +293,14 @@ export default function ExpensesPage() {
                   {exp.category}
                 </span>
               </div>
-              <div>
+              <div data-label="Description / Vendor">
                 <div style={{ color: '#1e293b' }}>{exp.description || '—'}</div>
                 {exp.vendor_name && (
                   <div style={{ fontSize: '12px', color: '#64748b' }}>{exp.vendor_name}</div>
                 )}
               </div>
-              <div style={{ fontWeight: '500' }}>₹{formatINR(exp.amount)}</div>
-              <div>
+              <div data-label="Amount" style={{ fontWeight: '500' }}>₹{formatINR(exp.amount)}</div>
+              <div data-label="GST / ITC">
                 {Number(exp.gst_amount) > 0 ? (
                   <div>
                     <div style={{ fontSize: '12px' }}>₹{formatINR(exp.gst_amount)}</div>
@@ -317,7 +317,7 @@ export default function ExpensesPage() {
                   <span style={{ color: '#94a3b8', fontSize: '12px' }}>No GST</span>
                 )}
               </div>
-              <div>
+              <div data-label="Payment">
                 <div style={{ fontSize: '12px', color: '#64748b' }}>{exp.payment_mode}</div>
                 <span style={{
                   fontSize: '11px', padding: '2px 6px',
@@ -335,12 +335,12 @@ export default function ExpensesPage() {
 
       {/* Add Expense Modal */}
       {showForm && (
-        <div style={{
+        <div className="modal-container" style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
           display: 'flex', alignItems: 'center',
           justifyContent: 'center', zIndex: 100, padding: '1rem'
         }}>
-          <div style={{
+          <div className="modal-content" style={{
             background: 'white', borderRadius: '16px',
             padding: '2rem', width: '100%',
             maxWidth: '580px', maxHeight: '90vh', overflowY: 'auto'
@@ -361,7 +361,7 @@ export default function ExpensesPage() {
               >✕</button>
             </div>
 
-            <div style={{
+            <div className="form-grid-2" style={{
               display: 'grid', gridTemplateColumns: '1fr 1fr',
               gap: '1rem', marginBottom: '1rem'
             }}>
@@ -394,7 +394,7 @@ export default function ExpensesPage() {
                 placeholder="What was this expense for?" />
             </div>
 
-            <div style={{
+            <div className="form-grid-2" style={{
               display: 'grid', gridTemplateColumns: '1fr 1fr',
               gap: '1rem', marginBottom: '1rem'
             }}>
@@ -420,7 +420,7 @@ export default function ExpensesPage() {
               </div>
             </div>
 
-            <div style={{
+            <div className="form-grid-2" style={{
               display: 'grid', gridTemplateColumns: '1fr 1fr',
               gap: '1rem', marginBottom: '1rem'
             }}>
@@ -472,7 +472,7 @@ export default function ExpensesPage() {
               </div>
             )}
 
-            <div style={{
+            <div className="form-grid-2" style={{
               display: 'grid', gridTemplateColumns: '1fr 1fr',
               gap: '1rem', marginBottom: '1rem'
             }}>
@@ -532,7 +532,7 @@ export default function ExpensesPage() {
               }}>{error}</div>
             )}
 
-            <div style={{ display: 'flex', gap: '12px' }}>
+            <div className="btn-group" style={{ display: 'flex', gap: '12px' }}>
               <button
                 onClick={handleSave}
                 disabled={saving}

@@ -199,8 +199,8 @@ export default function SettingsPage() {
   )
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '800px' }}>
-      <div style={{
+    <div className="page-container" style={{ padding: '2rem', maxWidth: '800px' }}>
+      <div className="page-header" style={{
         display: 'flex', justifyContent: 'space-between',
         alignItems: 'center', marginBottom: '1.5rem'
       }}>
@@ -225,7 +225,7 @@ export default function SettingsPage() {
       </div>
 
       {/* Tabs */}
-      <div style={{ borderBottom: '1px solid #e2e8f0', marginBottom: '1.5rem', display: 'flex', gap: '4px' }}>
+      <div className="tab-bar" style={{ borderBottom: '1px solid #e2e8f0', marginBottom: '1.5rem', display: 'flex', gap: '4px' }}>
         <button style={tabStyle('company')} onClick={() => setActiveTab('company')}>🏢 Company</button>
         <button style={tabStyle('logo')} onClick={() => setActiveTab('logo')}>🖼️ Logo</button>
         <button style={tabStyle('invoice')} onClick={() => setActiveTab('invoice')}>🧾 Invoice</button>
@@ -242,7 +242,7 @@ export default function SettingsPage() {
             This appears on all your invoices and documents
           </p>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+          <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
             <div>
               <label style={labelStyle}>Legal Business Name *</label>
               <input style={inputStyle} value={form.name}
@@ -257,7 +257,7 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+          <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
             <div>
               <label style={labelStyle}>PAN</label>
               <input style={inputStyle} value={form.pan}
@@ -290,7 +290,7 @@ export default function SettingsPage() {
               placeholder="Area / Locality" />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+          <div className="form-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
             <div>
               <label style={labelStyle}>City</label>
               <input style={inputStyle} value={form.city}
@@ -311,7 +311,7 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+          <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
             <div>
               <label style={labelStyle}>Phone</label>
               <input style={inputStyle} value={form.phone}
@@ -344,7 +344,7 @@ export default function SettingsPage() {
               background: '#f8fafc', border: '1px solid #e2e8f0',
               borderRadius: '12px', padding: '1.5rem',
               display: 'flex', alignItems: 'center', gap: '1.5rem',
-              marginBottom: '1.5rem'
+              marginBottom: '1.5rem', flexWrap: 'wrap'
             }}>
               <img
                 src={logoPreview}
@@ -508,7 +508,7 @@ export default function SettingsPage() {
             These appear on your invoices so customers can make payments
           </p>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+          <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
             <div>
               <label style={labelStyle}>Bank Name</label>
               <input style={inputStyle} value={form.bank_name}
@@ -523,7 +523,7 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+          <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
             <div>
               <label style={labelStyle}>Account Number</label>
               <input style={inputStyle} value={form.bank_account_number}

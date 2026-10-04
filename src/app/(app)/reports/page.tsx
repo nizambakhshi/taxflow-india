@@ -277,9 +277,9 @@ export default function ReportsPage() {
   )
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '1100px' }}>
+    <div className="page-container" style={{ padding: '2rem', maxWidth: '1100px' }}>
       {/* Header */}
-      <div style={{
+      <div className="page-header" style={{
         display: 'flex', justifyContent: 'space-between',
         alignItems: 'center', marginBottom: '1.5rem'
       }}>
@@ -289,7 +289,7 @@ export default function ReportsPage() {
           </h1>
           <p style={{ fontSize: '14px', color: '#64748b' }}>{label}</p>
         </div>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+        <div className="toolbar" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           <select
             style={{
               padding: '8px 14px', border: '1px solid #e2e8f0',
@@ -315,7 +315,7 @@ export default function ReportsPage() {
       </div>
 
       {/* Report tabs */}
-      <div style={{
+      <div className="tab-bar" style={{
         borderBottom: '1px solid #e2e8f0',
         marginBottom: '1.5rem', display: 'flex', gap: '4px'
       }}>
@@ -337,7 +337,7 @@ export default function ReportsPage() {
       {activeReport === 'sales' && (
         <div>
           {/* Summary cards */}
-          <div style={{
+          <div className="metric-grid" style={{
             display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
             gap: '1rem', marginBottom: '1.5rem'
           }}>
@@ -361,7 +361,7 @@ export default function ReportsPage() {
             ))}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+          <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
             {/* By Customer */}
             <div style={{
               background: 'white', border: '1px solid #e2e8f0',
@@ -443,7 +443,7 @@ export default function ReportsPage() {
               }}>
                 Sales by State (Place of Supply)
               </div>
-              <div style={{
+              <div className="metric-grid" style={{
                 display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0'
               }}>
                 {salesData.byState.map((s: any, i: number) => (
@@ -469,7 +469,7 @@ export default function ReportsPage() {
       {/* PURCHASE REPORT */}
       {activeReport === 'purchase' && (
         <div>
-          <div style={{
+          <div className="metric-grid" style={{
             display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
             gap: '1rem', marginBottom: '1.5rem'
           }}>
@@ -492,7 +492,7 @@ export default function ReportsPage() {
             ))}
           </div>
 
-          <div style={{
+          <div className="responsive-table" style={{
             background: 'white', border: '1px solid #e2e8f0',
             borderRadius: '12px', overflow: 'hidden'
           }}>
@@ -508,7 +508,7 @@ export default function ReportsPage() {
               </div>
             ) : (
               <>
-                <div style={{
+                <div className="table-header" style={{
                   display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr',
                   gap: '12px', padding: '8px 16px',
                   fontSize: '11px', fontWeight: '600', color: '#94a3b8',
@@ -520,15 +520,15 @@ export default function ReportsPage() {
                   <span>ITC</span>
                 </div>
                 {purchaseData.byVendor.map((v: any) => (
-                  <div key={v.name} style={{
+                  <div key={v.name} className="table-row" style={{
                     display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr',
                     gap: '12px', padding: '10px 16px',
                     borderBottom: '1px solid #f8fafc', fontSize: '13px'
                   }}>
-                    <span style={{ fontWeight: '500', color: '#1e293b' }}>{v.name}</span>
-                    <span style={{ color: '#64748b' }}>{v.count}</span>
-                    <span style={{ fontWeight: '600' }}>₹{formatINR(v.total)}</span>
-                    <span style={{ color: '#059669', fontWeight: '500' }}>
+                    <span data-label="Vendor" style={{ fontWeight: '500', color: '#1e293b' }}>{v.name}</span>
+                    <span data-label="Bills" style={{ color: '#64748b' }}>{v.count}</span>
+                    <span data-label="Total" style={{ fontWeight: '600' }}>₹{formatINR(v.total)}</span>
+                    <span data-label="ITC" style={{ color: '#059669', fontWeight: '500' }}>
                       ₹{formatINR(v.itc)}
                     </span>
                   </div>
@@ -542,7 +542,7 @@ export default function ReportsPage() {
       {/* GST SUMMARY REPORT */}
       {activeReport === 'gst' && (
         <div>
-          <div style={{
+          <div className="responsive-table" style={{
             background: 'white', border: '1px solid #e2e8f0',
             borderRadius: '12px', overflow: 'hidden', marginBottom: '1rem'
           }}>
@@ -552,7 +552,7 @@ export default function ReportsPage() {
             }}>
               GST Summary — {label}
             </div>
-            <div style={{
+            <div className="table-header" style={{
               display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr',
               gap: '8px', padding: '10px 16px',
               fontSize: '12px', fontWeight: '600', color: '#94a3b8',
@@ -587,24 +587,24 @@ export default function ReportsPage() {
                 color: '#d97706'
               },
             ].map(row => (
-              <div key={row.label} style={{
+              <div key={row.label} className="table-row" style={{
                 display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr',
                 gap: '8px', padding: '12px 16px',
                 borderBottom: '1px solid #f8fafc',
                 fontWeight: row.bold ? '700' : '400',
                 background: row.bold ? '#fffbeb' : 'white'
               }}>
-                <span style={{ color: '#374151', fontSize: '13px' }}>{row.label}</span>
-                <span style={{ textAlign: 'right' as const, fontSize: '13px', color: row.color }}>
+                <span data-label="Category" style={{ color: '#374151', fontSize: '13px' }}>{row.label}</span>
+                <span data-label="CGST" style={{ textAlign: 'right' as const, fontSize: '13px', color: row.color }}>
                   ₹{formatINR(row.cgst)}
                 </span>
-                <span style={{ textAlign: 'right' as const, fontSize: '13px', color: row.color }}>
+                <span data-label="SGST" style={{ textAlign: 'right' as const, fontSize: '13px', color: row.color }}>
                   ₹{formatINR(row.sgst)}
                 </span>
-                <span style={{ textAlign: 'right' as const, fontSize: '13px', color: row.color }}>
+                <span data-label="IGST" style={{ textAlign: 'right' as const, fontSize: '13px', color: row.color }}>
                   ₹{formatINR(row.igst)}
                 </span>
-                <span style={{ textAlign: 'right' as const, fontSize: '14px', fontWeight: '700', color: row.color }}>
+                <span data-label="Total" style={{ textAlign: 'right' as const, fontSize: '14px', fontWeight: '700', color: row.color }}>
                   ₹{formatINR(row.total)}
                 </span>
               </div>
@@ -658,7 +658,7 @@ export default function ReportsPage() {
             ))}
           </div>
 
-          <div style={{
+          <div className="metric-grid" style={{
             display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
             gap: '1rem'
           }}>
