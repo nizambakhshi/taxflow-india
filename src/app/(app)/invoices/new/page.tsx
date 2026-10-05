@@ -13,6 +13,7 @@ import {
   type LineItemResult
 } from '@/lib/gst-engine'
 import { INDIAN_STATES } from '@/lib/constants'
+import { queueOfflineInvoice, isNetworkError } from '@/lib/outbox'
 
 const inputStyle = {
   width: '100%', padding: '8px 10px',
@@ -280,6 +281,69 @@ export default function NewInvoicePage() {
     setSaving(true)
     setError('')
 
+    // Full invoice payload without invoice_number — used by both the online and offline paths
+    const invoiceFields = {
+      invoice_type: 'tax_invoice',
+      invoice_date: invoiceDate,
+      due_date: dueDate || null,
+      customer_id: customerId,
+      customer_name: customerName,
+      customer_gstin: customerGstin,
+      customer_address: customerAddress,
+      customer_state: placeOfSupplyName,
+      customer_state_code: customerStateCode,
+      place_of_supply: placeOfSupply,
+      place_of_supply_name: placeOfSupplyName,
+      supply_type: supplyType,
+      is_reverse_charge: isReverseCharge,
+      subtotal: totals.subtotal,
+      discount_amount: totals.discount_amount,
+      taxable_amount: totals.taxable_amount,
+      cgst_amount: totals.cgst_amount,
+      sgst_amount: totals.sgst_amount,
+      igst_amount: totals.igst_amount,
+      cess_amount: totals.cess_amount,
+      total_tax: totals.total_tax,
+      round_off: totals.round_off,
+      grand_total: totals.grand_total,
+      amount_paid: 0,
+      balance_due: totals.grand_total,
+      payment_status: 'unpaid',
+      notes,
+      terms,
+      status,
+    }
+
+    const itemsPayload = validItems.map(item => ({
+      organization_id: orgId,
+      product_id: item.product_id || null,
+      item_name: item.item_name,
+      hsn_sac: item.hsn_sac,
+      quantity: parseFloat(item.quantity),
+      unit: item.unit,
+      rate: parseFloat(item.rate),
+      discount_percent: parseFloat(item.discount_percent) || 0,
+      discount_amount: item.calculated?.discount_amount || 0,
+      taxable_value: item.calculated?.taxable_value || 0,
+      gst_rate: parseFloat(item.gst_rate),
+      cgst_rate: item.calculated?.cgst_rate || 0,
+      sgst_rate: item.calculated?.sgst_rate || 0,
+      igst_rate: item.calculated?.igst_rate || 0,
+      cgst_amount: item.calculated?.cgst_amount || 0,
+      sgst_amount: item.calculated?.sgst_amount || 0,
+      igst_amount: item.calculated?.igst_amount || 0,
+      cess_rate: parseFloat(item.cess_rate) || 0,
+      cess_amount: item.calculated?.cess_amount || 0,
+      total_amount: item.calculated?.total_amount || 0,
+    }))
+
+    // Offline: queue for sync instead of failing
+    if (!navigator.onLine) {
+      queueOfflineInvoice(orgId, invoiceFields, itemsPayload)
+      router.push('/offline?queued=1')
+      return
+    }
+
     try {
       const fy = getFinancialYear()
 
@@ -313,35 +377,7 @@ export default function NewInvoicePage() {
         .insert({
           organization_id: orgId,
           invoice_number: finalInvoiceNumber,
-          invoice_type: 'tax_invoice',
-          invoice_date: invoiceDate,
-          due_date: dueDate || null,
-          customer_id: customerId,
-          customer_name: customerName,
-          customer_gstin: customerGstin,
-          customer_address: customerAddress,
-          customer_state: placeOfSupplyName,
-          customer_state_code: customerStateCode,
-          place_of_supply: placeOfSupply,
-          place_of_supply_name: placeOfSupplyName,
-          supply_type: supplyType,
-          is_reverse_charge: isReverseCharge,
-          subtotal: totals.subtotal,
-          discount_amount: totals.discount_amount,
-          taxable_amount: totals.taxable_amount,
-          cgst_amount: totals.cgst_amount,
-          sgst_amount: totals.sgst_amount,
-          igst_amount: totals.igst_amount,
-          cess_amount: totals.cess_amount,
-          total_tax: totals.total_tax,
-          round_off: totals.round_off,
-          grand_total: totals.grand_total,
-          amount_paid: 0,
-          balance_due: totals.grand_total,
-          payment_status: 'unpaid',
-          notes,
-          terms,
-          status,
+          ...invoiceFields,
         })
         .select()
         .single()
@@ -349,28 +385,9 @@ export default function NewInvoicePage() {
       if (invError) throw invError
 
       // Save line items
-      const itemsToInsert = validItems.map((item, idx) => ({
+      const itemsToInsert = itemsPayload.map((item, idx) => ({
+        ...item,
         invoice_id: invoice.id,
-        organization_id: orgId,
-        product_id: item.product_id || null,
-        item_name: item.item_name,
-        hsn_sac: item.hsn_sac,
-        quantity: parseFloat(item.quantity),
-        unit: item.unit,
-        rate: parseFloat(item.rate),
-        discount_percent: parseFloat(item.discount_percent) || 0,
-        discount_amount: item.calculated?.discount_amount || 0,
-        taxable_value: item.calculated?.taxable_value || 0,
-        gst_rate: parseFloat(item.gst_rate),
-        cgst_rate: item.calculated?.cgst_rate || 0,
-        sgst_rate: item.calculated?.sgst_rate || 0,
-        igst_rate: item.calculated?.igst_rate || 0,
-        cgst_amount: item.calculated?.cgst_amount || 0,
-        sgst_amount: item.calculated?.sgst_amount || 0,
-        igst_amount: item.calculated?.igst_amount || 0,
-        cess_rate: parseFloat(item.cess_rate) || 0,
-        cess_amount: item.calculated?.cess_amount || 0,
-        total_amount: item.calculated?.total_amount || 0,
         sort_order: idx,
       }))
 
@@ -407,7 +424,14 @@ export default function NewInvoicePage() {
       
       router.push(`/invoices/${invoice.id}`)
     } catch (err: any) {
-      setError(err.message || 'Failed to save invoice')
+      const message = err?.message || 'Failed to save invoice'
+      // Connection dropped mid-save — queue instead of losing the invoice
+      if (isNetworkError(message)) {
+        queueOfflineInvoice(orgId, invoiceFields, itemsPayload)
+        router.push('/offline?queued=1')
+        return
+      }
+      setError(message)
       setSaving(false)
     }
   }

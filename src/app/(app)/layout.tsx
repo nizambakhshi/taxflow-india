@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
+import { pendingOutboxCount } from '@/lib/outbox'
 import Link from 'next/link'
 
 const NAV_ITEMS = [
@@ -10,6 +11,7 @@ const NAV_ITEMS = [
     section: 'Main',
     items: [
       { label: 'Dashboard', href: '/dashboard', icon: '📊' },
+      { label: 'Offline Sync', href: '/offline', icon: '📶' },
     ]
   },
   {
@@ -84,6 +86,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = createClient()
 
   const [orgName, setOrgName] = useState('')
+  const [orgId, setOrgId] = useState('')
   const [gstin, setGstin] = useState('')
   const [userEmail, setUserEmail] = useState('')
   const [loading, setLoading] = useState(true)
@@ -103,6 +106,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         .single()
 
       if (!membership) { router.push('/setup'); return }
+      setOrgId(membership.organization_id)
       const org = membership.organizations as any
       setOrgName(org?.name || '')
 
@@ -386,6 +390,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         marginLeft: '220px',
         minHeight: '100vh',
       }}>
+        <OfflineBanner orgId={orgId} pathname={pathname} />
         {children}
       </div>
 
@@ -396,6 +401,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           .desktop-sidebar { display: none !important; }
           .mobile-topbar { display: flex !important; }
           .mobile-bottom-nav { display: flex !important; }
+          .offline-banner { top: 56px !important; }
           .main-content {
             margin-left: 0 !important;
             padding-top: 56px !important;
@@ -409,6 +415,51 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           .main-content { margin-left: 180px !important; }
         }
       `}</style>
+    </div>
+  )
+}
+
+function OfflineBanner({ orgId, pathname }: { orgId: string; pathname: string }) {
+  const [online, setOnline] = useState(true)
+  const [queued, setQueued] = useState(0)
+
+  useEffect(() => {
+    const goOnline = () => setOnline(true)
+    const goOffline = () => setOnline(false)
+    setOnline(navigator.onLine)
+    window.addEventListener('online', goOnline)
+    window.addEventListener('offline', goOffline)
+    return () => {
+      window.removeEventListener('online', goOnline)
+      window.removeEventListener('offline', goOffline)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (orgId) setQueued(pendingOutboxCount(orgId))
+  }, [orgId, pathname, online])
+
+  if (online || pathname === '/offline') return null
+
+  return (
+    <div className="offline-banner" style={{
+      position: 'sticky', top: 0, zIndex: 25,
+      background: '#fef3c7', borderBottom: '1px solid #fde68a',
+      padding: '8px 1rem',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      gap: '12px', flexWrap: 'wrap',
+      fontSize: '13px', color: '#92400e', fontWeight: '500'
+    }}>
+      <span>📶 You&apos;re offline — invoicing still works. New invoices are queued.</span>
+      {queued > 0 && (
+        <Link href="/offline" style={{
+          color: '#2563eb', fontWeight: '600', textDecoration: 'none',
+          background: 'white', padding: '3px 10px', borderRadius: '6px',
+          border: '1px solid #bfdbfe', fontSize: '12px'
+        }}>
+          {queued} pending sync — view
+        </Link>
+      )}
     </div>
   )
 }
