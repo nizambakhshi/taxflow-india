@@ -58,6 +58,7 @@ const NAV_ITEMS = [
     section: 'Reports',
     items: [
       { label: 'Reports', href: '/reports', icon: '📈' },
+      { label: 'Financial Statements', href: '/accounting', icon: '⚖️' },
     ]
   },
   {
