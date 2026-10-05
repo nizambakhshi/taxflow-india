@@ -254,6 +254,13 @@ export default function GSTR3BPage() {
           }}>
             ↓ Export CSV
           </button>
+          <button onClick={() => router.push('/gst/reconciliation')} style={{
+            padding: '8px 16px', background: '#eff6ff',
+            color: '#2563eb', border: '1px solid #bfdbfe',
+            borderRadius: '8px', fontSize: '13px', cursor: 'pointer', fontWeight: 600
+          }}>
+            🔍 Reconcile with 2B
+          </button>
         </div>
       </div>
 

@@ -49,6 +49,7 @@ const NAV_ITEMS = [
       { label: 'GST Dashboard', href: '/gst', icon: '🏛️' },
       { label: 'GSTR-1', href: '/gst/gstr1', icon: '📤' },
       { label: 'GSTR-3B', href: '/gst/gstr3b', icon: '📑' },
+      { label: '2B Reconciliation', href: '/gst/reconciliation', icon: '🔍' },
     ]
   },
   {
