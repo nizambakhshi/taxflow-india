@@ -32,6 +32,7 @@ const NAV_ITEMS = [
     section: 'Payments',
     items: [
       { label: 'Receivables & Payables', href: '/payments', icon: '💳' },
+      { label: 'Payment Links', href: '/payments/links', icon: '🔗' },
     ]
   },
   {
