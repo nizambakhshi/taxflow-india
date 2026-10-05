@@ -75,6 +75,10 @@ export default function EInvoicePage() {
 
   const [jsonModal, setJsonModal] = useState<{ title: string; json: string; issues: string[]; filename: string } | null>(null)
   const [ewbFor, setEwbFor] = useState<InvoiceRow | null>(null)
+  const [gspProvider, setGspProvider] = useState('mock')
+  const [ewbSubmitting, setEwbSubmitting] = useState(false)
+  const [ewbResult, setEwbResult] = useState<{ ewbNo: string; validityEndDate: string; mock: boolean } | null>(null)
+  const [ewbError, setEwbError] = useState('')
   const [ewbForm, setEwbForm] = useState({
     fromPlace: '', fromPincode: '', toPlace: '',
     transportMode: 'Road' as EwbInput['transportMode'],
@@ -233,6 +237,8 @@ export default function EInvoicePage() {
   function openEwb(inv: InvoiceRow) {
     const cust = customers.get(inv.customer_id)
     setEwbFor(inv)
+    setEwbResult(null)
+    setEwbError('')
     setEwbForm(f => ({
       ...f,
       fromPlace: seller?.city || '',
@@ -241,22 +247,21 @@ export default function EInvoicePage() {
     }))
   }
 
-  function generateEwb() {
-    if (!ewbFor || !seller) return
-    const cust = customers.get(ewbFor.customer_id)
-    const rawItems = itemsByInvoice.get(ewbFor.id) || []
+  function buildEwbPayload(inv: InvoiceRow): Record<string, unknown> {
+    const cust = customers.get(inv.customer_id)
+    const rawItems = itemsByInvoice.get(inv.id) || []
     const input: EwbInput = {
-      sellerGstin: seller.gstin,
-      sellerName: seller.legalName,
-      fromPincode: ewbForm.fromPincode || seller.pincode || '',
-      fromPlace: ewbForm.fromPlace || seller.city || '',
-      buyerName: cust?.business_name || cust?.name || ewbFor.customer_name || '',
-      buyerGstin: cust?.gstin || ewbFor.customer_gstin || '',
+      sellerGstin: seller?.gstin || '',
+      sellerName: seller?.legalName || '',
+      fromPincode: ewbForm.fromPincode || seller?.pincode || '',
+      fromPlace: ewbForm.fromPlace || seller?.city || '',
+      buyerName: cust?.business_name || cust?.name || inv.customer_name || '',
+      buyerGstin: cust?.gstin || inv.customer_gstin || '',
       toPincode: cust?.pincode || '',
       toPlace: ewbForm.toPlace || cust?.city || '',
-      toStateCode: ewbFor.place_of_supply || '',
-      invoiceNumber: ewbFor.invoice_number,
-      invoiceDate: ewbFor.invoice_date,
+      toStateCode: inv.place_of_supply || '',
+      invoiceNumber: inv.invoice_number,
+      invoiceDate: inv.invoice_date,
       transactionType: ewbForm.transactionType,
       transportMode: ewbForm.transportMode,
       vehicleType: ewbForm.vehicleType,
@@ -268,7 +273,12 @@ export default function EInvoicePage() {
         qty: Number(it.quantity) || 0,
       })),
     }
-    const json = buildEwbJson(input)
+    return buildEwbJson(input)
+  }
+
+  function generateEwb() {
+    if (!ewbFor) return
+    const json = buildEwbPayload(ewbFor)
     setEwbFor(null)
     setJsonModal({
       title: `E-way bill request — ${ewbFor.invoice_number}`,
@@ -276,6 +286,36 @@ export default function EInvoicePage() {
       issues: [],
       filename: `ewaybill_${safeFilePart(ewbFor.invoice_number)}.json`,
     })
+  }
+
+  async function submitToGsp() {
+    if (!ewbFor || ewbSubmitting) return
+    setEwbSubmitting(true)
+    setEwbError('')
+    setEwbResult(null)
+    try {
+      const payload = buildEwbPayload(ewbFor)
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/gsp/ewaybill', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ providerId: gspProvider, payload }),
+      })
+      const body = await res.json()
+      if (!res.ok) throw new Error(body?.error || `Request failed (${res.status})`)
+      setEwbResult({
+        ewbNo: body.result.ewbNo,
+        validityEndDate: body.result.validityEndDate,
+        mock: Boolean(body.result.mock),
+      })
+    } catch (err) {
+      setEwbError(err instanceof Error ? err.message : 'Submission failed.')
+    } finally {
+      setEwbSubmitting(false)
+    }
   }
 
   const inputStyle: React.CSSProperties = {
@@ -558,15 +598,57 @@ export default function EInvoicePage() {
               Buyer pincode, GSTIN and item HSN/qty are pulled from the invoice and customer master.
             </p>
 
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '16px' }}>
+            {ewbResult && (
+              <div style={{
+                marginTop: '14px', padding: '12px 14px', background: '#f0fdf4',
+                border: '1px solid #bbf7d0', borderRadius: '10px', fontSize: '13px', color: '#166534',
+              }}>
+                <div style={{ fontWeight: 700, marginBottom: '4px' }}>
+                  {ewbResult.mock && (
+                    <span style={{
+                      background: '#f59e0b', color: 'white', borderRadius: '6px',
+                      padding: '1px 8px', fontSize: '11px', marginRight: '8px', fontWeight: 700,
+                    }}>MOCK</span>
+                  )}
+                  E-way bill generated
+                </div>
+                <div style={{ fontFamily: 'monospace', fontSize: '12px', wordBreak: 'break-all' }}>EWB No: {ewbResult.ewbNo}</div>
+                <div style={{ fontSize: '12px' }}>Valid till: {ewbResult.validityEndDate}</div>
+                {ewbResult.mock && (
+                  <div style={{ fontSize: '11px', color: '#854d0e', marginTop: '4px' }}>
+                    Simulated only — no e-way bill exists on the government system yet.
+                  </div>
+                )}
+              </div>
+            )}
+            {ewbError && (
+              <div style={{
+                marginTop: '14px', padding: '10px 14px', background: '#fef2f2',
+                border: '1px solid #fecaca', borderRadius: '10px', fontSize: '12px', color: '#991b1b',
+              }}>{ewbError}</div>
+            )}
+
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', alignItems: 'center', marginTop: '16px', flexWrap: 'wrap' }}>
+              <select value={gspProvider} onChange={e => setGspProvider(e.target.value)} style={{
+                padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: '8px',
+                fontSize: '12px', background: 'white', color: '#374151',
+              }}>
+                <option value="mock">Mock GSP (local simulator)</option>
+              </select>
+              <button onClick={submitToGsp} disabled={ewbSubmitting} style={{
+                padding: '9px 16px', background: ewbSubmitting ? '#93c5fd' : '#16a34a', color: 'white',
+                border: 'none', borderRadius: '8px', fontSize: '13px', cursor: ewbSubmitting ? 'wait' : 'pointer', fontWeight: 600,
+              }}>
+                {ewbSubmitting ? 'Submitting...' : '🔌 Submit to GSP'}
+              </button>
               <button onClick={() => setEwbFor(null)} style={{
                 padding: '9px 16px', background: 'white', color: '#374151',
                 border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '13px', cursor: 'pointer',
-              }}>Cancel</button>
+              }}>Close</button>
               <button onClick={generateEwb} style={{
                 padding: '9px 16px', background: '#2563eb', color: 'white',
                 border: 'none', borderRadius: '8px', fontSize: '13px', cursor: 'pointer', fontWeight: 600,
-              }}>Generate request JSON</button>
+              }}>↓ Download request JSON</button>
             </div>
           </div>
         </div>
