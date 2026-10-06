@@ -8,6 +8,7 @@ import {
   validateEInvoice, buildEInvoiceJson, buildEwbJson, deriveInvoiceType,
   INVOICE_TYPE_LABELS, downloadJson, safeFilePart, stateNameFor,
 } from '@/lib/einvoice'
+import { upsertEwbEntry } from '@/lib/registers'
 
 interface InvoiceRow {
   id: string
@@ -310,6 +311,21 @@ export default function EInvoicePage() {
         ewbNo: body.result.ewbNo,
         validityEndDate: body.result.validityEndDate,
         mock: Boolean(body.result.mock),
+      })
+      if (orgId) upsertEwbEntry(orgId, {
+        invoiceId: ewbFor.id,
+        invoiceNumber: ewbFor.invoice_number,
+        party: ewbFor.customer_name || 'Unnamed',
+        ewbNo: body.result.ewbNo,
+        validityEnd: body.result.validityEndDate,
+        vehicleNumber: ewbForm.vehicleNumber,
+        transportMode: ewbForm.transportMode,
+        fromPlace: ewbForm.fromPlace,
+        toPlace: ewbForm.toPlace,
+        distanceKm: ewbForm.distanceKm,
+        goodsValue: Number(ewbFor.grand_total) || 0,
+        source: 'generated',
+        createdAt: new Date().toISOString(),
       })
     } catch (err) {
       setEwbError(err instanceof Error ? err.message : 'Submission failed.')
