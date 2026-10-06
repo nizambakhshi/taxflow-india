@@ -3,20 +3,50 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { formatINR } from '@/lib/gst-engine'
+import { formatINR, getFinancialYear } from '@/lib/gst-engine'
+import { computeAgeing } from '@/lib/reports'
+import { changePct, formatDateIN, formatCompactINR } from '@/lib/format'
+import {
+  BarChart, Badge, Button, Card, EmptyState, PageHeader, ProgressBar,
+  SectionTitle, StatCard, StatRow, StackedBar,
+} from '@/components/ui'
+import Icon from '@/components/Icons'
 import Link from 'next/link'
 
-function getMonthRange(monthsBack = 0) {
+function monthRange(monthsBack = 0) {
   const d = new Date()
-  const year = d.getFullYear()
-  const month = d.getMonth() - monthsBack
-  const start = new Date(year, month, 1)
-  const end = new Date(year, month + 1, 0)
+  const start = new Date(d.getFullYear(), d.getMonth() - monthsBack, 1)
+  const end = new Date(d.getFullYear(), d.getMonth() - monthsBack + 1, 0)
   return {
     start: start.toISOString().split('T')[0],
     end: end.toISOString().split('T')[0],
-    label: start.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+    label: start.toLocaleDateString('en-IN', { month: 'short' }),
+    fullLabel: start.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }),
   }
+}
+
+/** Statutory monthly due dates: GSTR-1 on the 11th, GSTR-3B on the 20th of the following month. */
+function returnDueDate(monthsBack: number, day: number) {
+  const d = new Date()
+  return new Date(d.getFullYear(), d.getMonth() - monthsBack, day)
+}
+
+interface Metrics {
+  totalSales: number; prevSales: number
+  totalPurchases: number; prevPurchases: number
+  totalExpenses: number; prevExpenses: number
+  gstCollected: number; itcAvailable: number; netGSTPayable: number
+  collected: number
+  totalReceivable: number; totalPayable: number
+  overdueReceivable: number
+  invoiceCount: number; customerCount: number
+}
+
+const ZERO: Metrics = {
+  totalSales: 0, prevSales: 0, totalPurchases: 0, prevPurchases: 0,
+  totalExpenses: 0, prevExpenses: 0, gstCollected: 0, itcAvailable: 0,
+  netGSTPayable: 0, collected: 0, totalReceivable: 0, totalPayable: 0,
+  overdueReceivable: 0, invoiceCount: 0, customerCount: 0,
 }
 
 export default function DashboardPage() {
@@ -27,18 +57,12 @@ export default function DashboardPage() {
   const [orgName, setOrgName] = useState('')
   const [orgId, setOrgId] = useState('')
 
-  const [metrics, setMetrics] = useState({
-    totalSales: 0, totalPurchases: 0,
-    totalExpenses: 0, gstCollected: 0,
-    itcAvailable: 0, netGSTPayable: 0,
-    totalReceivable: 0, totalPayable: 0,
-    overdueReceivable: 0, paidThisMonth: 0,
-    invoiceCount: 0, customerCount: 0,
-  })
-
+  const [metrics, setMetrics] = useState<Metrics>(ZERO)
   const [recentInvoices, setRecentInvoices] = useState<any[]>([])
   const [gstReturns, setGstReturns] = useState<any[]>([])
-  const [monthlySales, setMonthlySales] = useState<any[]>([])
+  const [monthlySales, setMonthlySales] = useState<{ label: string; value: number }[]>([])
+  const [arAgeing, setArAgeing] = useState(computeAgeing([]))
+  const [apAgeing, setApAgeing] = useState(computeAgeing([]))
 
   useEffect(() => {
     async function load() {
@@ -65,522 +89,330 @@ export default function DashboardPage() {
   }, [])
 
   async function loadDashboard(oid: string) {
-    const { start, end } = getMonthRange(0)
+    const thisMonth = monthRange(0)
+    const lastMonth = monthRange(1)
 
-    // This month invoices
-    const { data: invoices } = await supabase
-      .from('invoices')
-      .select('*')
-      .eq('organization_id', oid)
-      .neq('status', 'cancelled')
-      .gte('invoice_date', start)
-      .lte('invoice_date', end)
-
-    // This month bills
-    const { data: bills } = await supabase
-      .from('purchase_bills')
-      .select('*')
-      .eq('organization_id', oid)
-      .neq('status', 'cancelled')
-      .gte('bill_date', start)
-      .lte('bill_date', end)
-
-    // This month expenses
-    const { data: expenses } = await supabase
-      .from('expenses')
-      .select('*')
-      .eq('organization_id', oid)
-      .gte('expense_date', start)
-      .lte('expense_date', end)
-
-    // Outstanding receivables
-    const { data: unpaidInvoices } = await supabase
-      .from('invoices')
-      .select('balance_due, invoice_date, due_date')
-      .eq('organization_id', oid)
-      .in('payment_status', ['unpaid', 'partial'])
-      .neq('status', 'cancelled')
-
-    // Outstanding payables
-    const { data: unpaidBills } = await supabase
-      .from('purchase_bills')
-      .select('balance_due')
-      .eq('organization_id', oid)
-      .in('payment_status', ['unpaid', 'partial'])
-      .neq('status', 'cancelled')
-
-    // Customer count
-    const { count: customerCount } = await supabase
-      .from('customers')
-      .select('*', { count: 'exact', head: true })
-      .eq('organization_id', oid)
-      .eq('is_active', true)
-
-    // Recent invoices
-    const { data: recent } = await supabase
-      .from('invoices')
-      .select('*')
-      .eq('organization_id', oid)
-      .neq('status', 'cancelled')
-      .order('created_at', { ascending: false })
-      .limit(5)
-
-    // GST return status
-    const period = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
-    const { data: returns } = await supabase
-      .from('gst_return_periods')
-      .select('*')
-      .eq('organization_id', oid)
-      .eq('period', period)
-
-    // Last 6 months sales for mini chart
-    const salesByMonth = await Promise.all(
-      Array.from({ length: 6 }, (_, i) => {
-        const { start, end, label } = getMonthRange(5 - i)
-        return supabase
-          .from('invoices')
-          .select('grand_total')
+    const [inv, bill, exp, prevInv, prevBill, prevExp, unpaidInv, unpaidBills, recent, payments] =
+      await Promise.all([
+        supabase.from('invoices').select('*')
+          .eq('organization_id', oid).neq('status', 'cancelled')
+          .gte('invoice_date', thisMonth.start).lte('invoice_date', thisMonth.end),
+        supabase.from('purchase_bills').select('*')
+          .eq('organization_id', oid).neq('status', 'cancelled')
+          .gte('bill_date', thisMonth.start).lte('bill_date', thisMonth.end),
+        supabase.from('expenses').select('amount')
           .eq('organization_id', oid)
-          .neq('status', 'cancelled')
-          .gte('invoice_date', start)
-          .lte('invoice_date', end)
-          .then(({ data }) => ({
-            label,
-            total: (data || []).reduce((s, i) => s + Number(i.grand_total), 0)
-          }))
-      })
-    )
+          .gte('expense_date', thisMonth.start).lte('expense_date', thisMonth.end),
+        supabase.from('invoices').select('grand_total')
+          .eq('organization_id', oid).neq('status', 'cancelled')
+          .gte('invoice_date', lastMonth.start).lte('invoice_date', lastMonth.end),
+        supabase.from('purchase_bills').select('grand_total')
+          .eq('organization_id', oid).neq('status', 'cancelled')
+          .gte('bill_date', lastMonth.start).lte('bill_date', lastMonth.end),
+        supabase.from('expenses').select('amount')
+          .eq('organization_id', oid)
+          .gte('expense_date', lastMonth.start).lte('expense_date', lastMonth.end),
+        supabase.from('invoices')
+          .select('id, balance_due, invoice_date, due_date, customer_name')
+          .eq('organization_id', oid)
+          .in('payment_status', ['unpaid', 'partial']).neq('status', 'cancelled'),
+        supabase.from('purchase_bills')
+          .select('id, balance_due, bill_date, due_date, vendor_name')
+          .eq('organization_id', oid)
+          .in('payment_status', ['unpaid', 'partial']).neq('status', 'cancelled'),
+        supabase.from('invoices').select('*')
+          .eq('organization_id', oid).neq('status', 'cancelled')
+          .order('created_at', { ascending: false }).limit(6),
+        supabase.from('payments').select('amount, payment_type, payment_date')
+          .eq('organization_id', oid)
+          .gte('payment_date', thisMonth.start).lte('payment_date', thisMonth.end),
+      ])
 
-    const invList = invoices || []
-    const billList = bills || []
-    const expList = expenses || []
-    const unpaidInvList = unpaidInvoices || []
-    const unpaidBillList = unpaidBills || []
+    const { count: customerCount } = await supabase
+      .from('customers').select('*', { count: 'exact', head: true })
+      .eq('organization_id', oid).eq('is_active', true)
 
-    const totalSales = invList.reduce((s, i) => s + Number(i.grand_total), 0)
-    const totalPurchases = billList.reduce((s, b) => s + Number(b.grand_total), 0)
-    const totalExpenses = expList.reduce((s, e) => s + Number(e.amount), 0)
-    const gstCollected = invList.reduce((s, i) => s + Number(i.total_tax), 0)
-    const itcAvailable = billList
-      .filter(b => b.itc_eligible)
-      .reduce((s, b) => s + Number(b.total_tax), 0)
-    const netGSTPayable = Math.max(0, gstCollected - itcAvailable)
-    const totalReceivable = unpaidInvList.reduce((s, i) => s + Number(i.balance_due), 0)
-    const totalPayable = unpaidBillList.reduce((s, b) => s + Number(b.balance_due), 0)
-    const overdueReceivable = unpaidInvList
-      .filter(i => {
-        const due = i.due_date || i.invoice_date
-        return new Date(due) < new Date()
-      })
-      .reduce((s, i) => s + Number(i.balance_due), 0)
+    const invList = inv.data || []
+    const billList = bill.data || []
+
+    const sum = (rows: any[] | null, key = 'grand_total') =>
+      (rows || []).reduce((s, r) => s + Number(r[key] || 0), 0)
+
+    const totalSales = sum(invList)
+    const totalPurchases = sum(billList)
+    const totalExpenses = sum(exp.data, 'amount')
+    const gstCollected = sum(invList, 'total_tax')
+    const itcAvailable = sum(billList.filter(b => b.itc_eligible), 'total_tax')
+    const unpaidInvList = unpaidInv.data || []
 
     setMetrics({
-      totalSales, totalPurchases, totalExpenses,
-      gstCollected, itcAvailable, netGSTPayable,
-      totalReceivable, totalPayable, overdueReceivable,
-      paidThisMonth: 0,
+      totalSales,
+      prevSales: sum(prevInv.data),
+      totalPurchases,
+      prevPurchases: sum(prevBill.data),
+      totalExpenses,
+      prevExpenses: sum(prevExp.data, 'amount'),
+      gstCollected,
+      itcAvailable,
+      netGSTPayable: Math.max(0, gstCollected - itcAvailable),
+      collected: (payments.data || []).filter(p => p.payment_type === 'received').reduce((s, p) => s + Number(p.amount), 0),
+      totalReceivable: sum(unpaidInvList, 'balance_due'),
+      totalPayable: sum(unpaidBills.data, 'balance_due'),
+      overdueReceivable: sum(
+        unpaidInvList.filter(i => new Date(i.due_date || i.invoice_date) < new Date()),
+        'balance_due'
+      ),
       invoiceCount: invList.length,
       customerCount: customerCount || 0,
     })
 
-    setRecentInvoices(recent || [])
+    setArAgeing(computeAgeing(unpaidInvList.map(i => ({
+      amount: Number(i.balance_due), due: i.due_date, issued: i.invoice_date,
+    }))))
+    setApAgeing(computeAgeing((unpaidBills.data || []).map(b => ({
+      amount: Number(b.balance_due), due: b.due_date, issued: b.bill_date,
+    }))))
+
+    setRecentInvoices(recent.data || [])
+
+    const salesByMonth = await Promise.all(
+      Array.from({ length: 6 }, (_, i) => {
+        const m = monthRange(5 - i)
+        return supabase.from('invoices').select('grand_total')
+          .eq('organization_id', oid).neq('status', 'cancelled')
+          .gte('invoice_date', m.start).lte('invoice_date', m.end)
+          .then(({ data }) => ({ label: m.label, value: sum(data) }))
+      })
+    )
     setMonthlySales(salesByMonth)
 
-    // Build return status
-    const returnTypes = [
-      { type: 'GSTR1', label: 'GSTR-1', href: '/gst/gstr1' },
-      { type: 'GSTR3B', label: 'GSTR-3B', href: '/gst/gstr3b' },
-    ]
-    const returnList = returnTypes.map(rt => {
-      const existing = (returns || []).find(r => r.return_type === rt.type)
-      return { ...rt, status: existing?.status || 'not_started' }
-    })
-    setGstReturns(returnList)
+    const filingPeriod = `${lastMonth.start.slice(0, 7)}`
+    const { data: returns } = await supabase
+      .from('gst_return_periods').select('*')
+      .eq('organization_id', oid).eq('period', filingPeriod)
+
+    setGstReturns([
+      { type: 'GSTR1', label: 'GSTR-1', desc: 'Outward supplies', href: '/gst/gstr1', due: returnDueDate(0, 11), status: returns?.find(r => r.return_type === 'GSTR1')?.status || 'not_started' },
+      { type: 'GSTR3B', label: 'GSTR-3B', desc: 'Summary + payment', href: '/gst/gstr3b', due: returnDueDate(0, 20), status: returns?.find(r => r.return_type === 'GSTR3B')?.status || 'not_started' },
+    ])
   }
 
-  const statusConfig: Record<string, { label: string; bg: string; color: string }> = {
-    not_started: { label: 'Not Started', bg: '#f1f5f9', color: '#64748b' },
-    draft: { label: 'Draft', bg: '#fef9c3', color: '#854d0e' },
-    ready: { label: 'Ready', bg: '#eff6ff', color: '#1d4ed8' },
-    filed: { label: 'Filed ✓', bg: '#f0fdf4', color: '#166534' },
-  }
+  if (loading) return <DashboardSkeleton />
 
-  // Mini bar chart
-  const maxSales = Math.max(...monthlySales.map(m => m.total), 1)
+  const monthLabel = monthRange(0).fullLabel
+  const fy = getFinancialYear()
+  const maxSales = Math.max(...monthlySales.map(m => m.value), 1)
+  const salesDelta = changePct(metrics.totalSales, metrics.prevSales)
+  const purchDelta = changePct(metrics.totalPurchases, metrics.prevPurchases)
+  const expDelta = changePct(metrics.totalExpenses, metrics.prevExpenses)
 
-  if (loading) return (
-    <div style={{ padding: '2rem', color: '#64748b', fontSize: '14px' }}>
-      Loading dashboard...
-    </div>
-  )
-
-  const now = new Date()
-  const monthLabel = now.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+  const quickActions = [
+    { label: 'Counter sale', href: '/pos', icon: 'pos' },
+    { label: 'Scan a bill', href: '/ai/scan-bill', icon: 'scan' },
+    { label: 'Ask my books', href: '/ai/ask', icon: 'chat' },
+    { label: 'Payment link', href: '/payments/links', icon: 'link' },
+  ]
 
   return (
-    <div className="page-container" style={{ maxWidth: '1200px' }}>
-      {/* Header */}
-      <div style={{ marginBottom: '1.5rem' }}>
-        <h1 style={{ fontSize: '22px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
-          Dashboard
-        </h1>
-        <p style={{ fontSize: '14px', color: '#64748b' }}>
-          {orgName} · {monthLabel}
-        </p>
-      </div>
+    <div className="page-container" style={{ maxWidth: 1240 }}>
+      <PageHeader
+        eyebrow={`Financial year ${fy}`}
+        title={orgName || 'Your business'}
+        subtitle={`${monthLabel} · ${metrics.invoiceCount} invoices · ${metrics.customerCount} active customers`}
+        actions={<Button href="/invoices/new" icon="plus">New invoice</Button>}
+        right={<Button href="/reports" variant="ghost" icon="chart" style={{ background: 'rgba(255,255,255,.12)', color: 'white', borderColor: 'rgba(255,255,255,.25)' }}>Reports</Button>}
+      />
 
-      {/* Top metrics */}
-      <div className="dash-metrics" style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(3, 1fr)',
-        gap: '1rem', marginBottom: '1.5rem'
-      }}>
-        {[
-          {
-            label: 'Total Sales', value: metrics.totalSales,
-            sub: `${metrics.invoiceCount} invoices this month`,
-            color: '#2563eb', icon: '📈'
-          },
-          {
-            label: 'Total Purchases', value: metrics.totalPurchases,
-            sub: 'Bills this month',
-            color: '#7c3aed', icon: '🛒'
-          },
-          {
-            label: 'Total Expenses', value: metrics.totalExpenses,
-            sub: 'Business expenses',
-            color: '#0891b2', icon: '💸'
-          },
-        ].map(card => (
-          <div key={card.label} style={{
-            background: 'white', border: '1px solid #e2e8f0',
-            borderRadius: '12px', padding: '1.25rem',
-            borderTop: `3px solid ${card.color}`
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div>
-                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>
-                  {card.label}
-                </div>
-                <div style={{ fontSize: '22px', fontWeight: '700', color: '#1e293b' }}>
-                  ₹{formatINR(card.value)}
-                </div>
-                <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>
-                  {card.sub}
-                </div>
-              </div>
-              <div style={{ fontSize: '24px' }}>{card.icon}</div>
-            </div>
-          </div>
+      {/* Quick actions */}
+      <div className="tf-row tf-wrap" style={{ marginBottom: '1.1rem', gap: 8 }}>
+        {quickActions.map(a => (
+          <Link key={a.href} href={a.href} className="tf-btn tf-btn-ghost tf-btn-sm" style={{ background: 'var(--surface)' }}>
+            <Icon name={a.icon} size={14} /> {a.label}
+          </Link>
         ))}
       </div>
 
-      <div className="dash-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-        {/* GST Summary */}
-        <div style={{
-          background: 'white', border: '1px solid #e2e8f0',
-          borderRadius: '12px', padding: '1.25rem'
-        }}>
-          <div style={{
-            fontSize: '13px', fontWeight: '600', color: '#374151',
-            marginBottom: '1rem'
-          }}>
-            GST Summary — {monthLabel}
-          </div>
-          {[
-            { label: 'GST Collected (Output)', value: metrics.gstCollected, color: '#dc2626' },
-            { label: 'ITC Available (Input)', value: metrics.itcAvailable, color: '#059669' },
-            { label: 'Net GST Payable', value: metrics.netGSTPayable, color: '#d97706', bold: true },
-          ].map(row => (
-            <div key={row.label} style={{
-              display: 'flex', justifyContent: 'space-between',
-              padding: '8px 0', fontSize: '13px',
-              borderBottom: '1px solid #f8fafc'
-            }}>
-              <span style={{ color: '#64748b' }}>{row.label}</span>
-              <span style={{
-                fontWeight: row.bold ? '700' : '500',
-                color: row.color
-              }}>
-                ₹{formatINR(row.value)}
-              </span>
-            </div>
-          ))}
-          <Link href="/gst" style={{
-            display: 'block', marginTop: '12px', textAlign: 'center' as const,
-            fontSize: '12px', color: '#2563eb', textDecoration: 'none'
-          }}>
-            View GST Dashboard →
-          </Link>
-        </div>
-
-        {/* Receivables & Payables */}
-        <div style={{
-          background: 'white', border: '1px solid #e2e8f0',
-          borderRadius: '12px', padding: '1.25rem'
-        }}>
-          <div style={{
-            fontSize: '13px', fontWeight: '600', color: '#374151',
-            marginBottom: '1rem'
-          }}>
-            Outstanding
-          </div>
-          {[
-            { label: 'Total Receivable', value: metrics.totalReceivable, color: '#2563eb' },
-            { label: 'Overdue Receivable', value: metrics.overdueReceivable, color: '#dc2626' },
-            { label: 'Total Payable', value: metrics.totalPayable, color: '#7c3aed', bold: true },
-          ].map(row => (
-            <div key={row.label} style={{
-              display: 'flex', justifyContent: 'space-between',
-              padding: '8px 0', fontSize: '13px',
-              borderBottom: '1px solid #f8fafc'
-            }}>
-              <span style={{ color: '#64748b' }}>{row.label}</span>
-              <span style={{
-                fontWeight: row.bold ? '700' : '500',
-                color: row.color
-              }}>
-                ₹{formatINR(row.value)}
-              </span>
-            </div>
-          ))}
-          <Link href="/payments" style={{
-            display: 'block', marginTop: '12px', textAlign: 'center' as const,
-            fontSize: '12px', color: '#2563eb', textDecoration: 'none'
-          }}>
-            View Payments →
-          </Link>
-        </div>
+      {/* KPI row */}
+      <div className="tf-g-4" style={{ marginBottom: '1rem' }}>
+        <StatCard label="Total sales" value={metrics.totalSales} icon="trend" tone="blue"
+          sub={`Gross billed in ${monthRange(0).label}`} delta={salesDelta} delay={0} />
+        <StatCard label="Purchases" value={metrics.totalPurchases} icon="cart" tone="violet"
+          sub="Bills recorded" delta={purchDelta} delay={60} />
+        <StatCard label="Expenses" value={metrics.totalExpenses} icon="wallet" tone="cyan"
+          sub="Overheads" delta={expDelta} delay={120} />
+        <StatCard label="Net GST payable" value={metrics.netGSTPayable} icon="landmark" tone="amber"
+          sub={`Collected ${formatCompactINR(metrics.gstCollected)} · ITC ${formatCompactINR(metrics.itcAvailable)}`}
+          href="/gst" delay={180} delta={null} />
       </div>
 
-      <div className="dash-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-        {/* Sales trend — mini bar chart */}
-        <div style={{
-          background: 'white', border: '1px solid #e2e8f0',
-          borderRadius: '12px', padding: '1.25rem'
-        }}>
-          <div style={{
-            fontSize: '13px', fontWeight: '600', color: '#374151',
-            marginBottom: '1rem'
-          }}>
-            Sales — Last 6 Months
+      {/* Sales trend + cash */}
+      <div className="tf-g-2" style={{ marginBottom: '1rem' }}>
+        <Card>
+          <SectionTitle icon="chart" action={<Link href="/reports" className="tf-stat-sub" style={{ color: 'var(--brand)', textDecoration: 'none' }}>All reports →</Link>}>
+            Sales — last 6 months
+          </SectionTitle>
+          <BarChart data={monthlySales} height={160} />
+          <div className="tf-row-between" style={{ marginTop: 14, fontSize: 12, color: 'var(--muted)' }}>
+            <span>Peak {formatCompactINR(maxSales)}</span>
+            <span>Avg {formatCompactINR(monthlySales.reduce((s, m) => s + m.value, 0) / Math.max(monthlySales.length, 1))}/mo</span>
+            <span style={{ color: 'var(--ink)', fontWeight: 600 }}>6-mo total {formatCompactINR(monthlySales.reduce((s, m) => s + m.value, 0))}</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px', height: '80px' }}>
-            {monthlySales.map((m, i) => (
-              <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: '4px' }}>
-                <div style={{ fontSize: '10px', color: '#64748b' }}>
-                  {m.total > 0 ? `₹${Math.round(m.total / 1000)}k` : ''}
-                </div>
-                <div style={{
-                  width: '100%',
-                  height: `${Math.max(4, (m.total / maxSales) * 60)}px`,
-                  background: i === monthlySales.length - 1 ? '#2563eb' : '#bfdbfe',
-                  borderRadius: '4px 4px 0 0',
-                  transition: 'height 0.3s'
-                }} />
-                <div style={{ fontSize: '9px', color: '#94a3b8', textAlign: 'center' as const }}>
-                  {m.label.split(' ')[0]}
-                </div>
-              </div>
-            ))}
-          </div>
-          <Link href="/reports" style={{
-            display: 'block', marginTop: '12px', textAlign: 'center' as const,
-            fontSize: '12px', color: '#2563eb', textDecoration: 'none'
-          }}>
-            View Reports →
-          </Link>
-        </div>
+        </Card>
 
-        {/* GST Return Status */}
-        <div style={{
-          background: 'white', border: '1px solid #e2e8f0',
-          borderRadius: '12px', padding: '1.25rem'
-        }}>
-          <div style={{
-            fontSize: '13px', fontWeight: '600', color: '#374151',
-            marginBottom: '1rem'
-          }}>
-            GST Returns — {monthLabel}
+        <Card>
+          <SectionTitle icon="swap" action={<Link href="/payments" style={{ color: 'var(--brand)', fontSize: 12, textDecoration: 'none' }}>Manage →</Link>}>
+            Cash &amp; outstanding
+          </SectionTitle>
+          <StatRow label="Collected this month" value={`₹${formatINR(metrics.collected)}`} tone="green" />
+          <StatRow label="To receive" value={`₹${formatINR(metrics.totalReceivable)}`} tone="blue" />
+          <StatRow label="Of which overdue" value={`₹${formatINR(metrics.overdueReceivable)}`} tone="red" />
+          <StatRow label="To pay" value={`₹${formatINR(metrics.totalPayable)}`} tone="amber" strong />
+          <div style={{ marginTop: 14 }}>
+            <div className="tf-eyebrow" style={{ marginBottom: 6 }}>Receivable ageing</div>
+            <StackedBar segments={arAgeing.buckets.map(b => ({ label: b.label, value: b.amount, color: b.color }))} />
+            <div className="tf-row tf-wrap" style={{ gap: 10, marginTop: 9, fontSize: 11, color: 'var(--muted)' }}>
+              {arAgeing.buckets.filter(b => b.amount > 0).map(b => (
+                <span key={b.label} className="tf-row" style={{ gap: 5 }}>
+                  <i style={{ width: 8, height: 8, borderRadius: 99, background: b.color, display: 'inline-block' }} />
+                  {b.label} · {formatCompactINR(b.amount)}
+                </span>
+              ))}
+              {arAgeing.total === 0 && <span>Nothing outstanding.</span>}
+            </div>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column' as const, gap: '10px' }}>
-            {gstReturns.map(ret => {
-              const sc = statusConfig[ret.status] || statusConfig.not_started
+        </Card>
+      </div>
+
+      {/* Compliance + payables */}
+      <div className="tf-g-2" style={{ marginBottom: '1rem' }}>
+        <Card>
+          <SectionTitle icon="calendar" action={<Link href="/gst" style={{ color: 'var(--brand)', fontSize: 12, textDecoration: 'none' }}>GST →</Link>}>
+            Returns due this month
+          </SectionTitle>
+          <div className="tf-col" style={{ gap: 10 }}>
+            {gstReturns.map(r => {
+              const days = Math.ceil((r.due.getTime() - Date.now()) / 86400000)
+              const filed = r.status === 'filed'
+              const tone = filed ? 'green' : days < 0 ? 'red' : days <= 5 ? 'amber' : 'grey'
               return (
-                <div key={ret.type} style={{
-                  display: 'flex', justifyContent: 'space-between',
-                  alignItems: 'center', padding: '10px 12px',
-                  border: '1px solid #f1f5f9', borderRadius: '8px'
+                <div key={r.type} style={{
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  padding: '11px 13px', border: '1px solid var(--line-soft)',
+                  borderRadius: 12, background: 'var(--surface-2)',
                 }}>
-                  <div>
-                    <div style={{ fontWeight: '600', fontSize: '13px', color: '#1e293b' }}>
-                      {ret.label}
-                    </div>
+                  <span className="tf-chip" style={{ width: 32, height: 32 }}>
+                    <Icon name="file-check" size={16} />
+                  </span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 650, fontSize: 13, color: 'var(--ink)' }}>{r.label}</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{r.desc} · due {formatDateIN(r.due.toISOString())}</div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{
-                      fontSize: '11px', padding: '3px 10px',
-                      borderRadius: '99px', fontWeight: '600',
-                      background: sc.bg, color: sc.color
-                    }}>
-                      {sc.label}
-                    </span>
-                    <Link href={ret.href} style={{
-                      fontSize: '12px', color: '#2563eb',
-                      textDecoration: 'none', fontWeight: '500'
-                    }}>
-                      View →
-                    </Link>
-                  </div>
+                  <Badge tone={filed ? 'green' : tone}>
+                    {filed ? 'Filed' : days < 0 ? `${Math.abs(days)}d overdue` : `${days}d left`}
+                  </Badge>
+                  <Link href={r.href} className="tf-btn tf-btn-ghost tf-btn-sm">Open</Link>
                 </div>
               )
             })}
           </div>
-          <Link href="/gst" style={{
-            display: 'block', marginTop: '12px', textAlign: 'center' as const,
-            fontSize: '12px', color: '#2563eb', textDecoration: 'none'
-          }}>
-            GST Dashboard →
-          </Link>
-        </div>
-      </div>
+        </Card>
 
-      {/* Recent invoices */}
-      <div style={{
-        background: 'white', border: '1px solid #e2e8f0',
-        borderRadius: '12px', padding: '1.25rem'
-      }}>
-        <div style={{
-          display: 'flex', justifyContent: 'space-between',
-          alignItems: 'center', marginBottom: '1rem'
-        }}>
-          <div style={{ fontSize: '13px', fontWeight: '600', color: '#374151' }}>
-            Recent Invoices
-          </div>
-          <Link href="/invoices" style={{
-            fontSize: '12px', color: '#2563eb', textDecoration: 'none'
-          }}>
-            View all →
-          </Link>
-        </div>
-
-        {recentInvoices.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '1.5rem', color: '#94a3b8', fontSize: '13px' }}>
-            No invoices yet —{' '}
-            <Link href="/invoices/new" style={{ color: '#2563eb' }}>
-              Create your first invoice
-            </Link>
-          </div>
-        ) : (
-          <>
-            {/* Desktop table */}
-            <div className="desktop-table">
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: '1.5fr 2fr 1fr 1fr 1fr',
-                gap: '12px', padding: '8px 12px',
-                fontSize: '11px', fontWeight: '600', color: '#94a3b8',
-                borderBottom: '1px solid #f1f5f9'
-              }}>
-                <span>Invoice</span>
-                <span>Customer</span>
-                <span>Date</span>
-                <span>Amount</span>
-                <span>Status</span>
-              </div>
+        <Card>
+          <SectionTitle icon="invoice" action={<Link href="/invoices" style={{ color: 'var(--brand)', fontSize: 12, textDecoration: 'none' }}>All invoices →</Link>}>
+            Latest invoices
+          </SectionTitle>
+          {recentInvoices.length === 0 ? (
+            <EmptyState icon="invoice" title="No invoices yet"
+              message="Create your first GST invoice — numbers, GST split and stock all update automatically."
+              action={<Button href="/invoices/new" icon="plus" size="sm">New invoice</Button>} />
+          ) : (
+            <div className="tf-col" style={{ gap: 2 }}>
               {recentInvoices.map(inv => (
-                <Link key={inv.id} href={`/invoices/${inv.id}`} style={{ textDecoration: 'none' }}>
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1.5fr 2fr 1fr 1fr 1fr',
-                    gap: '12px', padding: '10px 12px',
-                    borderBottom: '1px solid #f8fafc',
-                    fontSize: '13px', cursor: 'pointer',
-                    alignItems: 'center'
+                <Link key={inv.id} href={`/invoices/${inv.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+                  <div className="tf-row-between tf-tr" style={{
+                    padding: '9px 10px', borderRadius: 9, borderBottom: '1px solid var(--line-soft)',
                   }}>
-                    <span style={{ fontWeight: '600', color: '#2563eb' }}>
-                      {inv.invoice_number}
-                    </span>
-                    <span style={{ color: '#1e293b' }}>{inv.customer_name}</span>
-                    <span style={{ color: '#64748b' }}>
-                      {new Date(inv.invoice_date).toLocaleDateString('en-IN')}
-                    </span>
-                    <span style={{ fontWeight: '500' }}>
-                      ₹{formatINR(inv.grand_total)}
-                    </span>
-                    <span>
-                      <span style={{
-                        fontSize: '11px', padding: '2px 8px',
-                        borderRadius: '99px',
-                        background:
-                          inv.payment_status === 'paid' ? '#f0fdf4' :
-                          inv.payment_status === 'partial' ? '#fef9c3' : '#fef2f2',
-                        color:
-                          inv.payment_status === 'paid' ? '#166534' :
-                          inv.payment_status === 'partial' ? '#854d0e' : '#dc2626'
-                      }}>
+                    <div className="tf-row" style={{ gap: 10, minWidth: 0 }}>
+                      <span className="tf-chip" style={{ width: 30, height: 30 }}><Icon name="invoice" size={14} /></span>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 650, color: 'var(--brand-dark)' }}>{inv.invoice_number}</div>
+                        <div style={{
+                          fontSize: 11.5, color: 'var(--muted)',
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 260,
+                        }}>
+                          {inv.customer_name} · {formatDateIN(inv.invoice_date)}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="tf-row" style={{ gap: 9 }}>
+                      <span className="tf-num" style={{ fontSize: 13, fontWeight: 650 }}>₹{formatINR(inv.grand_total)}</span>
+                      <Badge tone={inv.payment_status === 'paid' ? 'green' : inv.payment_status === 'partial' ? 'amber' : 'red'} dot={false}>
                         {inv.payment_status}
-                      </span>
-                    </span>
+                      </Badge>
+                    </div>
                   </div>
                 </Link>
               ))}
             </div>
-
-            {/* Mobile cards */}
-            <div className="mobile-cards">
-              {recentInvoices.map(inv => (
-                <Link key={inv.id} href={`/invoices/${inv.id}`} style={{
-                  textDecoration: 'none', display: 'block',
-                  border: '1px solid #f1f5f9', borderRadius: '10px',
-                  padding: '12px', marginBottom: '8px'
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                    <span style={{ fontWeight: '600', color: '#2563eb', fontSize: '13px' }}>
-                      {inv.invoice_number}
-                    </span>
-                    <span style={{ fontWeight: '600', fontSize: '13px' }}>
-                      ₹{formatINR(inv.grand_total)}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#1e293b', marginBottom: '6px' }}>
-                    {inv.customer_name}
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '11px', color: '#64748b' }}>
-                      {new Date(inv.invoice_date).toLocaleDateString('en-IN')}
-                    </span>
-                    <span style={{
-                      fontSize: '11px', padding: '2px 8px',
-                      borderRadius: '99px',
-                      background:
-                        inv.payment_status === 'paid' ? '#f0fdf4' :
-                        inv.payment_status === 'partial' ? '#fef9c3' : '#fef2f2',
-                      color:
-                        inv.payment_status === 'paid' ? '#166534' :
-                        inv.payment_status === 'partial' ? '#854d0e' : '#dc2626'
-                    }}>
-                      {inv.payment_status}
-                    </span>
-                  </div>
-                </Link>
-              ))}
+          )}
+          {apAgeing.buckets.some(b => b.amount > 0) && (
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--line-soft)' }}>
+              <div className="tf-eyebrow" style={{ marginBottom: 6 }}>Payable ageing</div>
+              <StackedBar segments={apAgeing.buckets.map(b => ({ label: b.label, value: b.amount, color: b.color }))} />
             </div>
-          </>
-        )}
+          )}
+        </Card>
       </div>
 
-      <style>{`
-        @media (max-width: 768px) {
-          .dash-metrics { grid-template-columns: 1fr !important; }
-          .dash-grid-2 { grid-template-columns: 1fr !important; }
-          .desktop-table { display: none !important; }
-          .mobile-cards { display: block !important; }
-        }
-        @media (min-width: 769px) {
-          .mobile-cards { display: none !important; }
-        }
-      `}</style>
+      <DashboardTrends metrics={metrics} />
+    </div>
+  )
+}
+
+function DashboardTrends({ metrics }: { metrics: Metrics }) {
+  const rows = [
+    { label: 'Sales growth', value: changePct(metrics.totalSales, metrics.prevSales) },
+    { label: 'Purchase growth', value: changePct(metrics.totalPurchases, metrics.prevPurchases) },
+    { label: 'Expense ratio', value: metrics.totalSales ? (metrics.totalExpenses / metrics.totalSales) * 100 : null, suffix: '%' },
+  ]
+  return (
+    <Card>
+      <SectionTitle icon="percent">This month at a glance</SectionTitle>
+      <div className="tf-g-3">
+        {rows.map(r => (
+          <div key={r.label}>
+            <div className="tf-row-between" style={{ marginBottom: 6 }}>
+              <span style={{ fontSize: 12, color: 'var(--muted)' }}>{r.label}</span>
+              <span className="tf-num" style={{ fontSize: 13, fontWeight: 650 }}>
+                {r.value === null ? '—' : `${r.value.toFixed(1)}${r.suffix ?? (r.value > 0 ? '% ↑' : '%')}`}
+              </span>
+            </div>
+            <ProgressBar
+              value={r.value === null ? 0 : Math.min(Math.abs(r.value), 100)}
+              color={r.label === 'Expense ratio' ? 'var(--amber)' : 'var(--green)'}
+            />
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
+function DashboardSkeleton() {
+  return (
+    <div className="page-container" style={{ maxWidth: 1240 }}>
+      <div style={{ height: 84, borderRadius: 16, background: 'linear-gradient(115deg,#dbe6f7,#eef2f9)', marginBottom: '1rem' }} />
+      <div className="tf-g-4" style={{ marginBottom: '1rem' }}>
+        {[0, 1, 2, 3].map(i => (
+          <div key={i} style={{ height: 96, borderRadius: 16, background: 'var(--surface)', border: '1px solid var(--line)' }} />
+        ))}
+      </div>
+      <div className="tf-g-2">
+        {[0, 1].map(i => (
+          <div key={i} style={{ height: 240, borderRadius: 16, background: 'var(--surface)', border: '1px solid var(--line)' }} />
+        ))}
+      </div>
+      <p style={{ color: 'var(--faint)', fontSize: 12, marginTop: 12 }}>Loading dashboard…</p>
     </div>
   )
 }

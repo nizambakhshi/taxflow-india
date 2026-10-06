@@ -4,83 +4,84 @@ import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { pendingOutboxCount } from '@/lib/outbox'
+import { initials } from '@/lib/format'
+import Icon from '@/components/Icons'
 import Link from 'next/link'
 
 const NAV_ITEMS = [
   {
-    section: 'Main',
+    section: 'Overview',
     items: [
-      { label: 'Dashboard', href: '/dashboard', icon: '📊' },
-      { label: 'Offline Sync', href: '/offline', icon: '📶' },
+      { label: 'Dashboard', href: '/dashboard', icon: 'dashboard' },
+      { label: 'Offline Sync', href: '/offline', icon: 'cloud' },
     ]
   },
   {
     section: 'Sales',
     items: [
-      { label: 'Invoices', href: '/invoices', icon: '🧾' },
-      { label: 'Counter Sale', href: '/pos', icon: '🛍️' },
-      { label: 'Quotations', href: '/quotations', icon: '📋' },
-      { label: 'Credit Notes', href: '/credit-notes', icon: '📝' },
-      { label: 'Debit Notes', href: '/debit-notes', icon: '📄' },
+      { label: 'Invoices', href: '/invoices', icon: 'invoice' },
+      { label: 'Counter Sale', href: '/pos', icon: 'pos' },
+      { label: 'Quotations', href: '/quotations', icon: 'clipboard' },
+      { label: 'Credit Notes', href: '/credit-notes', icon: 'credit-note' },
+      { label: 'Debit Notes', href: '/debit-notes', icon: 'debit-note' },
     ]
   },
   {
     section: 'Purchases',
     items: [
-      { label: 'Bills', href: '/bills', icon: '🛒' },
-      { label: 'Expenses', href: '/expenses', icon: '💸' },
+      { label: 'Bills', href: '/bills', icon: 'cart' },
+      { label: 'Expenses', href: '/expenses', icon: 'wallet' },
     ]
   },
   {
     section: 'Payments',
     items: [
-      { label: 'Receivables & Payables', href: '/payments', icon: '💳' },
-      { label: 'Payment Links', href: '/payments/links', icon: '🔗' },
+      { label: 'Receivables & Payables', href: '/payments', icon: 'swap' },
+      { label: 'Payment Links', href: '/payments/links', icon: 'link' },
     ]
   },
   {
     section: 'Masters',
     items: [
-      { label: 'Customers', href: '/customers', icon: '👥' },
-      { label: 'Vendors', href: '/vendors', icon: '🏭' },
-      { label: 'Products', href: '/products', icon: '📦' },
-      { label: 'Inventory', href: '/inventory', icon: '🏪' },
+      { label: 'Customers', href: '/customers', icon: 'users' },
+      { label: 'Vendors', href: '/vendors', icon: 'factory' },
+      { label: 'Products', href: '/products', icon: 'box' },
+      { label: 'Inventory', href: '/inventory', icon: 'store' },
     ]
   },
   {
     section: 'GST',
     items: [
-      { label: 'GST Dashboard', href: '/gst', icon: '🏛️' },
-      { label: 'GSTR-1', href: '/gst/gstr1', icon: '📤' },
-      { label: 'GSTR-3B', href: '/gst/gstr3b', icon: '📑' },
-      { label: '2B Reconciliation', href: '/gst/reconciliation', icon: '🔍' },
-      { label: 'E-Invoicing', href: '/gst/einvoice', icon: '⚡' },
+      { label: 'GST Dashboard', href: '/gst', icon: 'landmark' },
+      { label: 'GSTR-1', href: '/gst/gstr1', icon: 'upload' },
+      { label: 'GSTR-3B', href: '/gst/gstr3b', icon: 'file-check' },
+      { label: '2B Reconciliation', href: '/gst/reconciliation', icon: 'compare' },
+      { label: 'E-Invoicing', href: '/gst/einvoice', icon: 'zap' },
     ]
   },
   {
-    section: 'Reports',
+    section: 'Reports & AI',
     items: [
-      { label: 'Reports', href: '/reports', icon: '📈' },
-      { label: 'Financial Statements', href: '/accounting', icon: '⚖️' },
-      { label: 'Scan Bill', href: '/ai/scan-bill', icon: '🤖' },
-      { label: 'Ask My Books', href: '/ai/ask', icon: '💬' },
+      { label: 'Reports', href: '/reports', icon: 'chart' },
+      { label: 'Financial Statements', href: '/accounting', icon: 'scale' },
+      { label: 'Scan Bill', href: '/ai/scan-bill', icon: 'scan' },
+      { label: 'Ask My Books', href: '/ai/ask', icon: 'chat' },
     ]
   },
   {
     section: 'Account',
     items: [
-      { label: 'Settings', href: '/settings', icon: '⚙️' },
+      { label: 'Settings', href: '/settings', icon: 'settings' },
     ]
   },
 ]
 
 // Bottom nav items for mobile (most important only)
 const BOTTOM_NAV = [
-  { label: 'Home', href: '/dashboard', icon: '📊' },
-  { label: 'Invoices', href: '/invoices', icon: '🧾' },
-  { label: 'Bills', href: '/bills', icon: '🛒' },
-  { label: 'GST', href: '/gst', icon: '🏛️' },
-  { label: 'Menu', href: '#menu', icon: '☰' },
+  { label: 'Home', href: '/dashboard', icon: 'dashboard' },
+  { label: 'Invoices', href: '/invoices', icon: 'invoice' },
+  { label: 'Bills', href: '/bills', icon: 'cart' },
+  { label: 'GST', href: '/gst', icon: 'landmark' },
 ]
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -139,203 +140,200 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   if (loading) {
     return (
       <div style={{
-        minHeight: '100vh', display: 'flex',
-        alignItems: 'center', justifyContent: 'center',
-        background: '#f8fafc'
+        minHeight: '100vh', display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center', gap: 14,
+        background: 'var(--bg)'
       }}>
-        <p style={{ color: '#64748b', fontSize: '14px' }}>Loading...</p>
+        <BrandMark size={44} />
+        <div style={{
+          width: 120, height: 3, borderRadius: 99, background: 'var(--line)',
+          overflow: 'hidden', position: 'relative'
+        }}>
+          <div style={{
+            position: 'absolute', inset: 0, width: '40%', borderRadius: 99,
+            background: 'var(--brand)', animation: 'tf-sweep 1.1s ease-in-out infinite'
+          }} />
+        </div>
+        <style>{`@keyframes tf-sweep{0%{transform:translateX(-110%)}100%{transform:translateX(280%)}}`}</style>
       </div>
     )
   }
 
+  const isActive = (href: string) =>
+    pathname === href || (href !== '/dashboard' && pathname.startsWith(href + '/'))
+
   return (
-    <div style={{ minHeight: '100vh', background: '#f8fafc' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
 
       {/* ── DESKTOP SIDEBAR ── */}
-      <div style={{
-        width: '220px',
-        background: 'white',
-        borderRight: '1px solid #e2e8f0',
-        display: 'flex',
-        flexDirection: 'column',
-        position: 'fixed',
-        top: 0, left: 0,
-        height: '100vh',
-        overflowY: 'auto',
-        zIndex: 20,
-      }} className="desktop-sidebar">
-        {/* Logo */}
-        <div style={{ padding: '1.25rem 1rem', borderBottom: '1px solid #e2e8f0' }}>
-          <div style={{ fontSize: '16px', fontWeight: '700', color: '#2563eb' }}>
-            TaxFlow India
-          </div>
-          <div style={{
-            fontSize: '11px', color: '#64748b', marginTop: '2px',
-            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
-          }}>
-            {orgName}
-          </div>
+      <aside className="desktop-sidebar">
+        <div style={{ padding: '1.1rem 1rem', borderBottom: '1px solid var(--line-soft)' }}>
+          <Link href="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}>
+            <BrandMark />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: '15px', fontWeight: 750, color: 'var(--ink)', letterSpacing: '-0.02em' }}>
+                TaxFlow <span style={{ color: 'var(--brand)' }}>India</span>
+              </div>
+              <div className="side-org" style={{
+                fontSize: '11px', color: 'var(--muted)', marginTop: '1px',
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+              }}>
+                {orgName}
+              </div>
+            </div>
+          </Link>
           {gstin && (
             <div style={{
-              fontSize: '10px', color: '#94a3b8',
-              fontFamily: 'monospace', marginTop: '1px'
+              display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: '10px',
+              fontSize: '10px', color: 'var(--brand-dark)', background: 'var(--brand-soft)',
+              padding: '3px 8px', borderRadius: '99px', fontFamily: 'ui-monospace, monospace',
+              fontWeight: 600, letterSpacing: '0.02em'
             }}>
+              <span style={{ width: 5, height: 5, borderRadius: 99, background: 'var(--green)' }} />
               {gstin}
             </div>
           )}
         </div>
 
-        {/* Nav */}
-        <nav style={{ flex: 1, padding: '0.75rem 0' }}>
+        <div style={{ padding: '0.85rem 0.75rem 0.35rem' }}>
+          <Link href="/invoices/new" className="tf-btn tf-btn-primary" style={{ width: '100%', fontSize: '12.5px', padding: '8px 12px' }}>
+            <Icon name="plus" size={15} strokeWidth={2.4} />
+            New invoice
+          </Link>
+        </div>
+
+        <nav style={{ flex: 1, padding: '0.25rem 0.6rem 1rem', overflowY: 'auto' }}>
           {NAV_ITEMS.map(section => (
-            <div key={section.section} style={{ marginBottom: '0.5rem' }}>
-              <div style={{
-                fontSize: '10px', fontWeight: '600', color: '#94a3b8',
-                padding: '6px 1rem 4px',
-                textTransform: 'uppercase', letterSpacing: '0.05em'
+            <div key={section.section} style={{ marginBottom: '0.85rem' }}>
+              <div className="side-section" style={{
+                fontSize: '9.5px', fontWeight: 700, color: 'var(--faint)',
+                padding: '4px 0.6rem 4px', textTransform: 'uppercase', letterSpacing: '0.09em'
               }}>
                 {section.section}
               </div>
-              {section.items.map(item => {
-                const isActive = pathname === item.href
-                return (
-                  <Link key={item.href} href={item.href} style={{
-                    display: 'flex', alignItems: 'center', gap: '8px',
-                    padding: '7px 1rem', fontSize: '13px',
-                    color: isActive ? '#2563eb' : '#374151',
-                    background: isActive ? '#eff6ff' : 'transparent',
-                    fontWeight: isActive ? '600' : '400',
-                    textDecoration: 'none',
-                    borderRight: isActive ? '2px solid #2563eb' : '2px solid transparent',
-                  }}>
-                    <span>{item.icon}</span>
-                    <span>{item.label}</span>
-                  </Link>
-                )
-              })}
+              {section.items.map(item => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`side-link ${isActive(item.href) ? 'is-active' : ''}`}
+                >
+                  <span className="side-indicator" />
+                  <Icon name={item.icon} size={16} strokeWidth={isActive(item.href) ? 2 : 1.7} />
+                  <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {item.label}
+                  </span>
+                </Link>
+              ))}
             </div>
           ))}
         </nav>
 
-        {/* Bottom user */}
-        <div style={{ padding: '1rem', borderTop: '1px solid #e2e8f0' }}>
-          <div style={{
-            fontSize: '12px', color: '#64748b', marginBottom: '8px',
-            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
-          }}>
-            {userEmail}
+        <div style={{ padding: '.85rem', borderTop: '1px solid var(--line-soft)' }}>
+          <div className="tf-row" style={{ gap: 9 }}>
+            <span style={{
+              width: 30, height: 30, borderRadius: 9, flexShrink: 0,
+              background: 'linear-gradient(135deg,#2563eb,#7c3aed)', color: 'white',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '11px', fontWeight: 700
+            }}>
+              {initials(orgName || userEmail || 'T')}
+            </span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{
+                fontSize: '12px', color: 'var(--ink-2)', fontWeight: 600,
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+              }}>
+                {orgName || 'My business'}
+              </div>
+              <div style={{
+                fontSize: '10.5px', color: 'var(--faint)',
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+              }}>
+                {userEmail}
+              </div>
+            </div>
+            <button
+              onClick={handleLogout}
+              title="Sign out"
+              className="side-link"
+              style={{ padding: 6, width: 30, height: 30, justifyContent: 'center' }}
+            >
+              <Icon name="logout" size={15} />
+            </button>
           </div>
-          <button onClick={handleLogout} style={{
-            width: '100%', padding: '7px',
-            background: '#f1f5f9', border: '1px solid #e2e8f0',
-            borderRadius: '8px', fontSize: '12px',
-            cursor: 'pointer', color: '#374151'
-          }}>
-            Sign out
+        </div>
+      </aside>
+
+      {/* ── MOBILE TOP BAR ── */}
+      <div className="mobile-topbar">
+        <div className="tf-row" style={{ gap: 9, minWidth: 0 }}>
+          <BrandMark size={30} />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: '14px', fontWeight: 750, color: 'var(--ink)', letterSpacing: '-0.02em' }}>
+              TaxFlow <span style={{ color: 'var(--brand)' }}>India</span>
+            </div>
+            <div style={{
+              fontSize: '10px', color: 'var(--muted)',
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+            }}>{orgName}</div>
+          </div>
+        </div>
+        <div className="tf-row" style={{ gap: 8 }}>
+          <Link href="/invoices/new" className="tf-btn tf-btn-primary tf-btn-sm" style={{ minHeight: 34 }}>
+            <Icon name="plus" size={14} strokeWidth={2.4} /> Invoice
+          </Link>
+          <button
+            className="tf-btn tf-btn-ghost tf-btn-sm"
+            style={{ minHeight: 34, padding: '6px 9px' }}
+            onClick={() => setMenuOpen(prev => !prev)}
+            aria-label="Menu"
+          >
+            <Icon name={menuOpen ? 'x' : 'menu'} size={17} />
           </button>
         </div>
       </div>
 
-      {/* ── MOBILE TOP BAR ── */}
-      <div className="mobile-topbar" style={{
-        display: 'none',
-        position: 'fixed', top: 0, left: 0, right: 0,
-        height: '56px', background: 'white',
-        borderBottom: '1px solid #e2e8f0',
-        zIndex: 30, alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '0 1rem',
-      }}>
-        <div>
-          <div style={{ fontSize: '15px', fontWeight: '700', color: '#2563eb' }}>
-            TaxFlow India
-          </div>
-          <div style={{ fontSize: '10px', color: '#64748b' }}>{orgName}</div>
-        </div>
-        <Link href="/invoices/new" style={{
-          padding: '7px 14px', background: '#2563eb',
-          color: 'white', borderRadius: '8px',
-          fontSize: '13px', fontWeight: '600',
-          textDecoration: 'none'
-        }}>
-          + Invoice
-        </Link>
-      </div>
-
       {/* ── MOBILE FULL MENU OVERLAY ── */}
       {menuOpen && (
-        <div style={{
-          position: 'fixed', inset: 0,
-          background: 'rgba(0,0,0,0.5)',
-          zIndex: 40,
-        }} onClick={() => setMenuOpen(false)}>
-          <div style={{
-            position: 'absolute', bottom: '60px', left: 0, right: 0,
-            background: 'white',
-            borderRadius: '16px 16px 0 0',
-            maxHeight: '75vh', overflowY: 'auto',
-            padding: '1rem 0',
-          }} onClick={e => e.stopPropagation()}>
-            {/* Handle bar */}
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 40 }}
+          onClick={() => setMenuOpen(false)}>
+          <div className="sheet" onClick={e => e.stopPropagation()}>
             <div style={{
-              width: '40px', height: '4px', background: '#e2e8f0',
+              width: '40px', height: '4px', background: 'var(--line)',
               borderRadius: '99px', margin: '0 auto 1rem',
             }} />
 
-            {/* Org info */}
             <div style={{
-              padding: '0 1rem 1rem',
-              borderBottom: '1px solid #f1f5f9',
-              marginBottom: '0.5rem'
+              padding: '0 1rem 1rem', borderBottom: '1px solid var(--line-soft)', marginBottom: '0.5rem'
             }}>
-              <div style={{ fontWeight: '600', color: '#1e293b', fontSize: '14px' }}>{orgName}</div>
-              <div style={{ fontSize: '12px', color: '#64748b' }}>{userEmail}</div>
-              {gstin && <div style={{ fontSize: '11px', color: '#94a3b8', fontFamily: 'monospace' }}>{gstin}</div>}
+              <div style={{ fontWeight: 700, color: 'var(--ink)', fontSize: '14px' }}>{orgName}</div>
+              <div style={{ fontSize: '12px', color: 'var(--muted)' }}>{userEmail}</div>
+              {gstin && <div style={{ fontSize: '11px', color: 'var(--faint)', fontFamily: 'monospace', marginTop: 2 }}>{gstin}</div>}
             </div>
 
-            {/* All nav items */}
             {NAV_ITEMS.map(section => (
               <div key={section.section}>
                 <div style={{
-                  fontSize: '10px', fontWeight: '600', color: '#94a3b8',
-                  padding: '8px 1rem 4px',
-                  textTransform: 'uppercase', letterSpacing: '0.05em'
+                  fontSize: '10px', fontWeight: 700, color: 'var(--faint)',
+                  padding: '10px 1rem 4px', textTransform: 'uppercase', letterSpacing: '0.09em'
                 }}>
                   {section.section}
                 </div>
-                {section.items.map(item => {
-                  const isActive = pathname === item.href
-                  return (
-                    <Link key={item.href} href={item.href}
-                      onClick={() => setMenuOpen(false)}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: '12px',
-                        padding: '12px 1rem', fontSize: '14px',
-                        color: isActive ? '#2563eb' : '#374151',
-                        background: isActive ? '#eff6ff' : 'transparent',
-                        fontWeight: isActive ? '600' : '400',
-                        textDecoration: 'none',
-                      }}>
-                      <span style={{ fontSize: '18px' }}>{item.icon}</span>
-                      <span>{item.label}</span>
-                      {isActive && (
-                        <span style={{ marginLeft: 'auto', color: '#2563eb', fontSize: '12px' }}>●</span>
-                      )}
-                    </Link>
-                  )
-                })}
+                {section.items.map(item => (
+                  <Link key={item.href} href={item.href}
+                    onClick={() => setMenuOpen(false)}
+                    className={`sheet-link ${isActive(item.href) ? 'is-active' : ''}`}>
+                    <Icon name={item.icon} size={18} />
+                    <span>{item.label}</span>
+                    {isActive(item.href) && <span style={{ marginLeft: 'auto', fontSize: '11px' }}>●</span>}
+                  </Link>
+                ))}
               </div>
             ))}
 
-            {/* Sign out */}
-            <div style={{ padding: '1rem', borderTop: '1px solid #f1f5f9', marginTop: '0.5rem' }}>
-              <button onClick={handleLogout} style={{
-                width: '100%', padding: '12px',
-                background: '#fef2f2', border: '1px solid #fecaca',
-                borderRadius: '8px', fontSize: '14px',
-                cursor: 'pointer', color: '#dc2626', fontWeight: '500'
-              }}>
-                Sign Out
+            <div style={{ padding: '1rem', borderTop: '1px solid var(--line-soft)', marginTop: '0.5rem' }}>
+              <button onClick={handleLogout} className="tf-btn tf-btn-danger" style={{ width: '100%' }}>
+                <Icon name="logout" size={15} /> Sign out
               </button>
             </div>
           </div>
@@ -343,82 +341,144 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       )}
 
       {/* ── MOBILE BOTTOM NAVIGATION ── */}
-      <div className="mobile-bottom-nav" style={{
-        display: 'none',
-        position: 'fixed', bottom: 0, left: 0, right: 0,
-        height: '60px', background: 'white',
-        borderTop: '1px solid #e2e8f0',
-        zIndex: 30,
-        alignItems: 'center',
-        justifyContent: 'space-around',
-        padding: '0 4px',
-      }}>
+      <div className="mobile-bottom-nav">
         {BOTTOM_NAV.map(item => {
-          const isActive = pathname === item.href
-          const isMenu = item.href === '#menu'
+          const active = isActive(item.href)
           return (
-            <button
-              key={item.href}
-              onClick={() => {
-                if (isMenu) {
-                  setMenuOpen(prev => !prev)
-                } else {
-                  router.push(item.href)
-                }
-              }}
-              style={{
-                display: 'flex', flexDirection: 'column',
-                alignItems: 'center', justifyContent: 'center',
-                gap: '2px', padding: '6px 12px',
-                background: 'none', border: 'none',
-                cursor: 'pointer', flex: 1,
-                borderTop: isActive || (isMenu && menuOpen)
-                  ? '2px solid #2563eb' : '2px solid transparent',
-              }}
-            >
-              <span style={{ fontSize: '20px' }}>{item.icon}</span>
-              <span style={{
-                fontSize: '10px', fontWeight: '500',
-                color: isActive || (isMenu && menuOpen) ? '#2563eb' : '#64748b'
-              }}>
-                {item.label}
-              </span>
+            <button key={item.href} onClick={() => router.push(item.href)} className={`bottom-item ${active ? 'is-active' : ''}`}>
+              <Icon name={item.icon} size={20} strokeWidth={active ? 2.2 : 1.7} />
+              <span>{item.label}</span>
             </button>
           )
         })}
+        <button
+          onClick={() => setMenuOpen(prev => !prev)}
+          className={`bottom-item ${menuOpen ? 'is-active' : ''}`}
+        >
+          <Icon name={menuOpen ? 'x' : 'menu'} size={20} strokeWidth={2} />
+          <span>Menu</span>
+        </button>
       </div>
 
       {/* ── MAIN CONTENT ── */}
-      <div className="main-content" style={{
-        marginLeft: '220px',
-        minHeight: '100vh',
-      }}>
+      <div className="main-content">
         <OfflineBanner orgId={orgId} pathname={pathname} />
         {children}
       </div>
 
-      {/* ── GLOBAL RESPONSIVE STYLES ── */}
+      {/* ── SHELL STYLES ── */}
       <style>{`
-        /* Mobile breakpoint: screens under 768px */
+        .desktop-sidebar {
+          width: var(--sidebar-w);
+          background: var(--surface);
+          border-right: 1px solid var(--line);
+          display: flex;
+          flex-direction: column;
+          position: fixed;
+          top: 0; left: 0;
+          height: 100vh;
+          overflow: hidden;
+          z-index: 20;
+        }
+        .side-link {
+          position: relative;
+          display: flex; align-items: center; gap: 9px;
+          padding: 7px 12px; margin: 1px 0;
+          font-size: 12.5px; font-weight: 500;
+          color: var(--ink-2);
+          background: transparent;
+          border: none; border-radius: 9px;
+          text-decoration: none; cursor: pointer;
+          font-family: inherit;
+          transition: background .14s ease, color .14s ease;
+        }
+        .side-link:hover { background: var(--surface-2); color: var(--ink); }
+        .side-link.is-active { background: var(--brand-soft); color: var(--brand-dark); font-weight: 650; }
+        .side-indicator {
+          position: absolute; left: 3px; top: 50%; transform: translateY(-50%);
+          width: 3px; height: 0; border-radius: 99px; background: var(--brand);
+          transition: height .18s ease;
+        }
+        .side-link.is-active .side-indicator { height: 18px; }
+
+        .mobile-topbar {
+          display: none;
+          position: fixed; top: 0; left: 0; right: 0;
+          height: 56px; background: rgba(255,255,255,.92);
+          backdrop-filter: saturate(180%) blur(10px);
+          border-bottom: 1px solid var(--line);
+          z-index: 30; align-items: center;
+          justify-content: space-between; padding: 0 1rem; gap: 8px;
+        }
+        .mobile-bottom-nav {
+          display: none;
+          position: fixed; bottom: 0; left: 0; right: 0;
+          height: 62px; background: rgba(255,255,255,.95);
+          backdrop-filter: saturate(180%) blur(10px);
+          border-top: 1px solid var(--line);
+          z-index: 30; align-items: center;
+          justify-content: space-around; padding: 0 4px;
+        }
+        .bottom-item {
+          display: flex; flex-direction: column; align-items: center; justify-content: center;
+          gap: 3px; padding: 6px 10px; min-height: 0;
+          background: none; border: none; border-top: 2px solid transparent;
+          cursor: pointer; flex: 1; color: var(--faint); font-family: inherit;
+        }
+        .bottom-item span { font-size: 10px; font-weight: 600; }
+        .bottom-item.is-active { color: var(--brand); border-top-color: var(--brand); }
+
+        .main-content { margin-left: var(--sidebar-w); min-height: 100vh; }
+
+        .sheet {
+          position: absolute; bottom: 0; left: 0; right: 0;
+          background: var(--surface);
+          border-radius: 18px 18px 0 0;
+          max-height: 78vh; overflow-y: auto;
+          padding: 1rem 0 0.5rem;
+          animation: tf-sheet .22s cubic-bezier(0.22,1,0.36,1) both;
+        }
+        @keyframes tf-sheet { from { transform: translateY(24px); opacity: .6 } to { transform: none; opacity: 1 } }
+        .sheet-link {
+          display: flex; align-items: center; gap: 12px;
+          padding: 12px 1rem; font-size: 14px;
+          color: var(--ink-2); text-decoration: none;
+        }
+        .sheet-link.is-active { color: var(--brand-dark); background: var(--brand-soft); font-weight: 600; }
+
         @media (max-width: 768px) {
-          .desktop-sidebar { display: none !important; }
-          .mobile-topbar { display: flex !important; }
-          .mobile-bottom-nav { display: flex !important; }
+          .desktop-sidebar { display: none; }
+          .mobile-topbar { display: flex; }
+          .mobile-bottom-nav { display: flex; }
           .offline-banner { top: 56px !important; }
           .main-content {
-            margin-left: 0 !important;
-            padding-top: 56px !important;
-            padding-bottom: 70px !important;
+            margin-left: 0;
+            padding-top: 56px;
+            padding-bottom: 74px;
           }
         }
-
-        /* Tablet: 768px - 1024px */
         @media (min-width: 769px) and (max-width: 1024px) {
-          .desktop-sidebar { width: 180px !important; }
-          .main-content { margin-left: 180px !important; }
+          :root { --sidebar-w: 200px; }
+          .side-org, .side-section { display: none; }
+          .side-link { justify-content: center; padding: 9px 6px; }
+          .side-link span:not(.side-indicator) { display: none; }
+          .side-link .side-indicator { left: 2px; }
         }
       `}</style>
     </div>
+  )
+}
+
+function BrandMark({ size = 34 }: { size?: number }) {
+  return (
+    <span style={{
+      width: size, height: size, borderRadius: size * 0.28, flexShrink: 0,
+      background: 'linear-gradient(135deg, #2563eb 0%, #4f46e5 55%, #7c3aed 100%)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      color: 'white', boxShadow: '0 6px 16px -6px rgba(37,99,235,.7)',
+    }}>
+      <Icon name="zap" size={size * 0.5} strokeWidth={2.2} />
+    </span>
   )
 }
 
@@ -447,16 +507,16 @@ function OfflineBanner({ orgId, pathname }: { orgId: string; pathname: string })
   return (
     <div className="offline-banner" style={{
       position: 'sticky', top: 0, zIndex: 25,
-      background: '#fef3c7', borderBottom: '1px solid #fde68a',
+      background: 'var(--amber-soft)', borderBottom: '1px solid #fde68a',
       padding: '8px 1rem',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       gap: '12px', flexWrap: 'wrap',
-      fontSize: '13px', color: '#92400e', fontWeight: '500'
+      fontSize: '13px', color: '#92400e', fontWeight: 500
     }}>
       <span>📶 You&apos;re offline — invoicing still works. New invoices are queued.</span>
       {queued > 0 && (
         <Link href="/offline" style={{
-          color: '#2563eb', fontWeight: '600', textDecoration: 'none',
+          color: 'var(--brand)', fontWeight: 600, textDecoration: 'none',
           background: 'white', padding: '3px 10px', borderRadius: '6px',
           border: '1px solid #bfdbfe', fontSize: '12px'
         }}>
