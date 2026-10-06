@@ -289,7 +289,8 @@ export function toCsv(headers: string[], rows: CsvValue[][]): string {
     const s = v === null || v === undefined ? '' : String(v)
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
   }
-  return '\uFEFF' + [headers, ...rows].map(r => r.map(esc).join(',')).join('\r\n')
+  // No BOM here — download() is the only caller path and it adds one itself.
+  return [headers, ...rows].map(r => r.map(esc).join(',')).join('\r\n')
 }
 
 /* ── e-way bill register ─────────────────────────────────────────────

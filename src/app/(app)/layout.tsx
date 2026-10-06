@@ -65,6 +65,7 @@ const NAV_ITEMS = [
     section: 'Reports & AI',
     items: [
       { label: 'Reports', href: '/reports', icon: 'chart' },
+      { label: 'Targets & Achievement', href: '/reports/targets', icon: 'target' },
       { label: 'Statutory Registers', href: '/reports/registers', icon: 'clipboard' },
       { label: 'Account Ledger', href: '/ledger', icon: 'book' },
       { label: 'Financial Statements', href: '/accounting', icon: 'scale' },

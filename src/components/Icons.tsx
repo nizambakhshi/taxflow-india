@@ -179,6 +179,11 @@ const P: Record<string, React.ReactNode> = {
     <circle cx="6.5" cy="6.5" r="2.5" />
     <circle cx="17.5" cy="17.5" r="2.5" />
   </>),
+  target: (<>
+    <circle cx="12" cy="12" r="9" />
+    <circle cx="12" cy="12" r="5" />
+    <circle cx="12" cy="12" r="1.4" />
+  </>),
   building: (<>
     <rect x="4" y="3" width="16" height="18" rx="2" />
     <path d="M9 8h2M13 8h2M9 12h2M13 12h2M9 16h6" />
