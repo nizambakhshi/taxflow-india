@@ -62,6 +62,8 @@ const NAV_ITEMS = [
     items: [
       { label: 'Reports', href: '/reports', icon: '📈' },
       { label: 'Financial Statements', href: '/accounting', icon: '⚖️' },
+      { label: 'Scan Bill', href: '/ai/scan-bill', icon: '🤖' },
+      { label: 'Ask My Books', href: '/ai/ask', icon: '💬' },
     ]
   },
   {

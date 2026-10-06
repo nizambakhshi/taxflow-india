@@ -10,6 +10,7 @@ import {
   formatINR,
   type LineItemResult
 } from '@/lib/gst-engine'
+import { createPurchaseBill } from '@/lib/create-bill'
 import { INDIAN_STATES } from '@/lib/constants'
 
 const inputStyle = {
@@ -233,45 +234,34 @@ export default function BillsPage() {
     setError('')
 
     try {
-      const { data: bill, error: billError } = await supabase
-        .from('purchase_bills')
-        .insert({
-          organization_id: orgId,
-          bill_number: billNumber,
-          bill_date: billDate,
-          due_date: dueDate || null,
-          vendor_id: vendorId,
-          vendor_name: vendorName,
-          vendor_gstin: vendorGstin,
-          vendor_state_code: vendorStateCode,
-          place_of_supply: placeOfSupply,
-          place_of_supply_name: placeOfSupplyName,
-          is_reverse_charge: isReverseCharge,
-          subtotal: totals.subtotal,
-          discount_amount: totals.discount_amount,
-          taxable_amount: totals.taxable_amount,
-          cgst_amount: totals.cgst_amount,
-          sgst_amount: totals.sgst_amount,
-          igst_amount: totals.igst_amount,
-          cess_amount: totals.cess_amount,
-          total_tax: totals.total_tax,
-          round_off: totals.round_off,
-          grand_total: totals.grand_total,
-          itc_eligible: itcEligible,
-          amount_paid: 0,
-          balance_due: totals.grand_total,
-          payment_status: 'unpaid',
-          notes,
-          status: 'active',
-        })
-        .select()
-        .single()
-
-      if (billError) throw billError
-
-      const itemsToInsert = validItems.map((item, idx) => ({
-        bill_id: bill.id,
-        organization_id: orgId,
+      await createPurchaseBill(supabase, orgId, {
+        bill_number: billNumber,
+        bill_date: billDate,
+        due_date: dueDate || null,
+        vendor_id: vendorId,
+        vendor_name: vendorName,
+        vendor_gstin: vendorGstin,
+        vendor_state_code: vendorStateCode,
+        place_of_supply: placeOfSupply,
+        place_of_supply_name: placeOfSupplyName,
+        is_reverse_charge: isReverseCharge,
+        subtotal: totals.subtotal,
+        discount_amount: totals.discount_amount,
+        taxable_amount: totals.taxable_amount,
+        cgst_amount: totals.cgst_amount,
+        sgst_amount: totals.sgst_amount,
+        igst_amount: totals.igst_amount,
+        cess_amount: totals.cess_amount,
+        total_tax: totals.total_tax,
+        round_off: totals.round_off,
+        grand_total: totals.grand_total,
+        itc_eligible: itcEligible,
+        amount_paid: 0,
+        balance_due: totals.grand_total,
+        payment_status: 'unpaid',
+        notes,
+        status: 'active',
+      }, validItems.map(item => ({
         product_id: item.product_id || null,
         item_name: item.item_name,
         hsn_sac: item.hsn_sac,
@@ -292,36 +282,7 @@ export default function BillsPage() {
         cess_amount: item.calculated?.cess_amount || 0,
         total_amount: item.calculated?.total_amount || 0,
         itc_eligible: item.itc_eligible,
-        sort_order: idx,
-      }))
-
-            await supabase.from('purchase_bill_items').insert(itemsToInsert)
-
-      // Update stock for tracked products
-      for (const item of validItems) {
-        if (!item.product_id) continue
-
-        const { data: product } = await supabase
-          .from('products')
-          .select('track_inventory')
-          .eq('id', item.product_id)
-          .single()
-
-        if (product?.track_inventory) {
-          const user = await supabase.auth.getUser()
-          await supabase.rpc('record_stock_movement', {
-            p_organization_id: orgId,
-            p_product_id: item.product_id,
-            p_movement_type: 'purchase',
-            p_quantity: parseFloat(item.quantity),
-            p_reference_type: 'bill',
-            p_reference_id: bill.id,
-            p_reference_number: billNumber,
-            p_notes: `Purchase — ${billNumber}`,
-            p_created_by: user.data.user?.id,
-          })
-        }
-      }
+      })))
 
       const { data: updatedBills } = await supabase
         .from('purchase_bills')
