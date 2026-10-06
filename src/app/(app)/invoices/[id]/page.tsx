@@ -4,6 +4,10 @@ import React, { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { formatINR, numberToWords } from '@/lib/gst-engine'
+import {
+  INVOICE_TEMPLATES, InvoiceDocument, loadInvoiceTemplate, saveInvoiceTemplate,
+  type InvoiceTemplate,
+} from '@/components/InvoiceDocument'
 
 export default function InvoiceDetailPage() {
   const router = useRouter()
@@ -16,6 +20,7 @@ export default function InvoiceDetailPage() {
   const [gstReg, setGstReg] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [downloading, setDownloading] = useState(false)
+  const [template, setTemplate] = useState<InvoiceTemplate>('classic')
 
   useEffect(() => {
     const segments = window.location.pathname.split('/')
@@ -37,6 +42,7 @@ export default function InvoiceDetailPage() {
 
       if (!membership) { router.push('/setup'); return }
       setOrg(membership.organizations)
+      setTemplate(loadInvoiceTemplate(membership.organization_id))
 
       const { data: gst } = await supabase
         .from('gst_registrations')
@@ -252,6 +258,24 @@ export default function InvoiceDetailPage() {
               ✓ Mark as Paid
             </button>
           )}
+          <select
+            value={template}
+            onChange={e => {
+              const next = e.target.value as InvoiceTemplate
+              setTemplate(next)
+              if (org?.id) saveInvoiceTemplate(org.id, next)
+            }}
+            title="Invoice document layout"
+            style={{
+              padding: '8px 10px', background: '#f8fafc', color: '#374151',
+              border: '1px solid #e2e8f0', borderRadius: '8px',
+              fontSize: '13px', cursor: 'pointer',
+            }}
+          >
+            {INVOICE_TEMPLATES.map(t => (
+              <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+          </select>
           <button
             onClick={downloadPDF}
             disabled={downloading}
@@ -321,7 +345,12 @@ export default function InvoiceDetailPage() {
           }}
         >
 
-          {/* ── INVOICE DOCUMENT ── */}
+          {template !== 'classic' && (
+            <InvoiceDocument invoice={invoice} items={items} org={org} gstReg={gstReg} template={template} />
+          )}
+
+          {/* ── INVOICE DOCUMENT (classic layout) ── */}
+          {template === 'classic' && (
           <div
             id="invoice-document"
             style={{
@@ -722,7 +751,8 @@ export default function InvoiceDetailPage() {
             </div>
 
           </div>
-          {/* end invoice-document */}
+          )}
+          {/* end classic invoice-document */}
 
         </div>
         {/* end invoice-capture */}
