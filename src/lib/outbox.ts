@@ -4,7 +4,7 @@
 // replays each entry exactly like the online save path: assign the real
 // sequence number, insert invoice + items, and record stock movements.
 
-import { getFinancialYear } from '@/lib/gst-engine'
+import { createInvoice } from '@/lib/create-invoice'
 
 export interface OutboxEntry {
   id: string
@@ -84,75 +84,7 @@ export interface SyncOutcome {
 
 // Replays one queued entry through the same path as the online save.
 async function syncEntry(supabase: any, orgId: string, entry: OutboxEntry): Promise<string> {
-  const invoiceDate = entry.invoice.invoice_date as string
-  const fy = getFinancialYear(invoiceDate ? new Date(invoiceDate) : new Date())
-
-  // Get or create the sequence, then take the next number.
-  let { data: seq } = await supabase
-    .from('invoice_sequences')
-    .select('*')
-    .eq('organization_id', orgId)
-    .eq('financial_year', fy)
-    .single()
-
-  let nextNumber = 1
-  if (seq) {
-    nextNumber = seq.last_number + 1
-    await supabase.from('invoice_sequences').update({ last_number: nextNumber }).eq('id', seq.id)
-  } else {
-    await supabase
-      .from('invoice_sequences')
-      .insert({ organization_id: orgId, prefix: 'INV', financial_year: fy, last_number: 1 })
-    nextNumber = 1
-  }
-
-  const invoiceNumber = `INV-${fy}-${String(nextNumber).padStart(4, '0')}`
-
-  const { data: invoice, error: invError } = await supabase
-    .from('invoices')
-    .insert({ ...entry.invoice, organization_id: orgId, invoice_number: invoiceNumber })
-    .select()
-    .single()
-  if (invError) throw invError
-
-  const itemsToInsert = entry.items.map((it, idx) => ({
-    ...it,
-    invoice_id: invoice.id,
-    organization_id: orgId,
-    sort_order: idx,
-  }))
-  const { error: itemsError } = await supabase.from('invoice_items').insert(itemsToInsert)
-  if (itemsError) throw itemsError
-
-  // Stock movements for tracked products (non-fatal if the RPC fails).
-  for (const item of entry.items) {
-    const productId = item.product_id as string | null
-    if (!productId) continue
-    try {
-      const { data: product } = await supabase
-        .from('products')
-        .select('track_inventory, current_stock')
-        .eq('id', productId)
-        .single()
-      if (product?.track_inventory) {
-        const { data: { user } } = await supabase.auth.getUser()
-        await supabase.rpc('record_stock_movement', {
-          p_organization_id: orgId,
-          p_product_id: productId,
-          p_movement_type: 'sale',
-          p_quantity: -(Number(item.quantity) || 0),
-          p_reference_type: 'invoice',
-          p_reference_id: invoice.id,
-          p_reference_number: invoiceNumber,
-          p_notes: `Sale — ${invoiceNumber}`,
-          p_created_by: user?.id,
-        })
-      }
-    } catch {
-      /* invoice already synced; stock drift can be corrected manually */
-    }
-  }
-
+  const { invoiceNumber } = await createInvoice(supabase, orgId, entry.invoice, entry.items)
   return invoiceNumber
 }
 

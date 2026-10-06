@@ -18,6 +18,7 @@ const NAV_ITEMS = [
     section: 'Sales',
     items: [
       { label: 'Invoices', href: '/invoices', icon: '🧾' },
+      { label: 'Counter Sale', href: '/pos', icon: '🛍️' },
       { label: 'Quotations', href: '/quotations', icon: '📋' },
       { label: 'Credit Notes', href: '/credit-notes', icon: '📝' },
       { label: 'Debit Notes', href: '/debit-notes', icon: '📄' },

@@ -14,6 +14,7 @@ import {
 } from '@/lib/gst-engine'
 import { INDIAN_STATES } from '@/lib/constants'
 import { queueOfflineInvoice, isNetworkError } from '@/lib/outbox'
+import { createInvoice } from '@/lib/create-invoice'
 
 const inputStyle = {
   width: '100%', padding: '8px 10px',
@@ -345,84 +346,8 @@ export default function NewInvoicePage() {
     }
 
     try {
-      const fy = getFinancialYear()
-
-      // Get or create sequence
-      let { data: seq } = await supabase
-        .from('invoice_sequences')
-        .select('*')
-        .eq('organization_id', orgId)
-        .eq('financial_year', fy)
-        .single()
-
-      let nextNumber = 1
-      if (seq) {
-        nextNumber = seq.last_number + 1
-        await supabase
-          .from('invoice_sequences')
-          .update({ last_number: nextNumber })
-          .eq('id', seq.id)
-      } else {
-        await supabase
-          .from('invoice_sequences')
-          .insert({ organization_id: orgId, prefix: 'INV', financial_year: fy, last_number: 1 })
-        nextNumber = 1
-      }
-
-      const finalInvoiceNumber = `INV-${fy}-${String(nextNumber).padStart(4, '0')}`
-
-      // Save invoice
-      const { data: invoice, error: invError } = await supabase
-        .from('invoices')
-        .insert({
-          organization_id: orgId,
-          invoice_number: finalInvoiceNumber,
-          ...invoiceFields,
-        })
-        .select()
-        .single()
-
-      if (invError) throw invError
-
-      // Save line items
-      const itemsToInsert = itemsPayload.map((item, idx) => ({
-        ...item,
-        invoice_id: invoice.id,
-        sort_order: idx,
-      }))
-
-           const { error: itemsError } = await supabase
-        .from('invoice_items')
-        .insert(itemsToInsert)
-
-      if (itemsError) throw itemsError
-
-      // Update stock for tracked products
-      for (const item of validItems) {
-        if (!item.product_id) continue
-
-        const { data: product } = await supabase
-          .from('products')
-          .select('track_inventory, current_stock')
-          .eq('id', item.product_id)
-          .single()
-
-        if (product?.track_inventory) {
-          await supabase.rpc('record_stock_movement', {
-            p_organization_id: orgId,
-            p_product_id: item.product_id,
-            p_movement_type: 'sale',
-            p_quantity: -(parseFloat(item.quantity)),
-            p_reference_type: 'invoice',
-            p_reference_id: invoice.id,
-            p_reference_number: finalInvoiceNumber,
-            p_notes: `Sale — ${finalInvoiceNumber}`,
-            p_created_by: (await supabase.auth.getUser()).data.user?.id,
-          })
-        }
-      }
-      
-      router.push(`/invoices/${invoice.id}`)
+      const { invoiceId } = await createInvoice(supabase, orgId, invoiceFields, itemsPayload)
+      router.push(`/invoices/${invoiceId}`)
     } catch (err: any) {
       const message = err?.message || 'Failed to save invoice'
       // Connection dropped mid-save — queue instead of losing the invoice

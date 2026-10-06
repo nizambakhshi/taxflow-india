@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
+import BarcodeScanner from '@/components/BarcodeScanner'
+import { cameraScanSupported, validateBarcode } from '@/lib/barcode'
 
 const inputStyle = {
   width: '100%', padding: '9px 12px',
@@ -46,6 +48,7 @@ export default function ProductsPage() {
   const [search, setSearch] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [filterType, setFilterType] = useState('all')
+  const [scanSku, setScanSku] = useState(false)
 
   const [form, setForm] = useState({
     name: '', description: '', sku: '',
@@ -96,6 +99,7 @@ export default function ProductsPage() {
     })
     setEditingId(null)
     setError('')
+    setScanSku(false)
   }
 
   function handleEdit(product: any) {
@@ -116,6 +120,7 @@ export default function ProductsPage() {
     })
     setEditingId(product.id)
     setShowForm(true)
+    setScanSku(false)
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -324,10 +329,40 @@ export default function ProductsPage() {
                     placeholder="Product or service name" required />
                 </div>
                 <div>
-                  <label style={labelStyle}>SKU / Code</label>
-                  <input style={inputStyle} value={form.sku}
-                    onChange={e => setForm(p => ({ ...p, sku: e.target.value }))}
-                    placeholder="SKU001" />
+                  <label style={labelStyle}>SKU / Barcode</label>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <input style={inputStyle} value={form.sku}
+                      onChange={e => setForm(p => ({ ...p, sku: e.target.value }))}
+                      placeholder="Barcode or internal code" />
+                    {cameraScanSupported() && (
+                      <button type="button" onClick={() => setScanSku(v => !v)} style={{
+                        padding: '0 14px', whiteSpace: 'nowrap',
+                        background: scanSku ? '#eef2ff' : 'white',
+                        color: '#374151', border: '1px solid #d1d5db',
+                        borderRadius: '8px', fontSize: '13px', cursor: 'pointer'
+                      }}>
+                        {scanSku ? 'Stop' : '📷 Scan'}
+                      </button>
+                    )}
+                  </div>
+                  {scanSku && (
+                    <BarcodeScanner
+                      label="Scan the product barcode to fill this field"
+                      onScan={code => { setForm(p => ({ ...p, sku: code })); setScanSku(false) }}
+                      onClose={() => setScanSku(false)}
+                    />
+                  )}
+                  {(() => {
+                    // Short values are clearly internal codes, so only validate real barcode-shaped input
+                    if (form.sku.length < 6) return null
+                    const check = validateBarcode(form.sku)
+                    if (check.valid) return null
+                    return (
+                      <div style={{ fontSize: '12px', color: '#dc2626', marginTop: '4px' }}>
+                        {check.message} — counter scanning will reject this code.
+                      </div>
+                    )
+                  })()}
                 </div>
               </div>
 

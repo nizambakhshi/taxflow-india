@@ -8,7 +8,7 @@
  * Self-update: bump CACHE_VERSION when shell behavior changes.
  */
 
-const CACHE_VERSION = 'taxflow-v1'
+const CACHE_VERSION = 'taxflow-v2'
 const SHELL_URL = '/offline.html'
 
 self.addEventListener('install', (event) => {
@@ -54,14 +54,16 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url)
   if (url.origin !== self.location.origin) return // Supabase etc. — passthrough
 
-  // Hashed immutable build assets: cache-first.
+  // Hashed immutable build assets: cache-first. Only responses the server marks
+  // immutable are stored — dev chunks (Turbopack) reuse the same URLs with new
+  // content, and caching them would serve stale code after an edit.
   if (isStaticAsset(url) && !skipCache(url)) {
     event.respondWith(
       caches.match(req).then(
         (hit) =>
           hit ||
           fetch(req).then((res) => {
-            if (res.ok) {
+            if (res.ok && /immutable/i.test(res.headers.get('Cache-Control') || '')) {
               const copy = res.clone()
               caches.open(CACHE_VERSION).then((c) => c.put(req, copy))
             }
