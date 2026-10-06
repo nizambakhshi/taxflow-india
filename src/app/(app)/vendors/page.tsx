@@ -158,6 +158,13 @@ export default function VendorsPage() {
     setSaving(false)
   }
 
+  async function toggleActive(vendor: Vendor) {
+    const next = !vendor.is_active
+    if (!confirm(`${next ? 'Reactivate' : 'Deactivate'} ${vendor.name}? Inactive vendors are hidden from the bill form.`)) return
+    await supabase.from('vendors').update({ is_active: next }).eq('id', vendor.id)
+    setVendors(prev => prev.map(v => (v.id === vendor.id ? { ...v, is_active: next } : v)))
+  }
+
   const filtered = vendors.filter(v =>
     v.name?.toLowerCase().includes(search.toLowerCase()) ||
     v.business_name?.toLowerCase().includes(search.toLowerCase()) ||
@@ -199,7 +206,7 @@ export default function VendorsPage() {
       ) : (
         <div className="responsive-table table-frame" style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
           <div className="table-header" style={{
-            display: 'grid', gridTemplateColumns: '2fr 2fr 1.5fr 1fr 80px',
+            display: 'grid', gridTemplateColumns: '2fr 2fr 1.5fr 1fr 160px',
             gap: '12px', padding: '10px 16px', background: '#f8fafc',
             fontSize: '12px', fontWeight: '600', color: '#64748b',
             borderBottom: '1px solid #e2e8f0'
@@ -209,7 +216,7 @@ export default function VendorsPage() {
           </div>
           {filtered.map((vendor) => (
             <div key={vendor.id} className="table-row" style={{
-              display: 'grid', gridTemplateColumns: '2fr 2fr 1.5fr 1fr 80px',
+              display: 'grid', gridTemplateColumns: '2fr 2fr 1.5fr 1fr 160px',
               gap: '12px', padding: '12px 16px',
               borderBottom: '1px solid #f1f5f9',
               alignItems: 'center', fontSize: '13px'
@@ -238,6 +245,11 @@ export default function VendorsPage() {
                   border: '1px solid #e2e8f0', borderRadius: '6px',
                   fontSize: '12px', cursor: 'pointer', color: '#374151'
                 }}>Edit</button>
+                <button onClick={() => toggleActive(vendor)} style={{
+                  padding: '4px 10px', background: 'white',
+                  border: '1px solid #e2e8f0', borderRadius: '6px',
+                  fontSize: '12px', cursor: 'pointer', color: '#64748b'
+                }}>{vendor.is_active ? 'Deactivate' : 'Reactivate'}</button>
               </div>
             </div>
           ))}

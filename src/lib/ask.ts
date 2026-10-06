@@ -420,7 +420,7 @@ const INTENT_RULES: IntentRule[] = [
   },
   {
     id: 'top_customers', label: 'Top customers',
-    patterns: [/\b(top|best|biggest|largest|main|key|highest)\b[^.]{0,30}\b(customers?|clients?|parties)\b/, /\bcustomers?\b[^.]{0,20}\b(by\s+sales|ranking|list)\b/, /\bwho\s+(are|is)\s+my\s+(top|biggest|best)\b/],
+    patterns: [/\b(top|best|biggest|largest|main|key|highest)\b[^.]{0,30}\b(customers?|clients?|parties)\b/, /\bcustomers?\b[^.]{0,20}\b(by\s+sales|ranking|list)\b/, /\bwho\s+(are|is)\s+my\s+(top|biggest|best)\b(?![^.]{0,30}\b(vendors?|suppliers?|products?|items?|goods|expenses?|categories)\b)/],
   },
   {
     id: 'top_vendors', label: 'Top vendors',

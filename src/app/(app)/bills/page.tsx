@@ -317,9 +317,23 @@ export default function BillsPage() {
     ))
   }
 
+  async function cancelBill(bill: any) {
+    if (!confirm(`Cancel bill ${bill.bill_number}? It will be excluded from reports, GSTR-3B and ITC.`)) return
+    await supabase
+      .from('purchase_bills')
+      .update({ status: 'cancelled' })
+      .eq('id', bill.id)
+
+    setBills(prev => prev.map(b =>
+      b.id === bill.id ? { ...b, status: 'cancelled' } : b
+    ))
+  }
+
   if (loading) return (
     <div style={{ padding: '2rem', color: '#64748b', fontSize: '14px' }}>Loading...</div>
   )
+
+  const activeBills = bills.filter(b => b.status !== 'cancelled')
 
   return (
     <div className="page-container" style={{ padding: '2rem', maxWidth: '1100px' }}>
@@ -333,7 +347,8 @@ export default function BillsPage() {
             Purchase Bills
           </h1>
           <p style={{ fontSize: '14px', color: '#64748b' }}>
-            {bills.length} bill{bills.length !== 1 ? 's' : ''}
+            {activeBills.length} bill{activeBills.length !== 1 ? 's' : ''}
+            {bills.length !== activeBills.length && ` · ${bills.length - activeBills.length} cancelled`}
           </p>
         </div>
         <button
@@ -357,24 +372,24 @@ export default function BillsPage() {
           {[
             {
               label: 'Total Purchases',
-              value: bills.reduce((s, b) => s + Number(b.grand_total), 0),
+              value: activeBills.reduce((s, b) => s + Number(b.grand_total), 0),
               color: '#2563eb'
             },
             {
               label: 'Total GST Paid',
-              value: bills.reduce((s, b) => s + Number(b.total_tax), 0),
+              value: activeBills.reduce((s, b) => s + Number(b.total_tax), 0),
               color: '#7c3aed'
             },
             {
               label: 'ITC Available',
-              value: bills
+              value: activeBills
                 .filter(b => b.itc_eligible)
                 .reduce((s, b) => s + Number(b.total_tax), 0),
               color: '#059669'
             },
             {
               label: 'Amount Payable',
-              value: bills.reduce((s, b) => s + Number(b.balance_due), 0),
+              value: activeBills.reduce((s, b) => s + Number(b.balance_due), 0),
               color: '#dc2626'
             },
           ].map(card => (
@@ -416,7 +431,7 @@ export default function BillsPage() {
         }}>
           <div className="table-header" style={{
             display: 'grid',
-            gridTemplateColumns: '1.5fr 2fr 1fr 1fr 1fr 1fr 100px',
+            gridTemplateColumns: '1.5fr 2fr 1fr 1fr 1fr 1fr 160px',
             gap: '12px', padding: '10px 16px', background: '#f8fafc',
             fontSize: '12px', fontWeight: '600', color: '#64748b',
             borderBottom: '1px solid #e2e8f0'
@@ -433,7 +448,7 @@ export default function BillsPage() {
           {bills.map(bill => (
             <div key={bill.id} className="table-row" style={{
               display: 'grid',
-              gridTemplateColumns: '1.5fr 2fr 1fr 1fr 1fr 1fr 100px',
+              gridTemplateColumns: '1.5fr 2fr 1fr 1fr 1fr 1fr 160px',
               gap: '12px', padding: '12px 16px',
               borderBottom: '1px solid #f1f5f9',
               alignItems: 'center', fontSize: '13px'
@@ -464,25 +479,42 @@ export default function BillsPage() {
                 <span style={{
                   fontSize: '11px', padding: '2px 8px',
                   borderRadius: '99px',
-                  background: bill.payment_status === 'paid' ? '#f0fdf4' : '#fef2f2',
-                  color: bill.payment_status === 'paid' ? '#166534' : '#dc2626'
+                  background: bill.status === 'cancelled' ? '#f8fafc'
+                    : bill.payment_status === 'paid' ? '#f0fdf4' : '#fef2f2',
+                  color: bill.status === 'cancelled' ? '#94a3b8'
+                    : bill.payment_status === 'paid' ? '#166534' : '#dc2626'
                 }}>
-                  {bill.payment_status}
+                  {bill.status === 'cancelled' ? 'cancelled' : bill.payment_status}
                 </span>
               </div>
-              <div data-label="Action">
-                {bill.payment_status !== 'paid' && bill.status !== 'cancelled' && (
-                  <button
-                    onClick={() => markBillPaid(bill)}
-                    style={{
-                      padding: '4px 10px', background: '#f0fdf4',
-                      border: '1px solid #bbf7d0', borderRadius: '6px',
-                      fontSize: '11px', cursor: 'pointer', color: '#166534',
-                      fontWeight: '500'
-                    }}
-                  >
-                    Mark Paid
-                  </button>
+              <div data-label="Action" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                {bill.status !== 'cancelled' && (
+                  <>
+                    {bill.payment_status !== 'paid' && (
+                      <button
+                        onClick={() => markBillPaid(bill)}
+                        style={{
+                          padding: '4px 10px', background: '#f0fdf4',
+                          border: '1px solid #bbf7d0', borderRadius: '6px',
+                          fontSize: '11px', cursor: 'pointer', color: '#166534',
+                          fontWeight: '500'
+                        }}
+                      >
+                        Mark Paid
+                      </button>
+                    )}
+                    <button
+                      onClick={() => cancelBill(bill)}
+                      style={{
+                        padding: '4px 10px', background: 'white',
+                        border: '1px solid #e2e8f0', borderRadius: '6px',
+                        fontSize: '11px', cursor: 'pointer', color: '#64748b',
+                        fontWeight: '500'
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </>
                 )}
               </div>
             </div>
