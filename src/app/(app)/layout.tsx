@@ -63,6 +63,7 @@ const NAV_ITEMS = [
     section: 'Reports & AI',
     items: [
       { label: 'Reports', href: '/reports', icon: 'chart' },
+      { label: 'Account Ledger', href: '/ledger', icon: 'book' },
       { label: 'Financial Statements', href: '/accounting', icon: 'scale' },
       { label: 'Scan Bill', href: '/ai/scan-bill', icon: 'scan' },
       { label: 'Ask My Books', href: '/ai/ask', icon: 'chat' },
