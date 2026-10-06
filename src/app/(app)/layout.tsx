@@ -57,6 +57,8 @@ const NAV_ITEMS = [
       { label: 'GSTR-3B', href: '/gst/gstr3b', icon: 'file-check' },
       { label: '2B Reconciliation', href: '/gst/reconciliation', icon: 'compare' },
       { label: 'E-Invoicing', href: '/gst/einvoice', icon: 'zap' },
+      { label: 'GSTR-9 / 9C', href: '/gst/gstr9', icon: 'clipboard' },
+      { label: 'Compliance Calendar', href: '/gst/calendar', icon: 'calendar' },
     ]
   },
   {
