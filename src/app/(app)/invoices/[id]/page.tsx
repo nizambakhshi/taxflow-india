@@ -109,14 +109,14 @@ export default function InvoiceDetailPage() {
       if (!element) return
 
       const canvas = await html2canvas(element, {
-        scale: 5,
+        // 2x gives ~215 DPI at the printed width. Higher scales cost 16x the
+        // bytes for no visible gain, and a 36 MB PDF cannot be emailed.
+        scale: 2,
         useCORS: true,
         backgroundColor: '#ffffff',
         windowWidth: element.scrollWidth,
         windowHeight: element.scrollHeight,
       })
-
-      const imgData = canvas.toDataURL('image/png')
 
       const pdf = new jsPDF({
         orientation: 'portrait',
@@ -128,19 +128,25 @@ export default function InvoiceDetailPage() {
       const pageHeight = pdf.internal.pageSize.getHeight() // 297mm
       const margin = 15                                     // 15mm on all sides
       const imgWidth = pageWidth - margin * 2              // 180mm usable
-      const imgHeight = (canvas.height * imgWidth) / canvas.width
+      const usableHeight = pageHeight - margin * 2
+      const pxPerMm = canvas.width / imgWidth
+      const slicePx = Math.floor(pxPerMm * usableHeight)
 
-      let heightLeft = imgHeight
-      let position = margin
+      // One canvas slice per page: embedding the whole image and clipping it
+      // would repeat every byte once per page.
+      for (let drawn = 0, page = 0; drawn < canvas.height; drawn += slicePx, page++) {
+        const h = Math.min(slicePx, canvas.height - drawn)
+        const slice = document.createElement('canvas')
+        slice.width = canvas.width
+        slice.height = h
+        const ctx = slice.getContext('2d')
+        if (!ctx) throw new Error('canvas unavailable')
+        ctx.fillStyle = '#ffffff'
+        ctx.fillRect(0, 0, slice.width, h)
+        ctx.drawImage(canvas, 0, drawn, canvas.width, h, 0, 0, canvas.width, h)
 
-      pdf.addImage(imgData, 'PNG', margin, position, imgWidth, imgHeight)
-      heightLeft -= pageHeight - margin * 2
-
-      while (heightLeft > 0) {
-        pdf.addPage()
-        position = margin - (imgHeight - heightLeft)
-        pdf.addImage(imgData, 'PNG', margin, position, imgWidth, imgHeight)
-        heightLeft -= pageHeight - margin * 2
+        if (page > 0) pdf.addPage()
+        pdf.addImage(slice.toDataURL('image/jpeg', 0.94), 'JPEG', margin, margin, imgWidth, h / pxPerMm)
       }
 
       pdf.save(`${invoice.invoice_number}.pdf`)

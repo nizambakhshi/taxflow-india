@@ -48,13 +48,16 @@ function batches(ids: string[], size = 500): string[][] {
 }
 
 async function fetchItems(client: any, table: string, foreignKey: string, ids: string[]): Promise<RegItem[]> {
-  const cols = `${foreignKey} as invoice_id, item_name, hsn_sac, quantity, unit, taxable_value, gst_rate, cgst_amount, sgst_amount, igst_amount, cess_amount`
+  const cols = `${foreignKey}, item_name, hsn_sac, quantity, unit, taxable_value, gst_rate, cgst_amount, sgst_amount, igst_amount, cess_amount`
   const groups = batches(ids)
   if (!groups.length) return []
   const results = await Promise.all(groups.map(batch =>
     client.from(table).select(cols).in(foreignKey, batch)
   ))
-  return results.flatMap(res => (res.data || []) as RegItem[])
+  // Renamed here rather than in the select: PostgREST rejects an alias that
+  // spells its own column ("invoice_id as invoice_id") with a 400.
+  return results.flatMap(res => ((res.data || []) as Record<string, unknown>[])
+    .map(row => ({ ...row, invoice_id: row[foreignKey] } as RegItem)))
 }
 
 interface Col {
@@ -298,13 +301,15 @@ export default function RegistersPage() {
               </button>
             ))}
           </div>
-          <div className="tf-row no-print" style={{ gap: 8 }}>
+          <div className="tf-row no-print reg-tools" style={{ gap: 8 }}>
             <div style={{ position: 'relative' }}>
               <Icon name="search" size={14} style={{ position: 'absolute', left: 9, top: 10, color: 'var(--faint)' }} />
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Filter" className="reg-search" />
             </div>
-            <input type="date" value={range.from} onChange={e => applyCustom('from', e.target.value)} className="reg-date" aria-label="From date" />
-            <input type="date" value={range.to} onChange={e => applyCustom('to', e.target.value)} className="reg-date" aria-label="To date" />
+            <div className="tf-row reg-dates" style={{ gap: 8 }}>
+              <input type="date" value={range.from} onChange={e => applyCustom('from', e.target.value)} className="reg-date" aria-label="From date" />
+              <input type="date" value={range.to} onChange={e => applyCustom('to', e.target.value)} className="reg-date" aria-label="To date" />
+            </div>
           </div>
         </div>
 
@@ -366,7 +371,12 @@ export default function RegistersPage() {
 
               {totals && (
                 <div className="reg-cols reg-foot" style={{ gridTemplateColumns: grid }}>
-                  {columns.map(c => <span key={c.key} data-label={c.label}>{footCell(c.key, totals, tab)}</span>)}
+                  {columns.map(c => {
+                    const value = footCell(c.key, totals, tab)
+                    // The 'Register total' cell is the row title, so it gets no label of its own.
+                    return <span key={c.key} data-label={value && value !== 'Register total' ? c.label : ''}
+                      className={`reg-td ${c.align === 'right' ? 'is-right' : ''} ${value ? '' : 'is-blank'}`}>{value}</span>
+                  })}
                 </div>
               )}
             </div>
@@ -423,6 +433,7 @@ export default function RegistersPage() {
         .reg-td { font-size: 13px; color: var(--ink-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .reg-td.is-right { text-align: right; }
         .reg-foot { background: var(--surface-2); font-weight: 700; color: var(--ink); font-size: 13px; }
+        .reg-foot .reg-td { color: var(--ink); }
         .reg-del {
           display: inline-flex; align-items: center; justify-content: center;
           width: 26px; height: 26px; min-height: 0; border-radius: 7px; cursor: pointer;
@@ -430,6 +441,11 @@ export default function RegistersPage() {
         }
         .reg-del:hover { color: var(--red); border-color: #fecaca; background: var(--red-soft); }
         @media (max-width: 768px) {
+          .reg-tools { width: 100%; flex-wrap: wrap; }
+          .reg-tools > div:first-child { flex: 1 1 100%; min-width: 0; }
+          .reg-search { width: 100%; }
+          .reg-dates { flex: 1 1 100%; }
+          .reg-dates .reg-date { flex: 1; min-width: 0; width: auto; }
           .reg-grid { min-width: 0; }
           .reg-head { display: none !important; }
           .reg-cols { grid-template-columns: 1fr !important; gap: 5px; padding: 12px 14px; }
@@ -440,6 +456,8 @@ export default function RegistersPage() {
             text-transform: uppercase; letter-spacing: .05em; text-align: left;
           }
           .reg-foot { border-radius: 12px; margin-bottom: 0.6rem; }
+          /* Grid alignment needs the blanks on desktop; on mobile they are dead rows. */
+          .reg-foot .is-blank { display: none; }
         }
         @media print {
           .no-print, .tf-pagehead { display: none !important; }
