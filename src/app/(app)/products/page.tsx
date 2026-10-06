@@ -142,16 +142,20 @@ export default function ProductsPage() {
       cess_rate: parseFloat(form.cess_rate) || 0,
       track_inventory: form.track_inventory,
       opening_stock: parseFloat(form.opening_stock) || 0,
-      current_stock: parseFloat(form.opening_stock) || 0,
       minimum_stock: parseFloat(form.minimum_stock) || 0,
     }
 
+    // current_stock only gets seeded on creation. Every later change comes from
+    // a stock movement (sale, purchase, adjustment), so writing the opening
+    // balance back here would erase all of them on an unrelated edit.
     let err
     if (editingId) {
       const { error } = await supabase.from('products').update(payload).eq('id', editingId)
       err = error
     } else {
-      const { error } = await supabase.from('products').insert(payload)
+      const { error } = await supabase
+        .from('products')
+        .insert({ ...payload, current_stock: payload.opening_stock })
       err = error
     }
 

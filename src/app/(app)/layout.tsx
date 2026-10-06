@@ -47,6 +47,7 @@ const NAV_ITEMS = [
       { label: 'Vendors', href: '/vendors', icon: 'factory' },
       { label: 'Products', href: '/products', icon: 'box' },
       { label: 'Inventory', href: '/inventory', icon: 'store' },
+      { label: 'Reorder Planner', href: '/inventory/reorder', icon: 'cart' },
     ]
   },
   {
