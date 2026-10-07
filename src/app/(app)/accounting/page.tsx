@@ -3,55 +3,69 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { formatINR } from '@/lib/gst-engine'
+import { formatDateIN } from '@/lib/format'
+import { Button, Card, PageHeader, Segmented, StatCard } from '@/components/ui'
+import Icon from '@/components/Icons'
 import {
   computeProfitLoss, computeBalanceSheet,
   loadOpeningBalances, saveOpeningBalances, currentFY,
   type OpeningBalances, type ProfitLoss, type BalanceSheet,
+  type LedgerInvoice, type LedgerBill, type LedgerExpense, type LedgerPayment, type LedgerProduct,
 } from '@/lib/ledger'
 
-const inputStyle = {
-  width: '100%', padding: '9px 11px',
-  border: '1px solid #d1d5db', borderRadius: '8px',
-  fontSize: '13px', outline: 'none', color: '#1e293b', background: 'white',
-}
-const labelStyle = {
-  display: 'block' as const, fontSize: '12px',
-  fontWeight: '500' as const, color: '#374151', marginBottom: '4px',
-}
+const inr0 = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })
+const money = (v: number) => inr0.format(Number(v) || 0)
 
-// Line row used in both statements
+const STATEMENTS = [
+  { value: 'pl', label: 'Profit & Loss' },
+  { value: 'bs', label: 'Balance Sheet' },
+]
+
+const PRESETS = [
+  { value: 'this_month', label: 'This Month' },
+  { value: 'this_quarter', label: 'Quarter' },
+  { value: 'this_fy', label: 'This FY' },
+  { value: 'prev_fy', label: 'Prev FY' },
+  { value: 'all', label: 'All time' },
+]
+
+const OPENING_FIELDS: { key: keyof OpeningBalances; label: string; hint: string }[] = [
+  { key: 'cash', label: 'Opening cash & bank', hint: 'Money in hand / accounts at start' },
+  { key: 'fixedAssets', label: 'Opening fixed assets', hint: 'Equipment, vehicles, etc. at cost' },
+  { key: 'loans', label: 'Opening loans', hint: 'Outstanding borrowings' },
+  { key: 'capital', label: 'Opening capital', hint: 'Owner’s invested amount' },
+]
+
+/** One statement line: label left, amount right, optional sign colour. */
 function Line({
-  label, value, bold, color, indent, minus,
+  label, value, minus, bold, indent, tone,
 }: {
-  label: string; value: number; bold?: boolean; color?: string; indent?: boolean; minus?: boolean
+  label: string
+  value: number
+  minus?: boolean
+  bold?: boolean
+  indent?: boolean
+  tone?: 'profit' | 'danger'
 }) {
-  const negative = value < 0
+  const shownAsMinus = minus || value < 0
+  const cls = [
+    'ac-line',
+    bold ? 'ac-line-bold' : '',
+    indent ? 'ac-line-indent' : '',
+    tone === 'profit' ? (value >= 0 ? 'ac-pos' : 'ac-neg') : '',
+    tone === 'danger' && value < 0 ? 'ac-neg' : '',
+  ].filter(Boolean).join(' ')
+
   return (
-    <div style={{
-      display: 'flex', justifyContent: 'space-between',
-      padding: bold ? '10px 0' : '7px 0',
-      fontSize: bold ? '14px' : '13px',
-      borderTop: bold ? '1px solid #e2e8f0' : (indent ? 'none' : '1px solid #f8fafc'),
-      fontWeight: bold ? '700' : '500',
-      paddingLeft: indent ? '12px' : 0,
-    }}>
-      <span style={{ color: bold ? '#1e293b' : '#64748b' }}>{label}</span>
-      <span style={{ color: color || (bold ? '#1e293b' : '#334155') }}>
-        {(minus || negative) ? '− ₹' : '₹'}{formatINR(Math.abs(value))}
-      </span>
+    <div className={cls}>
+      <span>{label}</span>
+      <span className="ac-amt">{shownAsMinus ? '− ' : ''}{money(Math.abs(value))}</span>
     </div>
   )
 }
 
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{
-      fontSize: '12px', fontWeight: '700', color: '#94a3b8',
-      textTransform: 'uppercase', letterSpacing: '0.05em',
-      margin: '14px 0 4px',
-    }}>{children}</div>
-  )
+function GroupLabel({ children }: { children: string }) {
+  return <div className="ac-group">{children}</div>
 }
 
 export default function FinancialStatementsPage() {
@@ -61,22 +75,41 @@ export default function FinancialStatementsPage() {
   const [orgId, setOrgId] = useState('')
   const [orgName, setOrgName] = useState('')
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<'pl' | 'bs'>('pl')
+  const [tab, setTab] = useState('pl')
 
   const [raw, setRaw] = useState<{
-    invoices: any[]; bills: any[]; expenses: any[]; payments: any[]; products: any[]
+    invoices: LedgerInvoice[]; bills: LedgerBill[]; expenses: LedgerExpense[]
+    payments: LedgerPayment[]; products: LedgerProduct[]
   }>({ invoices: [], bills: [], expenses: [], payments: [], products: [] })
 
   const fy = useMemo(() => currentFY(), [])
   const [start, setStart] = useState(fy.start)
   const [end, setEnd] = useState(fy.end)
   const [periodLabel, setPeriodLabel] = useState(fy.label)
+  const [preset, setPreset] = useState('this_fy')
 
   // Opening balances modal
   const [opening, setOpening] = useState<OpeningBalances>({ cash: 0, fixedAssets: 0, loans: 0, capital: 0 })
   const [showOpening, setShowOpening] = useState(false)
   const [draftOpening, setDraftOpening] = useState<OpeningBalances>(opening)
   const [openingSaved, setOpeningSaved] = useState(false)
+
+  async function loadAll(oid: string) {
+    const [inv, bill, exp, pay, prod] = await Promise.all([
+      supabase.from('invoices').select('status, invoice_date, taxable_amount, total_tax, balance_due').eq('organization_id', oid),
+      supabase.from('purchase_bills').select('status, bill_date, taxable_amount, total_tax, itc_eligible, balance_due').eq('organization_id', oid),
+      supabase.from('expenses').select('expense_date, amount, gst_amount, taxable_amount, itc_eligible, payment_status, category').eq('organization_id', oid),
+      supabase.from('payments').select('payment_type, amount, payment_date').eq('organization_id', oid),
+      supabase.from('products').select('type, track_inventory, current_stock, purchase_price').eq('organization_id', oid),
+    ])
+    setRaw({
+      invoices: (inv.data || []) as LedgerInvoice[],
+      bills: (bill.data || []) as LedgerBill[],
+      expenses: (exp.data || []) as LedgerExpense[],
+      payments: (pay.data || []) as LedgerPayment[],
+      products: (prod.data || []) as LedgerProduct[],
+    })
+  }
 
   useEffect(() => {
     async function load() {
@@ -91,7 +124,7 @@ export default function FinancialStatementsPage() {
         .single()
 
       if (!membership) { router.push('/setup'); return }
-      const org = membership.organizations as any
+      const org = membership.organizations as { name?: string } | null
       const oid = membership.organization_id
       setOrgId(oid)
       setOrgName(org?.name || '')
@@ -106,23 +139,6 @@ export default function FinancialStatementsPage() {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  async function loadAll(oid: string) {
-    const [inv, bill, exp, pay, prod] = await Promise.all([
-      supabase.from('invoices').select('status, invoice_date, taxable_amount, total_tax, balance_due').eq('organization_id', oid),
-      supabase.from('purchase_bills').select('status, bill_date, taxable_amount, total_tax, itc_eligible, balance_due').eq('organization_id', oid),
-      supabase.from('expenses').select('expense_date, amount, gst_amount, taxable_amount, itc_eligible, payment_status, category').eq('organization_id', oid),
-      supabase.from('payments').select('payment_type, amount, payment_date').eq('organization_id', oid),
-      supabase.from('products').select('type, track_inventory, current_stock, purchase_price').eq('organization_id', oid),
-    ])
-    setRaw({
-      invoices: inv.data || [],
-      bills: bill.data || [],
-      expenses: exp.data || [],
-      payments: pay.data || [],
-      products: prod.data || [],
-    })
-  }
 
   // P&L for the selected period
   const pl: ProfitLoss = useMemo(
@@ -145,10 +161,15 @@ export default function FinancialStatementsPage() {
     [raw, opening, cumulativeProfit, end],
   )
 
+  const margin = pl.revenue > 0 ? Math.round((pl.netProfit / pl.revenue) * 100) : null
+  const stockLines = raw.products.filter(p => p.track_inventory && p.type === 'goods').length
+  const plug = Math.abs(bs.balancingReserve)
+
   function applyPreset(key: string) {
     const now = new Date()
     const y = now.getFullYear()
     const m = now.getMonth()
+    setPreset(key)
     if (key === 'this_fy') {
       const f = currentFY()
       setStart(f.start); setEnd(f.end); setPeriodLabel(f.label)
@@ -179,191 +200,139 @@ export default function FinancialStatementsPage() {
   }
 
   const hasAny = raw.invoices.length + raw.bills.length + raw.expenses.length > 0
+  const periodFrom = start === '0000-01-01' ? 'inception' : formatDateIN(start)
 
-  if (loading) return (
-    <div style={{ padding: '2rem', color: '#64748b', fontSize: '14px' }}>Loading...</div>
-  )
-
-  const numField = (key: keyof OpeningBalances, lbl: string, hint: string) => (
-    <div>
-      <label style={labelStyle}>{lbl}</label>
-      <input style={inputStyle} inputMode="decimal" placeholder="0"
-        value={draftOpening[key] === 0 ? '' : String(draftOpening[key])}
-        onChange={e => setDraftOpening({ ...draftOpening, [key]: parseFloat(e.target.value) || 0 })} />
-      <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '3px' }}>{hint}</div>
-    </div>
-  )
+  if (loading) {
+    return <div className="page-container" style={{ color: 'var(--muted)', fontSize: 13 }}>Deriving your statements…</div>
+  }
 
   return (
-    <div className="page-container" style={{ maxWidth: '1200px' }}>
-      {/* Header */}
-      <div className="page-header" style={{
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        marginBottom: '1rem', gap: '10px', flexWrap: 'wrap',
-      }}>
-        <div>
-          <h1 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '2px' }}>
-            Financial Statements
-          </h1>
-          <p style={{ fontSize: '13px', color: '#64748b' }}>{orgName}</p>
-        </div>
-        <button onClick={() => { setDraftOpening(opening); setShowOpening(true) }} style={{
-          padding: '9px 16px', background: 'white', color: '#374151',
-          border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '13px',
-          fontWeight: '600', cursor: 'pointer',
-        }}>
-          ⚖️ Opening balances
-        </button>
+    <div className="page-container ac" style={{ maxWidth: 1100 }}>
+      <PageHeader
+        eyebrow="Money"
+        title="Financial Statements"
+        subtitle={`${orgName} — a profit and loss account and a balance sheet derived from your invoices, bills, expenses and payments. Nothing here is posted to a ledger; it is read from the documents you already entered.`}
+        actions={
+          <Button variant="subtle" icon="scale" onClick={() => { setDraftOpening(opening); setShowOpening(true) }}>
+            Opening balances
+          </Button>
+        }
+        right={openingSaved ? <span className="ac-saved"><Icon name="check" size={13} />Saved to this browser</span> : undefined}
+      />
+
+      <div className="ac-stats">
+        <StatCard label="Revenue" value={money(pl.revenue)} sub={`excl. GST · ${periodLabel}`} icon="invoice" tone="blue" delay={0} />
+        <StatCard label="Net profit" value={money(pl.netProfit)}
+          sub={margin === null ? 'no revenue in this period' : `${margin}% of revenue`}
+          icon="trend" tone={pl.netProfit >= 0 ? 'green' : 'red'} delay={40} />
+        <StatCard label="Total assets" value={money(bs.totalAssets)}
+          sub={`debtors ${money(bs.receivables)} · stock ${money(bs.inventory)}`}
+          icon="box" tone="violet" delay={80} />
+        <StatCard label="Unmapped money movement" value={money(plug)}
+          sub={plug ? 'carried by the derived capital line' : 'opening balances explain the whole position'}
+          icon="scale" tone={plug ? 'amber' : 'grey'} delay={120} />
       </div>
 
-      {/* Tabs + period */}
-      <div style={{
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        gap: '12px', marginBottom: '1rem', flexWrap: 'wrap',
-      }}>
-        <div className="tab-bar" style={{ display: 'flex', gap: '4px' }}>
-          <button onClick={() => setTab('pl')} style={{
-            padding: '8px 16px', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: 'pointer',
-            background: tab === 'pl' ? '#2563eb' : 'white',
-            color: tab === 'pl' ? 'white' : '#374151', border: '1px solid #e2e8f0',
-          }}>Profit & Loss</button>
-          <button onClick={() => setTab('bs')} style={{
-            padding: '8px 16px', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: 'pointer',
-            background: tab === 'bs' ? '#2563eb' : 'white',
-            color: tab === 'bs' ? 'white' : '#374151', border: '1px solid #e2e8f0',
-          }}>Balance Sheet</button>
-        </div>
-        <div className="tab-bar" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-          {[
-            { k: 'this_month', l: 'This Month' },
-            { k: 'this_quarter', l: 'Quarter' },
-            { k: 'this_fy', l: 'This FY' },
-            { k: 'prev_fy', l: 'Prev FY' },
-            { k: 'all', l: 'All time' },
-          ].map(p => (
-            <button key={p.k} onClick={() => applyPreset(p.k)} style={{
-              padding: '6px 12px', whiteSpace: 'nowrap', borderRadius: '99px', fontSize: '12px', cursor: 'pointer',
-              background: periodLabel === p.l || (p.k === 'all' && periodLabel === 'All time') ? '#eff6ff' : 'white',
-              color: '#374151', border: '1px solid #e2e8f0', fontWeight: '500',
-            }}>{p.l}</button>
-          ))}
-        </div>
+      <div className="ac-toolbar">
+        <Segmented options={STATEMENTS} value={tab} onChange={setTab} />
+        <Segmented options={PRESETS} value={preset} onChange={applyPreset} />
       </div>
 
-      {/* Custom range */}
-      <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '1rem', maxWidth: '360px' }}>
-        <div>
-          <label style={labelStyle}>From</label>
-          <input type="date" style={inputStyle} value={start === '0000-01-01' ? '' : start}
-            onChange={e => { setStart(e.target.value || '0000-01-01'); setPeriodLabel('Custom') }} />
-        </div>
-        <div>
-          <label style={labelStyle}>To</label>
-          <input type="date" style={inputStyle} value={end}
-            onChange={e => { setEnd(e.target.value); setPeriodLabel('Custom') }} />
+      <div className="ac-range">
+        <label className="ac-field">
+          <span>From</span>
+          <input className="tf-input" type="date" value={start === '0000-01-01' ? '' : start}
+            onChange={e => { setStart(e.target.value || '0000-01-01'); setPeriodLabel('Custom'); setPreset('') }} />
+        </label>
+        <label className="ac-field">
+          <span>To</span>
+          <input className="tf-input" type="date" value={end}
+            onChange={e => { setEnd(e.target.value); setPeriodLabel('Custom'); setPreset('') }} />
+        </label>
+        <div className="ac-range-note">
+          <span>{periodLabel}</span>
+          <span>{periodFrom} → {formatDateIN(end)} · figures exclude GST</span>
         </div>
       </div>
 
       {!hasAny && (
-        <div style={{
-          background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '10px',
-          padding: '12px 14px', marginBottom: '1rem', fontSize: '13px', color: '#92400e',
-        }}>
-          No transactions recorded yet — statements will populate as you add invoices, bills and expenses.
+        <div className="ac-note">
+          <Icon name="alert" size={14} />
+          <span>No transactions recorded yet — both statements stay at zero until you add invoices, bills or expenses.</span>
         </div>
       )}
 
-      {/* P&L */}
       {tab === 'pl' && (
-        <div style={{
-          background: 'white', border: '1px solid #e2e8f0',
-          borderRadius: '12px', padding: '1.5rem', maxWidth: '640px',
-        }}>
-          <div style={{ fontSize: '15px', fontWeight: '700', color: '#1e293b', marginBottom: '2px' }}>
-            Profit & Loss Statement
-          </div>
-          <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '12px' }}>
-            {periodLabel} · {start === '0000-01-01' ? 'inception' : new Date(start).toLocaleDateString('en-IN')}
-            {' → '}{new Date(end).toLocaleDateString('en-IN')} · all figures excl. GST
-          </div>
+        <Card className="ac-panel">
+          <div className="ac-panel-title">Profit &amp; Loss Statement</div>
+          <div className="ac-panel-sub">{periodLabel} · {periodFrom} → {formatDateIN(end)} · all figures excl. GST</div>
 
-          <SectionTitle>Income</SectionTitle>
+          <GroupLabel>Income</GroupLabel>
           <Line label="Sales revenue (net of tax)" value={pl.revenue} />
-          <SectionTitle>Direct costs</SectionTitle>
+          <GroupLabel>Direct costs</GroupLabel>
           <Line label="Purchases (net of tax)" value={pl.purchases} minus />
-          <Line label="Gross profit" value={pl.grossProfit} bold color={pl.grossProfit >= 0 ? '#166534' : '#dc2626'} />
+          <Line label="Gross profit" value={pl.grossProfit} bold tone="profit" />
 
-          <SectionTitle>Operating expenses</SectionTitle>
+          <GroupLabel>Operating expenses</GroupLabel>
           {pl.expensesByCategory.length === 0 ? (
-            <div style={{ fontSize: '12px', color: '#94a3b8', padding: '4px 0' }}>No expenses in this period.</div>
+            <div className="ac-empty-line">No expenses in this period.</div>
           ) : pl.expensesByCategory.map(e => (
             <Line key={e.label} label={e.label} value={e.amount} indent minus />
           ))}
           <Line label="Total expenses" value={pl.totalExpenses} minus />
 
-          <div style={{ marginTop: '14px' }}>
-            <Line label="NET PROFIT" value={pl.netProfit} bold color={pl.netProfit >= 0 ? '#166534' : '#dc2626'} />
+          <div className="ac-final">
+            <Line label="NET PROFIT" value={pl.netProfit} bold tone="profit" />
           </div>
-        </div>
+        </Card>
       )}
 
-      {/* Balance Sheet */}
       {tab === 'bs' && (
-        <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-          {/* Assets */}
-          <div style={{
-            background: 'white', border: '1px solid #e2e8f0',
-            borderRadius: '12px', padding: '1.5rem',
-          }}>
-            <div style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>
-              Assets
-            </div>
-            <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '10px' }}>
-              As on {new Date(end).toLocaleDateString('en-IN')}
-            </div>
+        <div className="ac-cols">
+          <Card className="ac-panel">
+            <div className="ac-panel-title">Assets</div>
+            <div className="ac-panel-sub">As on {formatDateIN(end)}</div>
             <Line label="Sundry debtors (receivables)" value={bs.receivables} />
             <Line label="Inventory (stock × cost)" value={bs.inventory} />
-            <Line label="Cash & bank (derived)" value={bs.cash} color={bs.cash < 0 ? '#dc2626' : undefined} />
+            <Line label="Cash & bank (derived)" value={bs.cash} tone="danger" />
             <Line label="Fixed assets" value={bs.fixedAssets} />
-            <div style={{ marginTop: '10px' }}>
+            <div className="ac-final">
               <Line label="TOTAL ASSETS" value={bs.totalAssets} bold />
             </div>
-          </div>
-
-          {/* Liabilities + Equity */}
-          <div style={{
-            background: 'white', border: '1px solid #e2e8f0',
-            borderRadius: '12px', padding: '1.5rem',
-          }}>
-            <div style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b', marginBottom: '10px' }}>
-              Liabilities & Owner&apos;s Funds
+            <div className="ac-foot">
+              {stockLines ? `${stockLines} stock line(s) valued at purchase price.` : 'No stock tracked, so inventory is nil.'}
             </div>
+          </Card>
+
+          <Card className="ac-panel">
+            <div className="ac-panel-title">Liabilities &amp; Owner&apos;s Funds</div>
+            <div className="ac-panel-sub">As on {formatDateIN(end)}</div>
             <Line label="Sundry creditors (payables)" value={bs.payables} />
             <Line label="Outstanding expenses" value={bs.outstandingExpenses} />
             <Line label="GST payable" value={bs.gstLiability} />
             <Line label="Loans" value={bs.loans} />
             <Line label="Total liabilities" value={bs.totalLiabilities} bold />
 
-            <SectionTitle>Owner&apos;s funds</SectionTitle>
+            <GroupLabel>Owner&apos;s funds</GroupLabel>
             <Line label="Opening capital" value={bs.openingCapital} />
-            <Line label="Retained earnings (cumulative profit)" value={bs.retainedEarnings}
-              color={bs.retainedEarnings < 0 ? '#dc2626' : undefined} />
-            <Line label="Capital account (derived)" value={bs.balancingReserve}
-              color={bs.balancingReserve < 0 ? '#dc2626' : undefined} />
+            <Line label="Retained earnings (cumulative profit)" value={bs.retainedEarnings} tone="danger" />
+            <Line label="Capital account (derived)" value={bs.balancingReserve} tone="danger" />
             <Line label="Total owner's funds" value={bs.ownersFunds} bold />
 
-            <div style={{
-              marginTop: '14px', paddingTop: '12px', borderTop: '1px solid #e2e8f0',
-              display: 'flex', justifyContent: 'space-between', fontSize: '14px', fontWeight: '700',
-            }}>
-              <span style={{ color: '#1e293b' }}>Balance check</span>
-              <span style={{ color: '#166534' }}>✓ Assets = Liab. + Funds</span>
+            <div className="ac-check">
+              <span>Balance check</span>
+              <span className={plug ? 'ac-amber' : 'ac-pos'}>
+                <Icon name={plug ? 'alert' : 'check'} size={13} />
+                {plug
+                  ? `Assets = Liab. + Funds, with ${money(plug)} sitting in the derived capital`
+                  : 'Assets = Liab. + Funds'}
+              </span>
             </div>
-          </div>
+          </Card>
         </div>
       )}
 
-      <p style={{ fontSize: '11px', color: '#94a3b8', marginTop: '1.25rem', maxWidth: '760px', lineHeight: 1.5 }}>
+      <p className="ac-foot-note">
         These statements are derived from your sales, purchase, expense and payment records (lightweight
         double-entry). Cash is estimated from recorded payment flows plus your opening balance, so it may
         differ from a bank statement. “Capital account (derived)” is a balancing figure covering owner
@@ -371,46 +340,117 @@ export default function FinancialStatementsPage() {
         reconcile with your accountant.
       </p>
 
-      {/* Opening balances modal */}
       {showOpening && (
-        <div className="modal-container" style={{
-          position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          padding: '1rem', zIndex: 50,
-        }} onClick={() => setShowOpening(false)}>
-          <div className="modal-content" style={{
-            background: 'white', borderRadius: '16px', width: '100%', maxWidth: '520px',
-            maxHeight: '90vh', overflowY: 'auto', padding: '1.5rem',
-          }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>
-              <div style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>Opening balances</div>
-              <button onClick={() => setShowOpening(false)} style={{
-                background: 'none', border: 'none', fontSize: '20px', color: '#94a3b8', cursor: 'pointer',
-              }}>×</button>
+        <div className="ac-scrim" role="dialog" aria-modal="true" aria-label="Opening balances"
+          onClick={() => setShowOpening(false)}>
+          <div className="ac-modal" onClick={e => e.stopPropagation()}>
+            <div className="ac-modal-head">
+              <h2>Opening balances</h2>
+              <button type="button" className="ac-close" onClick={() => setShowOpening(false)} aria-label="Close">
+                <Icon name="x" size={16} />
+              </button>
             </div>
-            <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '1rem' }}>
+
+            <p className="ac-modal-sub">
               Set the balances you had when you started using TaxFlow. Stored in this browser for{' '}
-              {orgName}. They feed the balance sheet so it reflects real capital and assets.
+              {orgName || 'this organisation'}. They feed the balance sheet so it reflects real capital and assets.
             </p>
-            <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
-              {numField('cash', 'Opening cash & bank', 'Money in hand / accounts at start')}
-              {numField('fixedAssets', 'Opening fixed assets', 'Equipment, vehicles, etc. at cost')}
-              {numField('loans', 'Opening loans', 'Outstanding borrowings')}
-              {numField('capital', 'Opening capital', 'Owner’s invested amount')}
+
+            <div className="ac-grid">
+              {OPENING_FIELDS.map(f => (
+                <label key={f.key} className="ac-field">
+                  <span>{f.label}</span>
+                  <input className="tf-input" inputMode="decimal" placeholder="0"
+                    value={draftOpening[f.key] === 0 ? '' : String(draftOpening[f.key])}
+                    onChange={e => setDraftOpening(prev => ({ ...prev, [f.key]: parseFloat(e.target.value) || 0 }))} />
+                  <span className="ac-hint">{f.hint}</span>
+                </label>
+              ))}
             </div>
-            <div className="btn-group" style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-              <button onClick={saveOpening} style={{
-                flex: '1 1 160px', padding: '11px 16px', background: '#2563eb', color: 'white',
-                border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer',
-              }}>{openingSaved ? 'Saved ✓' : 'Save balances'}</button>
-              <button onClick={() => setShowOpening(false)} style={{
-                padding: '11px 16px', background: 'white', color: '#374151',
-                border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer',
-              }}>Close</button>
+
+            <div className="ac-modal-foot">
+              <Button variant="ghost" onClick={() => setShowOpening(false)}>Close</Button>
+              <Button icon="check" onClick={saveOpening}>Save balances</Button>
             </div>
           </div>
         </div>
       )}
+
+      <style>{`
+        .ac { display: flex; flex-direction: column; }
+        .ac-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 1rem; }
+        .ac-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+        .ac-saved { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600;
+          color: var(--green); background: var(--green-soft); border-radius: 99px; padding: 5px 10px; }
+
+        .ac-range { display: grid; grid-template-columns: 200px 200px minmax(0, 1fr); gap: 12px;
+          align-items: end; margin-bottom: 1rem; }
+        .ac-range-note { display: flex; flex-direction: column; gap: 2px; font-size: 11.5px; color: var(--faint);
+          padding-bottom: 4px; }
+        .ac-range-note > span:first-child { font-size: 12.5px; font-weight: 650; color: var(--ink-2); }
+        .ac-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+        .ac-field > span:first-child { font-size: 12px; font-weight: 550; color: var(--ink-2); }
+        .ac-hint { font-size: 10.5px; color: var(--faint); }
+
+        .ac-note { display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; color: var(--ink-2);
+          background: var(--amber-soft); border-left: 3px solid var(--amber); border-radius: var(--radius-sm);
+          padding: 10px 12px; margin-bottom: 1rem; }
+        .ac-note svg { color: var(--amber); flex-shrink: 0; margin-top: 1px; }
+
+        .ac-panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+          padding: 1.25rem 1.35rem; max-width: 640px; }
+        .ac-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .ac-cols .ac-panel { max-width: none; }
+        .ac-panel-title { font-size: 15px; font-weight: 700; color: var(--ink); }
+        .ac-panel-sub { font-size: 11.5px; color: var(--muted); margin: 2px 0 12px; }
+
+        .ac-line { display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+          padding: 7px 0; font-size: 13px; font-weight: 500; color: var(--muted);
+          border-top: 1px solid var(--line-soft); }
+        .ac-line:first-of-type { border-top: none; }
+        .ac-line-bold { padding: 10px 0; font-size: 14px; font-weight: 700; color: var(--ink);
+          border-top: 1px solid var(--line); }
+        .ac-line-indent > span:first-child { padding-left: 12px; }
+        .ac-amt { font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .ac-pos { color: var(--green); }
+        .ac-neg { color: var(--red); }
+        .ac-amber { color: var(--amber); }
+        .ac-group { font-size: 11px; font-weight: 700; color: var(--faint); text-transform: uppercase;
+          letter-spacing: 0.05em; margin: 14px 0 2px; }
+        .ac-empty-line { font-size: 12px; color: var(--faint); padding: 4px 0; }
+        .ac-final { margin-top: 14px; }
+        .ac-foot { font-size: 11px; color: var(--faint); margin-top: 10px; }
+        .ac-check { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+          margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 12.5px;
+          font-weight: 650; color: var(--ink); }
+        .ac-check span:last-child { display: inline-flex; align-items: center; gap: 5px; text-align: right;
+          font-weight: 600; font-size: 11.5px; }
+        .ac-foot-note { font-size: 11px; color: var(--faint); margin-top: 1.25rem; max-width: 760px; line-height: 1.6; }
+
+        .ac-scrim { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); display: flex;
+          align-items: center; justify-content: center; padding: 1rem; z-index: 100; }
+        .ac-modal { background: var(--surface); border-radius: var(--radius-lg); padding: 1.4rem 1.5rem;
+          width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto; box-shadow: var(--shadow-lg); }
+        .ac-modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+        .ac-modal-head h2 { font-size: 17px; font-weight: 650; color: var(--ink); }
+        .ac-close { background: none; border: none; color: var(--faint); cursor: pointer; padding: 4px; border-radius: 6px; }
+        .ac-close:hover { background: var(--slate-soft); color: var(--ink-2); }
+        .ac-modal-sub { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
+        .ac-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .ac-modal-foot { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
+
+        @media (max-width: 1100px) { .ac-stats { grid-template-columns: 1fr 1fr; } }
+        @media (max-width: 768px) {
+          .ac-stats { grid-template-columns: 1fr 1fr; }
+          .ac-cols { grid-template-columns: 1fr; }
+          .ac-range { grid-template-columns: 1fr 1fr; }
+          .ac-range-note { grid-column: 1 / -1; }
+          .ac-grid { grid-template-columns: 1fr; }
+          .ac-modal { padding: 1.1rem 1.15rem; }
+          .ac-scrim { align-items: flex-end; padding: 0; }
+          .ac-modal { max-width: none; border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+        }
+      `}</style>
     </div>
   )
 }

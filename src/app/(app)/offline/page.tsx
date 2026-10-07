@@ -1,10 +1,11 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Suspense } from 'react'
 import { createClient } from '@/lib/supabase'
-import { formatINR } from '@/lib/gst-engine'
+import { formatDateIN } from '@/lib/format'
+import { Badge, Button, EmptyState, PageHeader, StatCard } from '@/components/ui'
+import Icon from '@/components/Icons'
 import {
   listOutbox,
   removeOutboxEntry,
@@ -12,6 +13,18 @@ import {
   type OutboxEntry,
   type SyncOutcome,
 } from '@/lib/outbox'
+
+const inr0 = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })
+const money = (v: number) => inr0.format(Number(v) || 0)
+
+const num = (v: unknown) => Number(v ?? 0) || 0
+
+/** "07 Oct 26, 18:04" — the queue timestamp is read against the invoice date, so both use the same shape. */
+function formatDateTimeIN(value: string): string {
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return '—'
+  return `${formatDateIN(d.toISOString())}, ${d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })}`
+}
 
 function OfflinePageInner() {
   const supabase = createClient()
@@ -21,10 +34,12 @@ function OfflinePageInner() {
   const [orgId, setOrgId] = useState('')
   const [loading, setLoading] = useState(true)
   const [entries, setEntries] = useState<OutboxEntry[]>([])
-  const [online, setOnline] = useState(true)
+  const [online, setOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine))
   const [syncing, setSyncing] = useState(false)
   const [outcome, setOutcome] = useState<SyncOutcome | null>(null)
-  const [justQueued, setJustQueued] = useState(false)
+
+  // The invoice form returns here with ?queued=1; the banner is that flag, nothing more.
+  const justQueued = searchParams.get('queued') === '1'
 
   useEffect(() => {
     async function init() {
@@ -41,14 +56,11 @@ function OfflinePageInner() {
       if (!membership) { router.push('/setup'); return }
       setOrgId(membership.organization_id)
       setEntries(listOutbox(membership.organization_id))
+      setOnline(navigator.onLine)
       setLoading(false)
     }
     init()
   }, [])
-
-  useEffect(() => {
-    if (searchParams.get('queued') === '1') setJustQueued(true)
-  }, [searchParams])
 
   const refreshEntries = useCallback((oid: string) => {
     setEntries(listOutbox(oid))
@@ -60,7 +72,6 @@ function OfflinePageInner() {
       if (orgId) runSync()
     }
     const goOffline = () => setOnline(false)
-    setOnline(navigator.onLine)
     window.addEventListener('online', goOnline)
     window.addEventListener('offline', goOffline)
     return () => {
@@ -82,169 +93,183 @@ function OfflinePageInner() {
 
   function discard(entry: OutboxEntry) {
     if (!orgId) return
+    if (!confirm(`Discard ${entry.tempNumber}? It never reached the server, so this invoice will be gone from this device.`)) return
     removeOutboxEntry(orgId, entry.id)
     refreshEntries(orgId)
   }
 
+  const summary = useMemo(() => {
+    const value = entries.reduce((sum, e) => sum + num((e.invoice as Record<string, unknown>).grand_total), 0)
+    const failed = entries.filter(e => e.status === 'error').length
+    return { count: entries.length, value, failed }
+  }, [entries])
+
+  const canSync = online && !syncing && entries.length > 0
+
   if (loading) {
-    return <div className="page-container"><p style={{ color: '#64748b', fontSize: '13px' }}>Loading…</p></div>
+    return <div className="page-container" style={{ color: 'var(--muted)', fontSize: 13 }}>Reading the queue on this device…</div>
   }
 
   return (
-    <div className="page-container" style={{ maxWidth: '900px' }}>
-      <div className="page-header" style={{ marginBottom: '1.5rem' }}>
-        <h1 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b' }}>Offline Sync</h1>
-        <p style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
-          Invoices created without an internet connection are stored on this device and synced here once you're back online.
-        </p>
-      </div>
+    <div className="page-container of" style={{ maxWidth: 1100 }}>
+      <PageHeader
+        eyebrow="Counter"
+        title="Offline Sync"
+        subtitle="Invoices billed without a connection are written to this device, not to the server. They stay here — with their own temporary number — until a sync can push them through."
+        actions={
+          <Button size="sm" icon="cloud" onClick={runSync} disabled={!canSync}
+            title={entries.length === 0 ? 'Nothing queued' : online ? 'Push the queue to the server' : 'No connection'}>
+            {syncing ? 'Syncing…' : 'Sync now'}
+          </Button>
+        }
+        right={<Badge tone={online ? 'green' : 'red'} dot>{online ? 'Online' : 'Offline'}</Badge>}
+      />
 
-      {/* Connectivity + queue status */}
-      <div style={{
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        gap: '12px', flexWrap: 'wrap',
-        padding: '14px 16px', borderRadius: '10px',
-        background: online ? '#f0fdf4' : '#fef2f2',
-        border: `1px solid ${online ? '#bbf7d0' : '#fecaca'}`,
-        marginBottom: '1.25rem'
-      }}>
-        <div style={{ fontSize: '13px', fontWeight: '500', color: online ? '#166534' : '#991b1b' }}>
-          {online ? '● Online' : '● Offline'} — {entries.length} invoice{entries.length === 1 ? '' : 's'} in queue
-        </div>
-        <button
-          onClick={runSync}
-          disabled={!online || syncing || entries.length === 0}
-          style={{
-            padding: '8px 18px', background: '#2563eb', color: 'white',
-            border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '500',
-            cursor: !online || syncing || entries.length === 0 ? 'not-allowed' : 'pointer',
-            opacity: !online || syncing || entries.length === 0 ? 0.5 : 1
-          }}
-        >
-          {syncing ? 'Syncing…' : 'Sync now'}
-        </button>
+      <div className="of-stats">
+        <StatCard label="Queued here" value={String(summary.count)}
+          sub={summary.count ? 'not on the server yet' : 'nothing waiting'}
+          icon="box" tone={summary.count ? 'amber' : 'grey'} delay={0} />
+        <StatCard label="Value waiting" value={money(summary.value)}
+          sub={`${summary.count} invoice(s) to push`} icon="invoice" tone="blue" delay={40} />
+        <StatCard label="Failed" value={String(summary.failed)}
+          sub={summary.failed ? 'still queued, safe to retry' : 'nothing blocked'}
+          icon="alert" tone={summary.failed ? 'red' : 'green'} delay={80} />
+        <StatCard label="Connection" value={online ? 'Online' : 'Offline'}
+          sub={online ? 'the queue syncs when you press Sync now' : 'billing keeps working, the queue keeps growing'}
+          icon="cloud" tone={online ? 'green' : 'red'} delay={120} />
       </div>
 
       {justQueued && (
-        <div style={{
-          padding: '12px 16px', borderRadius: '8px', background: '#eff6ff',
-          border: '1px solid #bfdbfe', fontSize: '13px', color: '#1e40af', marginBottom: '1rem'
-        }}>
-          Invoice saved to this device. It will sync when you're online.
+        <div className="of-alert of-alert-blue">
+          <Icon name="check" size={14} />
+          <span>Invoice saved to this device. It will sync when you press Sync now or when the connection returns.</span>
         </div>
       )}
 
       {outcome && (
-        <div style={{
-          padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem',
-          background: outcome.synced.length > 0 ? '#f0fdf4' : '#fefce8',
-          border: `1px solid ${outcome.synced.length > 0 ? '#bbf7d0' : '#fde68a'}`,
-          color: outcome.synced.length > 0 ? '#166534' : '#854d0e'
-        }}>
-          {outcome.synced.length > 0 && (
-            <div>
-              Synced {outcome.synced.length} invoice{outcome.synced.length === 1 ? '' : 's'}:
-              {' '}
-              {outcome.synced.map(s => s.invoiceNumber).join(', ')}
-            </div>
-          )}
-          {outcome.failed.length > 0 && (
-            <div style={{ marginTop: outcome.synced.length > 0 ? '6px' : 0, color: '#991b1b' }}>
-              {outcome.failed.length} could not be synced — see the error on the invoice below.
-            </div>
-          )}
-          {outcome.stoppedEarly && outcome.synced.length === 0 && outcome.failed.length === 0 && (
-            <div>Connection dropped — remaining invoices stay queued.</div>
-          )}
+        <div className={`of-alert ${outcome.synced.length > 0 ? 'of-alert-green' : outcome.failed.length > 0 ? 'of-alert-red' : 'of-alert-amber'}`}>
+          <Icon name={outcome.synced.length > 0 ? 'check' : 'alert'} size={14} />
+          <div>
+            {outcome.synced.length > 0 && (
+              <div>
+                Synced {outcome.synced.length} invoice{outcome.synced.length === 1 ? '' : 's'}: {' '}
+                {outcome.synced.map(s => s.invoiceNumber).join(', ')}
+              </div>
+            )}
+            {outcome.failed.length > 0 && (
+              <div className="of-alert-sub">
+                {outcome.failed.length} could not be synced — the error is shown on the invoice below and it stays queued.
+              </div>
+            )}
+            {outcome.stoppedEarly && outcome.synced.length === 0 && outcome.failed.length === 0 && (
+              <div>Connection dropped — the remaining invoices stay queued.</div>
+            )}
+          </div>
         </div>
       )}
 
       {entries.length === 0 ? (
-        <div style={{
-          padding: '2.5rem 1rem', textAlign: 'center', background: 'white',
-          border: '1px solid #e2e8f0', borderRadius: '10px'
-        }}>
-          <div style={{ fontSize: '28px', marginBottom: '8px' }}>✓</div>
-          <div style={{ fontSize: '14px', fontWeight: '500', color: '#374151' }}>Nothing to sync</div>
-          <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
-            Invoices saved while offline will appear here.
-          </div>
+        <div className="of-panel">
+          <EmptyState
+            icon="check"
+            title="Nothing to sync"
+            message="Invoices billed while this device had no connection appear here, with their line items, totals and a temporary number, until they reach the server."
+            action={<Button size="sm" variant="subtle" icon="pos" href="/pos">Open the counter</Button>}
+          />
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {entries.map(entry => {
-            const inv = entry.invoice as Record<string, any>
-            const itemCount = entry.items.length
-            return (
-              <div key={entry.id} style={{
-                padding: '14px 16px', background: 'white',
-                border: `1px solid ${entry.status === 'error' ? '#fecaca' : '#e2e8f0'}`,
-                borderRadius: '10px'
-              }}>
-                <div style={{
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-                  gap: '12px', flexWrap: 'wrap'
-                }}>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                      <span style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b' }}>
-                        {entry.tempNumber}
-                      </span>
-                      <span style={{
-                        fontSize: '11px', fontWeight: '500', padding: '2px 8px', borderRadius: '999px',
-                        background: entry.status === 'error' ? '#fef2f2' : '#fff7ed',
-                        color: entry.status === 'error' ? '#991b1b' : '#9a3412'
-                      }}>
-                        {entry.status === 'error' ? 'Failed' : 'Pending'}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: '13px', color: '#475569' }}>
-                      {inv.customer_name} — {itemCount} item{itemCount === 1 ? '' : 's'} — {formatINR(Number(inv.grand_total) || 0)}
-                    </div>
-                    <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>
-                      Invoice date {inv.invoice_date} · Queued {new Date(entry.createdAt).toLocaleString('en-IN')}
-                    </div>
-                    {entry.status === 'error' && entry.error && (
-                      <div style={{ fontSize: '12px', color: '#991b1b', marginTop: '6px' }}>
-                        {entry.error}
-                      </div>
-                    )}
-                  </div>
-                  <div className="btn-group" style={{ display: 'flex', gap: '8px' }}>
-                    <button
-                      onClick={() => discard(entry)}
-                      style={{
-                        padding: '7px 14px', background: 'white', color: '#dc2626',
-                        border: '1px solid #fecaca', borderRadius: '7px',
-                        fontSize: '12px', fontWeight: '500', cursor: 'pointer'
-                      }}
-                    >
-                      Discard
-                    </button>
-                    <button
-                      onClick={() => router.push('/invoices')}
-                      style={{
-                        padding: '7px 14px', background: 'white', color: '#374151',
-                        border: '1px solid #e2e8f0', borderRadius: '7px',
-                        fontSize: '12px', fontWeight: '500', cursor: 'pointer'
-                      }}
-                    >
-                      View invoices
-                    </button>
-                  </div>
+        <div className="table-frame">
+          <div className="responsive-table">
+            <div className="table-header of-row of-head">
+              <span data-label="Number">Queue reference</span>
+              <span data-label="Customer">Customer</span>
+              <span data-label="Items">Items</span>
+              <span data-label="Amount">Total</span>
+              <span data-label="Date">Invoice date</span>
+              <span data-label="Status">Status</span>
+              <span className="of-right" data-label="Actions">Actions</span>
+            </div>
+            {entries.map(entry => {
+              const inv = entry.invoice as Record<string, unknown>
+              const failed = entry.status === 'error'
+              const itemCount = entry.items.length
+              return (
+                <div key={entry.id} className={`table-row of-row ${failed ? 'of-failed' : ''}`}>
+                  <span data-label="Number" className="of-main">
+                    <span className="of-mono">{entry.tempNumber}</span>
+                    <span className="of-sub">Queued {formatDateTimeIN(entry.createdAt)}</span>
+                  </span>
+                  <span data-label="Customer">{String(inv.customer_name ?? '—')}</span>
+                  <span data-label="Items">{itemCount} item{itemCount === 1 ? '' : 's'}</span>
+                  <span data-label="Amount" className="of-amt">{money(num(inv.grand_total))}</span>
+                  <span data-label="Date">{formatDateIN(String(inv.invoice_date ?? ''))}</span>
+                  <span data-label="Status">
+                    {failed ? <Badge tone="red">Failed</Badge> : <Badge tone="amber">Pending</Badge>}
+                    {failed && Boolean(entry.error) && <div className="of-error">{String(entry.error)}</div>}
+                  </span>
+                  <span className="of-right of-actions" data-label="Actions">
+                    <Button size="sm" variant="danger" onClick={() => discard(entry)}>Discard</Button>
+                    <Button size="sm" variant="subtle" onClick={() => router.push('/invoices')}>Invoices</Button>
+                  </span>
                 </div>
-              </div>
-            )
-          })}
+              )
+            })}
+          </div>
         </div>
       )}
+
+      <div className="of-foot">
+        <span>Queued here: {entries.length} · {money(summary.value)}</span>
+        <span>The queue lives in this browser only — clearing site data before a sync discards these invoices, and they cannot be recovered from the server.</span>
+      </div>
+
+      <style>{`
+        .of { display: flex; flex-direction: column; }
+        .of-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 1rem; }
+
+        .of-alert { display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; border-radius: var(--radius-sm);
+          padding: 10px 12px; margin-bottom: 10px; border-left: 3px solid transparent; }
+        .of-alert svg { flex-shrink: 0; margin-top: 1px; }
+        .of-alert-green { background: var(--green-soft); color: var(--green); border-left-color: var(--green); }
+        .of-alert-red { background: var(--red-soft); color: var(--red); border-left-color: var(--red); }
+        .of-alert-amber { background: var(--amber-soft); color: var(--amber); border-left-color: var(--amber); }
+        .of-alert-blue { background: var(--brand-soft); color: var(--brand); border-left-color: var(--brand); }
+        .of-alert-sub { margin-top: 4px; }
+
+        .of-panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+        .of-row { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.2fr) 76px 116px 104px 150px 156px;
+          gap: 12px; align-items: center; padding: 11px 14px; font-size: 12.5px; color: var(--ink-2); }
+        .of-head { background: var(--surface-2); border-bottom: 1px solid var(--line-soft); font-size: 11px;
+          font-weight: 650; color: var(--faint); text-transform: uppercase; letter-spacing: 0.05em; }
+        .of-right { text-align: right; }
+        .of-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+        .of-mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--ink);
+          font-weight: 600; overflow-wrap: anywhere; }
+        .of-sub { font-size: 11px; color: var(--faint); }
+        .of-amt { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink); }
+        .of-error { font-size: 10.5px; color: var(--red); margin-top: 3px; overflow-wrap: anywhere; }
+        .of-failed { background: var(--red-soft); }
+        .of-actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+
+        .of-foot { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 11.5px;
+          color: var(--faint); margin-top: 12px; }
+
+        @media (max-width: 1100px) { .of-stats { grid-template-columns: 1fr 1fr; } }
+        @media (max-width: 768px) {
+          .of-row { grid-template-columns: 1fr; gap: 6px; }
+          .of-head { display: none; }
+          .of-right { text-align: left; }
+          .of-actions { justify-content: flex-start; }
+          .of-stats { grid-template-columns: 1fr 1fr; }
+        }
+      `}</style>
     </div>
   )
 }
 
 export default function OfflinePage() {
   return (
-    <Suspense fallback={<div className="page-container"><p style={{ color: '#64748b', fontSize: '13px' }}>Loading…</p></div>}>
+    <Suspense fallback={<div className="page-container" style={{ color: 'var(--muted)', fontSize: 13 }}>Loading…</div>}>
       <OfflinePageInner />
     </Suspense>
   )
