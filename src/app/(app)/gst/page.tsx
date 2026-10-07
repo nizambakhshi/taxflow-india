@@ -2,27 +2,135 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
 import { formatINR } from '@/lib/gst-engine'
-import Link from 'next/link'
+import {
+  Badge, Button, Card, PageHeader, SectionTitle, StatCard, StatRow, StackedBar,
+} from '@/components/ui'
+import type { Tone } from '@/components/ui'
+import Icon from '@/components/Icons'
 
+interface InvoiceTotals {
+  grand_total: number | string | null
+  taxable_amount: number | string | null
+  cgst_amount: number | string | null
+  sgst_amount: number | string | null
+  igst_amount: number | string | null
+}
+
+interface BillTotals {
+  grand_total: number | string | null
+  cgst_amount: number | string | null
+  sgst_amount: number | string | null
+  igst_amount: number | string | null
+}
+
+interface ReturnPeriodRow {
+  id: string
+  return_type: string
+  status: string
+}
+
+interface ReturnStatus {
+  type: string
+  label: string
+  desc: string
+  href: string
+  dueDay: number
+  status: string
+  id: string | null
+}
+
+interface Summary {
+  invoiceCount: number
+  billCount: number
+  totalSales: number
+  taxableSales: number
+  cgstCollected: number
+  sgstCollected: number
+  igstCollected: number
+  totalOutputTax: number
+  totalPurchases: number
+  itcCGST: number
+  itcSGST: number
+  itcIGST: number
+  totalITC: number
+  netPayable: number
+}
+
+const EMPTY_SUMMARY: Summary = {
+  invoiceCount: 0, billCount: 0,
+  totalSales: 0, taxableSales: 0,
+  cgstCollected: 0, sgstCollected: 0, igstCollected: 0, totalOutputTax: 0,
+  totalPurchases: 0, itcCGST: 0, itcSGST: 0, itcIGST: 0,
+  totalITC: 0, netPayable: 0,
+}
+
+// GSTR-1 on the 11th and GSTR-3B on the 20th of the month *after* the supply period.
+const RETURN_KINDS = [
+  { type: 'GSTR1', label: 'GSTR-1', desc: 'Outward supplies', href: '/gst/gstr1', dueDay: 11 },
+  { type: 'GSTR3B', label: 'GSTR-3B', desc: 'Summary return', href: '/gst/gstr3b', dueDay: 20 },
+]
+
+const STATUS_META: Record<string, { label: string; tone: Tone }> = {
+  not_started: { label: 'Not Started', tone: 'grey' },
+  draft: { label: 'Draft', tone: 'amber' },
+  ready: { label: 'Ready to File', tone: 'blue' },
+  filed: { label: 'Filed', tone: 'green' },
+}
+
+const STATUS_OPTIONS = ['not_started', 'draft', 'ready', 'filed']
+
+const HEAD_COLORS = { cgst: 'var(--violet)', sgst: 'var(--brand)', igst: 'var(--cyan)' }
+
+const inr = (value: number) => `₹${formatINR(value)}`
+
+function sum<Row extends object, K extends keyof Row>(rows: Row[], key: K): number {
+  return rows.reduce((total, row) => total + Number(row[key] || 0), 0)
+}
+
+function periodDate(period: string) {
+  const [year, month] = period.split('-').map(Number)
+  return new Date(year, month - 1, 1)
+}
+
+function periodLabel(period: string) {
+  return periodDate(period).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
+}
+
+/** Financial year of the period being viewed, not of today. */
+function fyLabel(period: string) {
+  const date = periodDate(period)
+  const year = date.getFullYear()
+  return date.getMonth() >= 3
+    ? `${year}-${String(year + 1).slice(2)}`
+    : `${year - 1}-${String(year).slice(2)}`
+}
+
+function dueDate(period: string, day: number) {
+  const date = periodDate(period)
+  return new Date(date.getFullYear(), date.getMonth() + 1, day)
+}
+
+function daysUntil(date: Date) {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const target = new Date(date)
+  target.setHours(0, 0, 0, 0)
+  return Math.round((target.getTime() - today.getTime()) / 86_400_000)
+}
+
+/** Last n calendar months as YYYY-MM periods, newest first. */
 function getLastNMonths(n: number) {
-  const months = []
+  const months: { period: string; label: string }[] = []
   const now = new Date()
   for (let i = 0; i < n; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-    const year = d.getFullYear()
-    const month = String(d.getMonth() + 1).padStart(2, '0')
-    const label = d.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
-    months.push({ period: `${year}-${month}`, label, year, month: d.getMonth() + 1 })
+    const period = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    months.push({ period, label: periodLabel(period) })
   }
   return months
-}
-
-function getFinancialYear(date = new Date()) {
-  const month = date.getMonth()
-  const year = date.getFullYear()
-  return month >= 3 ? `${year}-${String(year + 1).slice(2)}` : `${year - 1}-${String(year).slice(2)}`
 }
 
 export default function GSTDashboardPage() {
@@ -37,24 +145,74 @@ export default function GSTDashboardPage() {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   })
 
-  // GST summary data
-  const [summary, setSummary] = useState({
-    totalSales: 0,
-    taxableSales: 0,
-    cgstCollected: 0,
-    sgstCollected: 0,
-    igstCollected: 0,
-    totalOutputTax: 0,
-    totalPurchases: 0,
-    itcCGST: 0,
-    itcSGST: 0,
-    itcIGST: 0,
-    totalITC: 0,
-    netPayable: 0,
-  })
+  const [summary, setSummary] = useState<Summary>(EMPTY_SUMMARY)
+  const [returnStatus, setReturnStatus] = useState<ReturnStatus[]>([])
 
-  const [returnStatus, setReturnStatus] = useState<any[]>([])
   const months = getLastNMonths(6)
+
+  async function fetchPeriod(oid: string, period: string) {
+    const date = periodDate(period)
+    const startDate = `${period}-01`
+    const endDate = `${period}-${new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()}`
+
+    const [invoicesRes, billsRes, returnsRes] = await Promise.all([
+      supabase
+        .from('invoices')
+        .select('grand_total, taxable_amount, cgst_amount, sgst_amount, igst_amount')
+        .eq('organization_id', oid)
+        .neq('status', 'cancelled')
+        .gte('invoice_date', startDate)
+        .lte('invoice_date', endDate),
+      supabase
+        .from('purchase_bills')
+        .select('grand_total, cgst_amount, sgst_amount, igst_amount')
+        .eq('organization_id', oid)
+        .eq('itc_eligible', true)
+        .neq('status', 'cancelled')
+        .gte('bill_date', startDate)
+        .lte('bill_date', endDate),
+      supabase
+        .from('gst_return_periods')
+        .select('id, return_type, status')
+        .eq('organization_id', oid)
+        .eq('period', period),
+    ])
+
+    const invoices = (invoicesRes.data || []) as unknown as InvoiceTotals[]
+    const bills = (billsRes.data || []) as unknown as BillTotals[]
+    const returns = (returnsRes.data || []) as unknown as ReturnPeriodRow[]
+
+    const cgstCollected = sum(invoices, 'cgst_amount')
+    const sgstCollected = sum(invoices, 'sgst_amount')
+    const igstCollected = sum(invoices, 'igst_amount')
+    const totalOutputTax = cgstCollected + sgstCollected + igstCollected
+
+    const itcCGST = sum(bills, 'cgst_amount')
+    const itcSGST = sum(bills, 'sgst_amount')
+    const itcIGST = sum(bills, 'igst_amount')
+    const totalITC = itcCGST + itcSGST + itcIGST
+
+    return {
+      summary: {
+        invoiceCount: invoices.length,
+        billCount: bills.length,
+        totalSales: sum(invoices, 'grand_total'),
+        taxableSales: sum(invoices, 'taxable_amount'),
+        cgstCollected, sgstCollected, igstCollected, totalOutputTax,
+        totalPurchases: sum(bills, 'grand_total'),
+        itcCGST, itcSGST, itcIGST, totalITC,
+        netPayable: Math.max(0, totalOutputTax - totalITC),
+      },
+      returns: RETURN_KINDS.map(kind => {
+        const existing = returns.find(r => r.return_type === kind.type)
+        return {
+          ...kind,
+          status: existing?.status || 'not_started',
+          id: existing?.id || null,
+        }
+      }),
+    }
+  }
 
   useEffect(() => {
     async function load() {
@@ -79,95 +237,28 @@ export default function GSTDashboardPage() {
         .single()
 
       if (gstReg) setOrgStateCode(gstReg.state_code || '')
-
-      await loadPeriodData(membership.organization_id, selectedPeriod)
-      setLoading(false)
     }
     load()
   }, [])
 
   useEffect(() => {
-    if (orgId) loadPeriodData(orgId, selectedPeriod)
+    if (!orgId) return
+    let stale = false
+
+    async function run() {
+      const period = await fetchPeriod(orgId, selectedPeriod)
+      if (stale) return
+      setSummary(period.summary)
+      setReturnStatus(period.returns)
+      setLoading(false)
+    }
+    run()
+
+    return () => { stale = true }
   }, [selectedPeriod, orgId])
 
-  async function loadPeriodData(oid: string, period: string) {
-    const [year, month] = period.split('-')
-    const startDate = `${year}-${month}-01`
-    const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate()
-    const endDate = `${year}-${month}-${lastDay}`
-
-    // Sales in period
-    const { data: invoices } = await supabase
-      .from('invoices')
-      .select('*')
-      .eq('organization_id', oid)
-      .neq('status', 'cancelled')
-      .gte('invoice_date', startDate)
-      .lte('invoice_date', endDate)
-
-    // Purchases in period
-    const { data: bills } = await supabase
-      .from('purchase_bills')
-      .select('*')
-      .eq('organization_id', oid)
-      .eq('itc_eligible', true)
-      .neq('status', 'cancelled')
-      .gte('bill_date', startDate)
-      .lte('bill_date', endDate)
-
-    const invList = invoices || []
-    const billList = bills || []
-
-    const totalSales = invList.reduce((s, i) => s + Number(i.grand_total), 0)
-    const taxableSales = invList.reduce((s, i) => s + Number(i.taxable_amount), 0)
-    const cgstCollected = invList.reduce((s, i) => s + Number(i.cgst_amount), 0)
-    const sgstCollected = invList.reduce((s, i) => s + Number(i.sgst_amount), 0)
-    const igstCollected = invList.reduce((s, i) => s + Number(i.igst_amount), 0)
-    const totalOutputTax = cgstCollected + sgstCollected + igstCollected
-
-    const itcCGST = billList.reduce((s, b) => s + Number(b.cgst_amount), 0)
-    const itcSGST = billList.reduce((s, b) => s + Number(b.sgst_amount), 0)
-    const itcIGST = billList.reduce((s, b) => s + Number(b.igst_amount), 0)
-    const totalITC = itcCGST + itcSGST + itcIGST
-    const netPayable = Math.max(0, totalOutputTax - totalITC)
-    const totalPurchases = billList.reduce((s, b) => s + Number(b.grand_total), 0)
-
-    setSummary({
-      totalSales, taxableSales,
-      cgstCollected, sgstCollected, igstCollected, totalOutputTax,
-      totalPurchases, itcCGST, itcSGST, itcIGST,
-      totalITC, netPayable,
-    })
-
-    // Return status for this period
-    const fy = getFinancialYear(new Date(parseInt(year), parseInt(month) - 1, 1))
-    const { data: returns } = await supabase
-      .from('gst_return_periods')
-      .select('*')
-      .eq('organization_id', oid)
-      .eq('period', period)
-
-    // Build return status list
-    const returnTypes = [
-      { type: 'GSTR1', label: 'GSTR-1', desc: 'Outward supplies', due: `11 ${new Date(parseInt(year), parseInt(month), 0).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}` },
-      { type: 'GSTR3B', label: 'GSTR-3B', desc: 'Summary return', due: `20 ${new Date(parseInt(year), parseInt(month), 0).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}` },
-    ]
-
-    const statusList = returnTypes.map(rt => {
-      const existing = returns?.find(r => r.return_type === rt.type)
-      return {
-        ...rt,
-        status: existing?.status || 'not_started',
-        id: existing?.id || null,
-        netPayable: existing?.net_payable || 0,
-      }
-    })
-
-    setReturnStatus(statusList)
-  }
-
   async function updateReturnStatus(returnType: string, status: string) {
-    const fy = getFinancialYear()
+    if (!orgId) return
     const existing = returnStatus.find(r => r.type === returnType)
 
     if (existing?.id) {
@@ -181,7 +272,7 @@ export default function GSTDashboardPage() {
         .insert({
           organization_id: orgId,
           return_type: returnType,
-          financial_year: fy,
+          financial_year: fyLabel(selectedPeriod),
           period_type: 'monthly',
           period: selectedPeriod,
           status,
@@ -191,300 +282,269 @@ export default function GSTDashboardPage() {
         })
     }
 
-    await loadPeriodData(orgId, selectedPeriod)
+    const period = await fetchPeriod(orgId, selectedPeriod)
+    setSummary(period.summary)
+    setReturnStatus(period.returns)
   }
 
-  const statusConfig: Record<string, { label: string; bg: string; color: string }> = {
-    not_started: { label: 'Not Started', bg: '#f1f5f9', color: '#64748b' },
-    draft: { label: 'Draft', bg: '#fef9c3', color: '#854d0e' },
-    ready: { label: 'Ready to File', bg: '#eff6ff', color: '#1d4ed8' },
-    filed: { label: 'Filed', bg: '#f0fdf4', color: '#166534' },
+  if (loading) {
+    return (
+      <div className="page-container" style={{ color: 'var(--muted)', fontSize: 13 }}>
+        Reading this month’s invoices and bills…
+      </div>
+    )
   }
 
-  if (loading) return (
-    <div style={{ padding: '2rem', color: '#64748b', fontSize: '14px' }}>Loading...</div>
-  )
+  const dueSummary = summary.totalOutputTax - summary.totalITC
+  const payable = summary.netPayable
 
   return (
-    <div className="page-container" style={{ maxWidth: '1100px' }}>
-      {/* Header */}
-      <div className="page-header" style={{
-        display: 'flex', justifyContent: 'space-between',
-        alignItems: 'center', marginBottom: '1.5rem'
-      }}>
-        <div>
-          <h1 style={{ fontSize: '22px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
-            GST Dashboard
-          </h1>
-          <p style={{ fontSize: '14px', color: '#64748b' }}>
-            Tax summary and return filing status
-          </p>
-        </div>
+    <div className="page-container gh" style={{ maxWidth: 1180 }}>
+      <PageHeader
+        eyebrow={`GST · FY ${fyLabel(selectedPeriod)}`}
+        title="GST Dashboard"
+        subtitle={`${periodLabel(selectedPeriod)} — tax collected on your invoices, credit available on your bills, and how far the returns for this period have moved.`}
+        actions={
+          <select
+            className="tf-input"
+            style={{ cursor: 'pointer', minWidth: 170 }}
+            value={selectedPeriod}
+            onChange={e => setSelectedPeriod(e.target.value)}
+            aria-label="Tax period"
+          >
+            {months.map(m => (
+              <option key={m.period} value={m.period}>{m.label}</option>
+            ))}
+          </select>
+        }
+        right={orgStateCode
+          ? <Badge tone="grey">Supplying from {orgStateCode}</Badge>
+          : <Badge tone="grey">No GSTIN registered</Badge>}
+      />
 
-        {/* Period selector */}
-        <select
-          style={{
-            padding: '8px 14px', border: '1px solid #e2e8f0',
-            borderRadius: '8px', fontSize: '14px', cursor: 'pointer',
-            background: 'white', color: '#1e293b', outline: 'none'
-          }}
-          value={selectedPeriod}
-          onChange={e => setSelectedPeriod(e.target.value)}
-        >
-          {months.map(m => (
-            <option key={m.period} value={m.period}>{m.label}</option>
-          ))}
-        </select>
-      </div>
-
-      {/* Output tax summary */}
-      <div style={{
-        background: 'white', border: '1px solid #e2e8f0',
-        borderRadius: '12px', padding: '1.5rem', marginBottom: '1rem'
-      }}>
-        <div style={{
-          fontSize: '12px', fontWeight: '700', color: '#94a3b8',
-          marginBottom: '1rem', textTransform: 'uppercase' as const,
-          letterSpacing: '0.05em'
-        }}>
-          Output Tax (Sales)
-        </div>
-        <div className="metric-grid" style={{
-          display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '1rem'
-        }}>
-          {[
-            { label: 'Total Sales', value: summary.totalSales, color: '#2563eb' },
-            { label: 'Taxable Value', value: summary.taxableSales, color: '#374151' },
-            { label: 'CGST Collected', value: summary.cgstCollected, color: '#7c3aed' },
-            { label: 'SGST Collected', value: summary.sgstCollected, color: '#7c3aed' },
-            { label: 'IGST Collected', value: summary.igstCollected, color: '#0891b2' },
-          ].map(card => (
-            <div key={card.label}>
-              <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>
-                {card.label}
-              </div>
-              <div style={{
-                fontSize: '16px', fontWeight: '600',
-                color: card.value > 0 ? card.color : '#94a3b8'
-              }}>
-                ₹{formatINR(card.value)}
-              </div>
-            </div>
-          ))}
-        </div>
-        <div style={{
-          marginTop: '1rem', paddingTop: '1rem',
-          borderTop: '1px solid #f1f5f9',
-          display: 'flex', justifyContent: 'space-between',
-          alignItems: 'center'
-        }}>
-          <span style={{ fontSize: '13px', color: '#64748b' }}>
-            Total Output Tax
-          </span>
-          <span style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b' }}>
-            ₹{formatINR(summary.totalOutputTax)}
-          </span>
-        </div>
-      </div>
-
-      {/* ITC summary */}
-      <div style={{
-        background: 'white', border: '1px solid #e2e8f0',
-        borderRadius: '12px', padding: '1.5rem', marginBottom: '1rem'
-      }}>
-        <div style={{
-          fontSize: '12px', fontWeight: '700', color: '#94a3b8',
-          marginBottom: '1rem', textTransform: 'uppercase' as const,
-          letterSpacing: '0.05em'
-        }}>
-          Input Tax Credit (Purchases)
-        </div>
-        <div className="metric-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem' }}>
-          {[
-            { label: 'Total Purchases', value: summary.totalPurchases, color: '#374151' },
-            { label: 'CGST ITC', value: summary.itcCGST, color: '#059669' },
-            { label: 'SGST ITC', value: summary.itcSGST, color: '#059669' },
-            { label: 'IGST ITC', value: summary.itcIGST, color: '#059669' },
-          ].map(card => (
-            <div key={card.label}>
-              <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>
-                {card.label}
-              </div>
-              <div style={{
-                fontSize: '16px', fontWeight: '600',
-                color: card.value > 0 ? card.color : '#94a3b8'
-              }}>
-                ₹{formatINR(card.value)}
-              </div>
-            </div>
-          ))}
-        </div>
-        <div style={{
-          marginTop: '1rem', paddingTop: '1rem',
-          borderTop: '1px solid #f1f5f9',
-          display: 'flex', justifyContent: 'space-between',
-          alignItems: 'center'
-        }}>
-          <span style={{ fontSize: '13px', color: '#64748b' }}>
-            Total ITC Available
-          </span>
-          <span style={{ fontSize: '18px', fontWeight: '700', color: '#059669' }}>
-            ₹{formatINR(summary.totalITC)}
-          </span>
-        </div>
+      {/* Headline numbers */}
+      <div className="tf-g-4" style={{ marginBottom: '1rem' }}>
+        <StatCard label="Total sales" value={summary.totalSales} tone="blue" icon="invoice"
+          sub={`${summary.invoiceCount} invoice${summary.invoiceCount === 1 ? '' : 's'}`} />
+        <StatCard label="Output tax" value={summary.totalOutputTax} tone="violet" icon="percent"
+          sub="Collected on supplies" />
+        <StatCard label="ITC available" value={summary.totalITC} tone="green" icon="cart"
+          sub={`${summary.billCount} eligible bill${summary.billCount === 1 ? '' : 's'}`} />
+        <StatCard label="Net GST payable" value={payable} tone={payable > 0 ? 'red' : 'green'}
+          icon="wallet" sub={payable > 0 ? 'Deposit by the 20th' : 'Credit covers the tax'} />
       </div>
 
       {/* Net payable */}
-      <div style={{
-        background: summary.netPayable > 0 ? '#fef2f2' : '#f0fdf4',
-        border: `1px solid ${summary.netPayable > 0 ? '#fecaca' : '#bbf7d0'}`,
-        borderRadius: '12px', padding: '1.5rem', marginBottom: '1.5rem'
-      }}>
-        <div style={{
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-        }}>
-          <div>
-            <div style={{
-              fontSize: '14px', fontWeight: '600',
-              color: summary.netPayable > 0 ? '#dc2626' : '#166534',
-              marginBottom: '4px'
-            }}>
-              {summary.netPayable > 0 ? '⚠️ Net GST Payable' : '✅ No GST Payable'}
+      <Card className={`gh-net ${payable > 0 ? 'is-due' : 'is-clear'}`}>
+        <div className="tf-row gh-net-main">
+          <Icon
+            name={payable > 0 ? 'alert' : 'check'}
+            size={20}
+            style={{ color: payable > 0 ? 'var(--red)' : 'var(--green)', flexShrink: 0 }}
+          />
+          <div style={{ minWidth: 0 }}>
+            <div className="gh-net-title">
+              {payable > 0 ? `Net GST payable for ${periodLabel(selectedPeriod)}` : `Nothing to pay for ${periodLabel(selectedPeriod)}`}
             </div>
-            <div style={{ fontSize: '12px', color: '#64748b' }}>
-              Output Tax ₹{formatINR(summary.totalOutputTax)} − ITC ₹{formatINR(summary.totalITC)}
+            <div className="gh-net-sub">
+              Output tax {inr(summary.totalOutputTax)} − ITC {inr(summary.totalITC)}
+              {dueSummary < 0 ? ` · ${inr(-dueSummary)} credit carried forward` : ''}
             </div>
-          </div>
-          <div style={{
-            fontSize: '28px', fontWeight: '700',
-            color: summary.netPayable > 0 ? '#dc2626' : '#166534'
-          }}>
-            ₹{formatINR(summary.netPayable)}
           </div>
         </div>
+        <div className="tf-num gh-net-value">{inr(payable)}</div>
+      </Card>
+
+      {/* Breakdown */}
+      <div className="tf-g-2 gh-breakdown">
+        <Card>
+          <SectionTitle icon="invoice">Output tax (sales)</SectionTitle>
+          <StackedBar
+            height={8}
+            segments={[
+              { label: 'CGST', value: summary.cgstCollected, color: HEAD_COLORS.cgst },
+              { label: 'SGST', value: summary.sgstCollected, color: HEAD_COLORS.sgst },
+              { label: 'IGST', value: summary.igstCollected, color: HEAD_COLORS.igst },
+            ]}
+          />
+          <div style={{ marginTop: '0.9rem' }}>
+            <StatRow label={<Head label="Total sales" />} value={inr(summary.totalSales)} />
+            <StatRow label={<Head label="Taxable value" />} value={inr(summary.taxableSales)} />
+            <StatRow label={<Head label="CGST collected" color={HEAD_COLORS.cgst} />} value={inr(summary.cgstCollected)} />
+            <StatRow label={<Head label="SGST collected" color={HEAD_COLORS.sgst} />} value={inr(summary.sgstCollected)} />
+            <StatRow label={<Head label="IGST collected" color={HEAD_COLORS.igst} />} value={inr(summary.igstCollected)} />
+            <StatRow label="Total output tax" value={inr(summary.totalOutputTax)} tone="violet" strong />
+          </div>
+        </Card>
+
+        <Card>
+          <SectionTitle icon="cart">Input tax credit (purchases)</SectionTitle>
+          <StackedBar
+            height={8}
+            segments={[
+              { label: 'CGST ITC', value: summary.itcCGST, color: HEAD_COLORS.cgst },
+              { label: 'SGST ITC', value: summary.itcSGST, color: HEAD_COLORS.sgst },
+              { label: 'IGST ITC', value: summary.itcIGST, color: HEAD_COLORS.igst },
+            ]}
+          />
+          <div style={{ marginTop: '0.9rem' }}>
+            <StatRow label={<Head label="Total purchases" />} value={inr(summary.totalPurchases)} />
+            <StatRow label={<Head label="CGST ITC" color={HEAD_COLORS.cgst} />} value={inr(summary.itcCGST)} />
+            <StatRow label={<Head label="SGST ITC" color={HEAD_COLORS.sgst} />} value={inr(summary.itcSGST)} />
+            <StatRow label={<Head label="IGST ITC" color={HEAD_COLORS.igst} />} value={inr(summary.itcIGST)} />
+            <StatRow label="Total ITC available" value={inr(summary.totalITC)} tone="green" strong />
+          </div>
+          <div className="gh-note">
+            Only bills marked ITC-eligible are counted. Reversals under Rule 42/43 and
+            credit blocked on unpaid suppliers are handled in the annual workpaper.
+          </div>
+        </Card>
       </div>
 
       {/* Return filing status */}
-      <div style={{
-        background: 'white', border: '1px solid #e2e8f0',
-        borderRadius: '12px', padding: '1.5rem', marginBottom: '1.5rem'
-      }}>
-        <div style={{
-          fontSize: '12px', fontWeight: '700', color: '#94a3b8',
-          marginBottom: '1rem', textTransform: 'uppercase' as const,
-          letterSpacing: '0.05em'
-        }}>
-          Return Filing Status — {months.find(m => m.period === selectedPeriod)?.label}
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column' as const, gap: '12px' }}>
+      <Card>
+        <SectionTitle icon="file-check">Return filing status — {periodLabel(selectedPeriod)}</SectionTitle>
+        <div className="gh-rets">
           {returnStatus.map(ret => {
-            const sc = statusConfig[ret.status] || statusConfig.not_started
+            const meta = STATUS_META[ret.status] || STATUS_META.not_started
+            const due = dueDate(selectedPeriod, ret.dueDay)
+            const days = daysUntil(due)
+            const late = days < 0 && ret.status !== 'filed'
+            const soon = days >= 0 && days <= 3 && ret.status !== 'filed'
             return (
-              <div key={ret.type} className="toolbar" style={{
-                display: 'flex', alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '1rem 1.25rem',
-                border: '1px solid #e2e8f0',
-                borderRadius: '10px', background: '#fafafa'
-              }}>
-                <div>
-                  <div style={{ fontWeight: '600', fontSize: '14px', color: '#1e293b' }}>
-                    {ret.label}
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
-                    {ret.desc} · Due: {ret.due}
+              <div key={ret.type} className="gh-ret">
+                <div style={{ minWidth: 0 }}>
+                  <div className="gh-ret-name">{ret.label}</div>
+                  <div className="gh-ret-meta">
+                    {ret.desc} · due {due.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    {late && <span className="gh-due is-late"> · overdue by {Math.abs(days)} day{Math.abs(days) === 1 ? '' : 's'}</span>}
+                    {soon && <span className="gh-due is-soon"> · due in {days === 0 ? 'today' : `${days} day${days === 1 ? '' : 's'}`}</span>}
                   </div>
                 </div>
-
-                <div className="btn-group" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span style={{
-                    fontSize: '11px', padding: '3px 10px',
-                    borderRadius: '99px', fontWeight: '600',
-                    background: sc.bg, color: sc.color
-                  }}>
-                    {sc.label}
-                  </span>
-
-                  {/* Status update dropdown */}
+                <div className="tf-row tf-wrap gh-ret-actions">
+                  <Badge tone={meta.tone}>{meta.label}</Badge>
                   <select
-                    style={{
-                      padding: '5px 10px', border: '1px solid #e2e8f0',
-                      borderRadius: '6px', fontSize: '12px',
-                      cursor: 'pointer', background: 'white', color: '#374151'
-                    }}
+                    className="tf-input"
+                    style={{ cursor: 'pointer', fontSize: 12 }}
                     value={ret.status}
                     onChange={e => updateReturnStatus(ret.type, e.target.value)}
+                    aria-label={`${ret.label} status`}
                   >
-                    <option value="not_started">Not Started</option>
-                    <option value="draft">Draft</option>
-                    <option value="ready">Ready to File</option>
-                    <option value="filed">Filed</option>
+                    {STATUS_OPTIONS.map(option => (
+                      <option key={option} value={option}>{STATUS_META[option].label}</option>
+                    ))}
                   </select>
-
-                  {/* View report link */}
-                  <Link
-                    href={ret.type === 'GSTR1' ? '/gst/gstr1' : '/gst/gstr3b'}
-                    style={{
-                      padding: '5px 14px', background: '#2563eb',
-                      color: 'white', borderRadius: '6px',
-                      fontSize: '12px', fontWeight: '500',
-                      textDecoration: 'none'
-                    }}
-                  >
-                    View →
-                  </Link>
+                  <Button size="sm" variant="subtle" href={ret.href} iconRight="arrow-right">
+                    View report
+                  </Button>
                 </div>
               </div>
             )
           })}
         </div>
+        <div className="gh-note" style={{ marginTop: '0.9rem' }}>
+          Status is recorded per period so you can see what is still open. Filing itself happens on the GST portal —
+          nothing here is transmitted.
+        </div>
+      </Card>
+
+      {/* Reports */}
+      <div className="tf-g-3 gh-links">
+        <Link href="/gst/gstr1" className="gh-link">
+          <Card hover>
+            <div className="gh-link-head">
+              <Icon name="upload" size={17} style={{ color: 'var(--brand)' }} />
+              <span className="gh-link-title">GSTR-1 Report</span>
+            </div>
+            <div className="gh-link-sub">
+              Outward supplies split into B2B, B2C, exports and the HSN summary.
+            </div>
+          </Card>
+        </Link>
+        <Link href="/gst/gstr3b" className="gh-link">
+          <Card hover>
+            <div className="gh-link-head">
+              <Icon name="file-check" size={17} style={{ color: 'var(--violet)' }} />
+              <span className="gh-link-title">GSTR-3B Report</span>
+            </div>
+            <div className="gh-link-sub">
+              Summary return with tax liability, eligible ITC and the net amount payable.
+            </div>
+          </Card>
+        </Link>
+        <Link href="/gst/gstr9" className="gh-link">
+          <Card hover>
+            <div className="gh-link-head">
+              <Icon name="book" size={17} style={{ color: 'var(--green)' }} />
+              <span className="gh-link-title">GSTR-9 / 9C Workpaper</span>
+            </div>
+            <div className="gh-link-sub">
+              Annual tables, the 180-day credit watchlist and books against filed 3B.
+            </div>
+          </Card>
+        </Link>
       </div>
 
-      {/* Quick links */}
-      <div className="form-grid-2" style={{
-        display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem'
-      }}>
-        <Link href="/gst/gstr1" style={{ textDecoration: 'none' }}>
-          <div style={{
-            background: 'white', border: '1px solid #e2e8f0',
-            borderRadius: '12px', padding: '1.25rem', cursor: 'pointer'
-          }}>
-            <div style={{ fontWeight: '600', fontSize: '15px', color: '#1e293b', marginBottom: '4px' }}>
-              📤 GSTR-1 Report
-            </div>
-            <div style={{ fontSize: '13px', color: '#64748b' }}>
-              View outward supplies broken down by B2B, B2C, exports and HSN summary
-            </div>
-          </div>
-        </Link>
-        <Link href="/gst/gstr3b" style={{ textDecoration: 'none' }}>
-          <div style={{
-            background: 'white', border: '1px solid #e2e8f0',
-            borderRadius: '12px', padding: '1.25rem', cursor: 'pointer'
-          }}>
-            <div style={{ fontWeight: '600', fontSize: '15px', color: '#1e293b', marginBottom: '4px' }}>
-              📑 GSTR-3B Report
-            </div>
-            <div style={{ fontSize: '13px', color: '#64748b' }}>
-              View summary return with tax liability, ITC and net GST payable
-            </div>
-          </div>
-        </Link>
-        <Link href="/gst/gstr9" style={{ textDecoration: 'none' }}>
-          <div style={{
-            background: 'white', border: '1px solid #e2e8f0',
-            borderRadius: '12px', padding: '1.25rem', cursor: 'pointer'
-          }}>
-            <div style={{ fontWeight: '600', fontSize: '15px', color: '#1e293b', marginBottom: '4px' }}>
-              🧾 GSTR-9 / 9C Workpaper
-            </div>
-            <div style={{ fontSize: '13px', color: '#64748b' }}>
-              Annual return tables, the 180-day credit watchlist and books against filed 3B
-            </div>
-          </div>
-        </Link>
+      <div className="tf-row tf-wrap" style={{ gap: 8, marginTop: '0.9rem' }}>
+        <Button variant="ghost" size="sm" href="/gst/reconciliation" icon="compare">
+          2B reconciliation
+        </Button>
+        <Button variant="ghost" size="sm" href="/gst/einvoice" icon="zap">
+          e-Invoice &amp; e-Way bill
+        </Button>
+        <Button variant="ghost" size="sm" href="/gst/calendar" icon="calendar">
+          Compliance calendar
+        </Button>
       </div>
+
+      <style>{`
+        .gh .tf-pagehead { margin-bottom: 1.25rem; }
+        .gh-net { display: flex; align-items: center; justify-content: space-between; gap: 16px;
+          flex-wrap: wrap; margin-bottom: 1rem; }
+        .gh-net-main { min-width: 0; }
+        .gh-net.is-due { background: var(--red-soft); border-color: transparent; }
+        .gh-net.is-clear { background: var(--green-soft); border-color: transparent; }
+        .gh-net-title { font-size: 14px; font-weight: 700; color: var(--ink); }
+        .gh-net-sub { font-size: 12px; color: var(--muted); margin-top: 3px; }
+        .gh-net-value { font-size: 26px; font-weight: 750; color: var(--ink); }
+
+        .gh-breakdown { margin-bottom: 1rem; }
+        .gh-head { display: flex; align-items: center; gap: 7px; }
+        .gh-dot { width: 7px; height: 7px; border-radius: 99px; flex-shrink: 0; }
+        .gh-dot.is-blank { background: var(--line); }
+
+        .gh-rets { display: flex; flex-direction: column; gap: 10px; }
+        .gh-ret { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+          flex-wrap: wrap; padding: 0.9rem 1rem; border: 1px solid var(--line);
+          border-radius: var(--radius-sm); background: var(--surface-2); }
+        .gh-ret-name { font-size: 14px; font-weight: 650; color: var(--ink); }
+        .gh-ret-meta { font-size: 12px; color: var(--muted); margin-top: 3px; }
+        .gh-ret-actions { margin-left: auto; }
+        .gh-due { font-weight: 650; }
+        .gh-due.is-late { color: var(--red); }
+        .gh-due.is-soon { color: var(--amber); }
+
+        .gh-note { font-size: 11.5px; color: var(--faint); line-height: 1.6; margin-top: 0.85rem; }
+        .gh-links { margin-top: 1.5rem; }
+        .gh-link { text-decoration: none; color: inherit; display: block; }
+        .gh-link-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+        .gh-link-title { font-size: 15px; font-weight: 650; color: var(--ink); }
+        .gh-link-sub { font-size: 12.5px; color: var(--muted); line-height: 1.55; }
+
+        @media (max-width: 768px) {
+          .gh-net-value { font-size: 22px; }
+          .gh-ret-actions { margin-left: 0; width: 100%; }
+        }
+      `}</style>
     </div>
+  )
+}
+
+function Head({ label, color }: { label: string; color?: string }) {
+  return (
+    <span className="gh-head">
+      {color ? <i className="gh-dot" style={{ background: color }} /> : <i className="gh-dot is-blank" />}
+      {label}
+    </span>
   )
 }
