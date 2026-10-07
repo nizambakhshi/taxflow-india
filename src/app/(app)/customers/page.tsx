@@ -1,8 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
+import { SearchInput } from '@/components/ui'
+import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
 import { INDIAN_STATES, validateGSTIN } from '@/lib/constants'
 
 const inputStyle = {
@@ -37,7 +39,7 @@ type Customer = {
   is_active: boolean
 }
 
-export default function CustomersPage() {
+function CustomersPageInner() {
   const supabase = createClient()
   const router = useRouter()
 
@@ -47,7 +49,7 @@ export default function CustomersPage() {
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useSearchDeepLink()
   const [editingId, setEditingId] = useState<string | null>(null)
 
   const [form, setForm] = useState({
@@ -193,11 +195,7 @@ export default function CustomersPage() {
   }
 
   const filtered = customers.filter(c =>
-    c.name?.toLowerCase().includes(search.toLowerCase()) ||
-    c.business_name?.toLowerCase().includes(search.toLowerCase()) ||
-    c.gstin?.toLowerCase().includes(search.toLowerCase()) ||
-    c.phone?.includes(search) ||
-    c.email?.toLowerCase().includes(search.toLowerCase())
+    matchesAny(search, [c.name, c.business_name, c.gstin, c.phone, c.email])
   )
 
   if (loading) return (
@@ -234,11 +232,12 @@ export default function CustomersPage() {
       </div>
 
       {/* Search */}
-      <input
-        style={{ ...inputStyle, marginBottom: '1rem', maxWidth: '400px' }}
-        placeholder="Search by name, GSTIN, phone, email..."
+      <SearchInput
         value={search}
-        onChange={e => setSearch(e.target.value)}
+        onChange={setSearch}
+        placeholder="Name, GSTIN, phone or email…"
+        ariaLabel="Search customers"
+        style={{ maxWidth: 380, marginBottom: '1rem' }}
       />
 
       {/* Customer list */}
@@ -253,10 +252,12 @@ export default function CustomersPage() {
         }}>
           <div style={{ fontSize: '32px', marginBottom: '1rem' }}>👥</div>
           <div style={{ fontSize: '16px', fontWeight: '500', marginBottom: '8px', color: '#64748b' }}>
-            No customers yet
+            {search && customers.length ? `No customer matches “${search}”` : 'No customers yet'}
           </div>
           <div style={{ fontSize: '13px' }}>
-            Add your first customer to start creating invoices
+            {search && customers.length
+              ? 'Clear the search to see the whole party list.'
+              : 'Add your first customer to start creating invoices'}
           </div>
         </div>
       ) : (
@@ -530,5 +531,13 @@ export default function CustomersPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function CustomersPage() {
+  return (
+    <Suspense fallback={<div className="page-container"><p style={{ color: '#64748b', fontSize: '13px' }}>Loading…</p></div>}>
+      <CustomersPageInner />
+    </Suspense>
   )
 }

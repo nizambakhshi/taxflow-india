@@ -1,10 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import BarcodeScanner from '@/components/BarcodeScanner'
 import { cameraScanSupported, validateBarcode } from '@/lib/barcode'
+import { SearchInput } from '@/components/ui'
+import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
 
 const inputStyle = {
   width: '100%', padding: '9px 12px',
@@ -26,6 +28,7 @@ type Product = {
   id: string
   name: string
   type: string
+  sku: string
   hsn_sac: string
   unit: string
   selling_price: number
@@ -35,7 +38,7 @@ type Product = {
   current_stock: number
 }
 
-export default function ProductsPage() {
+function ProductsPageInner() {
   const supabase = createClient()
   const router = useRouter()
 
@@ -45,7 +48,7 @@ export default function ProductsPage() {
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useSearchDeepLink()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [filterType, setFilterType] = useState('all')
   const [scanSku, setScanSku] = useState(false)
@@ -170,10 +173,7 @@ export default function ProductsPage() {
 
   const filtered = products
     .filter(p => filterType === 'all' || p.type === filterType)
-    .filter(p =>
-      p.name?.toLowerCase().includes(search.toLowerCase()) ||
-      p.hsn_sac?.toLowerCase().includes(search.toLowerCase())
-    )
+    .filter(p => matchesAny(search, [p.name, p.sku, p.hsn_sac]))
 
   if (loading) return <div style={{ padding: '2rem', color: '#64748b', fontSize: '14px' }}>Loading...</div>
 
@@ -199,9 +199,13 @@ export default function ProductsPage() {
 
       {/* Filters */}
       <div className="toolbar" style={{ display: 'flex', gap: '8px', marginBottom: '1rem' }}>
-        <input style={{ ...inputStyle, maxWidth: '300px' }}
-          placeholder="Search products..." value={search}
-          onChange={e => setSearch(e.target.value)} />
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Name, SKU or HSN…"
+          ariaLabel="Search products"
+          style={{ flex: '1 1 240px', maxWidth: 340 }}
+        />
         {['all', 'goods', 'service'].map(t => (
           <button key={t} onClick={() => setFilterType(t)} style={{
             padding: '9px 16px',
@@ -223,9 +227,13 @@ export default function ProductsPage() {
         }}>
           <div style={{ fontSize: '32px', marginBottom: '1rem' }}>📦</div>
           <div style={{ fontSize: '16px', fontWeight: '500', marginBottom: '8px', color: '#64748b' }}>
-            No products yet
+            {products.length ? 'Nothing matches these filters' : 'No products yet'}
           </div>
-          <div style={{ fontSize: '13px' }}>Add products or services to include them in invoices</div>
+          <div style={{ fontSize: '13px' }}>
+            {products.length
+              ? 'Try a different name, SKU or HSN, or switch the type filter back to All.'
+              : 'Add products or services to include them in invoices'}
+          </div>
         </div>
       ) : (
         <div className="responsive-table table-frame" style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
@@ -476,5 +484,13 @@ export default function ProductsPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function ProductsPage() {
+  return (
+    <Suspense fallback={<div className="page-container"><p style={{ color: '#64748b', fontSize: 13 }}>Loading…</p></div>}>
+      <ProductsPageInner />
+    </Suspense>
   )
 }

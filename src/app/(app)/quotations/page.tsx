@@ -1,8 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
+import { SearchInput } from '@/components/ui'
+import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
 import {
   determineGSTType, calculateLineItem,
   calculateInvoiceTotals, getFinancialYear,
@@ -50,11 +52,12 @@ const STATUS_CONFIG: Record<string, { label: string; bg: string; color: string; 
   converted: { label: 'Converted', bg: '#fef9c3', color: '#854d0e', desc: 'Invoice created from this quotation' },
 }
 
-export default function QuotationsPage() {
+function QuotationsPageInner() {
   const supabase = createClient()
   const router = useRouter()
 
   const [quotations, setQuotations] = useState<any[]>([])
+  const [search, setSearch] = useSearchDeepLink()
   const [orgId, setOrgId] = useState('')
   const [orgStateCode, setOrgStateCode] = useState('')
   const [loading, setLoading] = useState(true)
@@ -382,6 +385,8 @@ export default function QuotationsPage() {
     }
   }
 
+  const visible = quotations.filter(x => matchesAny(search, [x.quotation_number, x.customer_name]))
+
   if (loading) return <div style={{ padding: '2rem', color: '#64748b', fontSize: '14px' }}>Loading...</div>
 
   return (
@@ -414,6 +419,14 @@ export default function QuotationsPage() {
         ))}
       </div>
 
+      <SearchInput
+        value={search}
+        onChange={setSearch}
+        placeholder="Quotation number or customer…"
+        ariaLabel="Search quotations"
+        style={{ maxWidth: 380, marginBottom: '1.25rem' }}
+      />
+
       {/* List */}
       {quotations.length === 0 ? (
         <div style={{
@@ -429,6 +442,13 @@ export default function QuotationsPage() {
             fontWeight: '600', cursor: 'pointer'
           }}>Create Quotation</button>
         </div>
+      ) : !visible.length ? (
+        <div style={{
+          background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px',
+          padding: '2.5rem', textAlign: 'center', color: '#94a3b8', fontSize: '13px'
+        }}>
+          No quotation matches “{search}”
+        </div>
       ) : (
         <div className="responsive-table table-frame" style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
           <div className="table-header" style={{
@@ -441,7 +461,7 @@ export default function QuotationsPage() {
             <span>Date</span><span>Valid Until</span>
             <span>Amount</span><span>Status</span>
           </div>
-          {quotations.map(q => {
+          {visible.map(q => {
             const sc = STATUS_CONFIG[q.status] || STATUS_CONFIG.draft
             return (
               <div key={q.id} onClick={() => openView(q)} className="table-row" style={{
@@ -848,5 +868,13 @@ export default function QuotationsPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function QuotationsPage() {
+  return (
+    <Suspense fallback={<div className="page-container"><p style={{ color: '#64748b', fontSize: 13 }}>Loading…</p></div>}>
+      <QuotationsPageInner />
+    </Suspense>
   )
 }

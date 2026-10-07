@@ -188,6 +188,38 @@ export function PageHeader({
   )
 }
 
+export function SearchInput({
+  value, onChange, placeholder, ariaLabel, style,
+}: {
+  value: string
+  onChange: (v: string) => void
+  placeholder?: string
+  ariaLabel: string
+  style?: CSSProperties
+}) {
+  return (
+    <div className="tf-input-wrap" style={style}>
+      <span className="tf-input-icon"><Icon name="search" size={15} /></span>
+      <input
+        className="tf-input"
+        type="text"
+        role="searchbox"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        aria-label={ariaLabel}
+        spellCheck={false}
+        autoComplete="off"
+      />
+      {value && (
+        <button type="button" className="tf-input-clear" onClick={() => onChange('')} aria-label="Clear search">
+          <Icon name="x" size={14} />
+        </button>
+      )}
+    </div>
+  )
+}
+
 export function EmptyState({
   icon = 'box', title, message, action,
 }: {

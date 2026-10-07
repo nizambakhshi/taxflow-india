@@ -1,8 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
+import { SearchInput } from '@/components/ui'
+import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
 import {
   determineGSTType, calculateLineItem,
   calculateInvoiceTotals, getFinancialYear,
@@ -47,11 +49,12 @@ const CREDIT_REASONS = [
   { value: 'other', label: 'Other' },
 ]
 
-export default function CreditNotesPage() {
+function CreditNotesPageInner() {
   const supabase = createClient()
   const router = useRouter()
 
   const [creditNotes, setCreditNotes] = useState<any[]>([])
+  const [search, setSearch] = useSearchDeepLink()
   const [orgId, setOrgId] = useState('')
   const [orgStateCode, setOrgStateCode] = useState('')
   const [loading, setLoading] = useState(true)
@@ -279,6 +282,8 @@ export default function CreditNotesPage() {
     }
   }
 
+  const visible = creditNotes.filter(x => matchesAny(search, [x.credit_note_number, x.customer_name]))
+
   if (loading) return <div style={{ padding: '2rem', color: '#64748b', fontSize: '14px' }}>Loading...</div>
 
   return (
@@ -306,6 +311,14 @@ export default function CreditNotesPage() {
         ℹ️ <strong>Credit Notes</strong> are issued when you need to reduce an invoice amount — for returns, corrections or discounts after the original invoice. They appear in GSTR-1 under CDN (Credit/Debit Notes).
       </div>
 
+      <SearchInput
+        value={search}
+        onChange={setSearch}
+        placeholder="Credit note number or customer…"
+        ariaLabel="Search credit notes"
+        style={{ maxWidth: 380, marginBottom: '1.25rem' }}
+      />
+
       {/* List */}
       {creditNotes.length === 0 ? (
         <div style={{
@@ -315,6 +328,13 @@ export default function CreditNotesPage() {
           <div style={{ fontSize: '40px', marginBottom: '1rem' }}>📝</div>
           <div style={{ fontSize: '16px', fontWeight: '500', color: '#64748b', marginBottom: '8px' }}>No credit notes yet</div>
           <div style={{ fontSize: '13px' }}>Issue credit notes for sales returns or invoice corrections</div>
+        </div>
+      ) : !visible.length ? (
+        <div style={{
+          background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px',
+          padding: '2.5rem', textAlign: 'center', color: '#94a3b8', fontSize: '13px'
+        }}>
+          No credit note matches “{search}”
         </div>
       ) : (
         <div className="responsive-table table-frame" style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
@@ -328,7 +348,7 @@ export default function CreditNotesPage() {
             <span>Date</span><span>Against Invoice</span>
             <span>Reason</span><span>Amount</span>
           </div>
-          {creditNotes.map(cn => (
+          {visible.map(cn => (
             <div key={cn.id} className="table-row" style={{
               display: 'grid', gridTemplateColumns: '1.5fr 2fr 1fr 1.5fr 1fr 1fr',
               gap: '12px', padding: '12px 16px',
@@ -594,5 +614,13 @@ export default function CreditNotesPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function CreditNotesPage() {
+  return (
+    <Suspense fallback={<div className="page-container"><p style={{ color: '#64748b', fontSize: 13 }}>Loading…</p></div>}>
+      <CreditNotesPageInner />
+    </Suspense>
   )
 }

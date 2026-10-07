@@ -1,9 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { INDIAN_STATES, validateGSTIN } from '@/lib/constants'
+import { SearchInput } from '@/components/ui'
+import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
 
 const inputStyle = {
   width: '100%', padding: '9px 12px',
@@ -30,7 +32,7 @@ type Vendor = {
   is_active: boolean
 }
 
-export default function VendorsPage() {
+function VendorsPageInner() {
   const supabase = createClient()
   const router = useRouter()
 
@@ -40,7 +42,7 @@ export default function VendorsPage() {
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useSearchDeepLink()
   const [editingId, setEditingId] = useState<string | null>(null)
 
   const [form, setForm] = useState({
@@ -166,10 +168,7 @@ export default function VendorsPage() {
   }
 
   const filtered = vendors.filter(v =>
-    v.name?.toLowerCase().includes(search.toLowerCase()) ||
-    v.business_name?.toLowerCase().includes(search.toLowerCase()) ||
-    v.gstin?.toLowerCase().includes(search.toLowerCase()) ||
-    v.phone?.includes(search)
+    matchesAny(search, [v.name, v.business_name, v.gstin, v.phone])
   )
 
   if (loading) return <div style={{ padding: '2rem', color: '#64748b', fontSize: '14px' }}>Loading...</div>
@@ -190,9 +189,13 @@ export default function VendorsPage() {
         </button>
       </div>
 
-      <input style={{ ...inputStyle, marginBottom: '1rem', maxWidth: '400px' }}
-        placeholder="Search vendors..." value={search}
-        onChange={e => setSearch(e.target.value)} />
+      <SearchInput
+        value={search}
+        onChange={setSearch}
+        placeholder="Name, GSTIN or phone…"
+        ariaLabel="Search vendors"
+        style={{ maxWidth: 380, marginBottom: '1rem' }}
+      />
 
       {filtered.length === 0 ? (
         <div style={{
@@ -200,8 +203,14 @@ export default function VendorsPage() {
           borderRadius: '12px', padding: '3rem', textAlign: 'center', color: '#94a3b8'
         }}>
           <div style={{ fontSize: '32px', marginBottom: '1rem' }}>🏭</div>
-          <div style={{ fontSize: '16px', fontWeight: '500', marginBottom: '8px', color: '#64748b' }}>No vendors yet</div>
-          <div style={{ fontSize: '13px' }}>Add vendors to track your purchases and ITC</div>
+          <div style={{ fontSize: '16px', fontWeight: '500', marginBottom: '8px', color: '#64748b' }}>
+            {search && vendors.length ? `No vendor matches “${search}”` : 'No vendors yet'}
+          </div>
+          <div style={{ fontSize: '13px' }}>
+            {search && vendors.length
+              ? 'Clear the search to see the whole vendor list.'
+              : 'Add vendors to track your purchases and ITC'}
+          </div>
         </div>
       ) : (
         <div className="responsive-table table-frame" style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
@@ -384,5 +393,13 @@ export default function VendorsPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function VendorsPage() {
+  return (
+    <Suspense fallback={<div className="page-container"><p style={{ color: '#64748b', fontSize: 13 }}>Loading…</p></div>}>
+      <VendorsPageInner />
+    </Suspense>
   )
 }

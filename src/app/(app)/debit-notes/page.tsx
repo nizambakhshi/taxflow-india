@@ -1,8 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
+import { SearchInput } from '@/components/ui'
+import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
 import {
   determineGSTType, calculateLineItem,
   calculateInvoiceTotals, getFinancialYear,
@@ -47,11 +49,12 @@ const DEBIT_REASONS = [
   { value: 'other', label: 'Other' },
 ]
 
-export default function DebitNotesPage() {
+function DebitNotesPageInner() {
   const supabase = createClient()
   const router = useRouter()
 
   const [debitNotes, setDebitNotes] = useState<any[]>([])
+  const [search, setSearch] = useSearchDeepLink()
   const [orgId, setOrgId] = useState('')
   const [orgStateCode, setOrgStateCode] = useState('')
   const [loading, setLoading] = useState(true)
@@ -272,6 +275,8 @@ export default function DebitNotesPage() {
     }
   }
 
+  const visible = debitNotes.filter(x => matchesAny(search, [x.debit_note_number, x.vendor_name]))
+
   if (loading) return <div style={{ padding: '2rem', color: '#64748b', fontSize: '14px' }}>Loading...</div>
 
   return (
@@ -299,6 +304,14 @@ export default function DebitNotesPage() {
         ℹ️ <strong>Debit Notes</strong> are issued to vendors when returning purchases or when a vendor has overcharged you. They reduce your purchase liability.
       </div>
 
+      <SearchInput
+        value={search}
+        onChange={setSearch}
+        placeholder="Debit note number or vendor…"
+        ariaLabel="Search debit notes"
+        style={{ maxWidth: 380, marginBottom: '1.25rem' }}
+      />
+
       {/* List */}
       {debitNotes.length === 0 ? (
         <div style={{
@@ -308,6 +321,13 @@ export default function DebitNotesPage() {
           <div style={{ fontSize: '40px', marginBottom: '1rem' }}>📄</div>
           <div style={{ fontSize: '16px', fontWeight: '500', color: '#64748b', marginBottom: '8px' }}>No debit notes yet</div>
           <div style={{ fontSize: '13px' }}>Issue debit notes for purchase returns or vendor corrections</div>
+        </div>
+      ) : !visible.length ? (
+        <div style={{
+          background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px',
+          padding: '2.5rem', textAlign: 'center', color: '#94a3b8', fontSize: '13px'
+        }}>
+          No debit note matches “{search}”
         </div>
       ) : (
         <div className="responsive-table table-frame" style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
@@ -321,7 +341,7 @@ export default function DebitNotesPage() {
             <span>Date</span><span>Against Bill</span>
             <span>Reason</span><span>Amount</span>
           </div>
-          {debitNotes.map(dn => (
+          {visible.map(dn => (
             <div key={dn.id} className="table-row" style={{
               display: 'grid', gridTemplateColumns: '1.5fr 2fr 1fr 1.5fr 1fr 1fr',
               gap: '12px', padding: '12px 16px',
@@ -586,5 +606,13 @@ export default function DebitNotesPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function DebitNotesPage() {
+  return (
+    <Suspense fallback={<div className="page-container"><p style={{ color: '#64748b', fontSize: 13 }}>Loading…</p></div>}>
+      <DebitNotesPageInner />
+    </Suspense>
   )
 }

@@ -6,89 +6,10 @@ import { createClient } from '@/lib/supabase'
 import { pendingOutboxCount } from '@/lib/outbox'
 import { initials } from '@/lib/format'
 import Icon from '@/components/Icons'
+import CommandPalette from '@/components/CommandPalette'
+import { NAV_ITEMS, BOTTOM_NAV } from '@/lib/nav'
+import { isActiveHref } from '@/lib/commands'
 import Link from 'next/link'
-
-const NAV_ITEMS = [
-  {
-    section: 'Overview',
-    items: [
-      { label: 'Dashboard', href: '/dashboard', icon: 'dashboard' },
-      { label: 'Offline Sync', href: '/offline', icon: 'cloud' },
-    ]
-  },
-  {
-    section: 'Sales',
-    items: [
-      { label: 'Invoices', href: '/invoices', icon: 'invoice' },
-      { label: 'Counter Sale', href: '/pos', icon: 'pos' },
-      { label: 'Quotations', href: '/quotations', icon: 'clipboard' },
-      { label: 'Credit Notes', href: '/credit-notes', icon: 'credit-note' },
-      { label: 'Debit Notes', href: '/debit-notes', icon: 'debit-note' },
-    ]
-  },
-  {
-    section: 'Purchases',
-    items: [
-      { label: 'Bills', href: '/bills', icon: 'cart' },
-      { label: 'Expenses', href: '/expenses', icon: 'wallet' },
-    ]
-  },
-  {
-    section: 'Payments',
-    items: [
-      { label: 'Receivables & Payables', href: '/payments', icon: 'swap' },
-      { label: 'Payment Links', href: '/payments/links', icon: 'link' },
-    ]
-  },
-  {
-    section: 'Masters',
-    items: [
-      { label: 'Customers', href: '/customers', icon: 'users' },
-      { label: 'Vendors', href: '/vendors', icon: 'factory' },
-      { label: 'Products', href: '/products', icon: 'box' },
-      { label: 'Inventory', href: '/inventory', icon: 'store' },
-      { label: 'Reorder Planner', href: '/inventory/reorder', icon: 'cart' },
-    ]
-  },
-  {
-    section: 'GST',
-    items: [
-      { label: 'GST Dashboard', href: '/gst', icon: 'landmark' },
-      { label: 'GSTR-1', href: '/gst/gstr1', icon: 'upload' },
-      { label: 'GSTR-3B', href: '/gst/gstr3b', icon: 'file-check' },
-      { label: '2B Reconciliation', href: '/gst/reconciliation', icon: 'compare' },
-      { label: 'E-Invoicing', href: '/gst/einvoice', icon: 'zap' },
-      { label: 'GSTR-9 / 9C', href: '/gst/gstr9', icon: 'clipboard' },
-      { label: 'Compliance Calendar', href: '/gst/calendar', icon: 'calendar' },
-    ]
-  },
-  {
-    section: 'Reports & AI',
-    items: [
-      { label: 'Reports', href: '/reports', icon: 'chart' },
-      { label: 'Targets & Achievement', href: '/reports/targets', icon: 'target' },
-      { label: 'Statutory Registers', href: '/reports/registers', icon: 'clipboard' },
-      { label: 'Account Ledger', href: '/ledger', icon: 'book' },
-      { label: 'Financial Statements', href: '/accounting', icon: 'scale' },
-      { label: 'Scan Bill', href: '/ai/scan-bill', icon: 'scan' },
-      { label: 'Ask My Books', href: '/ai/ask', icon: 'chat' },
-    ]
-  },
-  {
-    section: 'Account',
-    items: [
-      { label: 'Settings', href: '/settings', icon: 'settings' },
-    ]
-  },
-]
-
-// Bottom nav items for mobile (most important only)
-const BOTTOM_NAV = [
-  { label: 'Home', href: '/dashboard', icon: 'dashboard' },
-  { label: 'Invoices', href: '/invoices', icon: 'invoice' },
-  { label: 'Bills', href: '/bills', icon: 'cart' },
-  { label: 'GST', href: '/gst', icon: 'landmark' },
-]
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
@@ -101,6 +22,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [userEmail, setUserEmail] = useState('')
   const [loading, setLoading] = useState(true)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
 
   useEffect(() => {
     async function loadLayout() {
@@ -136,6 +58,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // Close menu when navigating
   useEffect(() => {
     setMenuOpen(false)
+    setPaletteOpen(false)
   }, [pathname])
 
   async function handleLogout() {
@@ -165,8 +88,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     )
   }
 
-  const isActive = (href: string) =>
-    pathname === href || (href !== '/dashboard' && pathname.startsWith(href + '/'))
+  const isActive = (href: string) => isActiveHref(pathname, href)
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
@@ -202,6 +124,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         <div style={{ padding: '0.85rem 0.75rem 0.35rem' }}>
+          <button
+            type="button"
+            className="side-link"
+            style={{ width: '100%', marginBottom: 6 }}
+            onClick={() => setPaletteOpen(true)}
+            aria-label="Search or jump to a page"
+          >
+            <Icon name="search" size={15} />
+            <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              Search or jump…
+            </span>
+            <kbd className="tf-cmd-kbd side-cmd-kbd">⌘K</kbd>
+          </button>
           <Link href="/invoices/new" className="tf-btn tf-btn-primary" style={{ width: '100%', fontSize: '12.5px', padding: '8px 12px' }}>
             <Icon name="plus" size={15} strokeWidth={2.4} />
             New invoice
@@ -285,6 +220,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
         <div className="tf-row" style={{ gap: 8 }}>
+          <button
+            className="tf-btn tf-btn-ghost tf-btn-sm"
+            style={{ minHeight: 34, padding: '6px 9px' }}
+            onClick={() => setPaletteOpen(true)}
+            aria-label="Search"
+          >
+            <Icon name="search" size={17} />
+          </button>
           <Link href="/invoices/new" className="tf-btn tf-btn-primary tf-btn-sm" style={{ minHeight: 34 }}>
             <Icon name="plus" size={14} strokeWidth={2.4} /> Invoice
           </Link>
@@ -371,6 +314,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <OfflineBanner orgId={orgId} pathname={pathname} />
         {children}
       </div>
+
+      {/* ── COMMAND PALETTE ── */}
+      <CommandPalette orgId={orgId} pathname={pathname} open={paletteOpen} setOpen={setPaletteOpen} />
 
       {/* ── SHELL STYLES ── */}
       <style>{`
@@ -469,6 +415,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           .side-link { justify-content: center; padding: 9px 6px; }
           .side-link span:not(.side-indicator) { display: none; }
           .side-link .side-indicator { left: 2px; }
+          .side-cmd-kbd { display: none; }
         }
       `}</style>
     </div>

@@ -1,8 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
+import { SearchInput } from '@/components/ui'
+import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
 import {
   determineGSTType,
   calculateLineItem,
@@ -47,7 +49,7 @@ const emptyLine = (): LineItem => ({
   itc_eligible: true, calculated: null,
 })
 
-export default function BillsPage() {
+function BillsPageInner() {
   const supabase = createClient()
   const router = useRouter()
 
@@ -60,6 +62,7 @@ export default function BillsPage() {
   const [error, setError] = useState('')
   const [vendors, setVendors] = useState<any[]>([])
   const [products, setProducts] = useState<any[]>([])
+  const [search, setSearch] = useSearchDeepLink()
 
   // Form state
   const [vendorId, setVendorId] = useState('')
@@ -334,6 +337,7 @@ export default function BillsPage() {
   )
 
   const activeBills = bills.filter(b => b.status !== 'cancelled')
+  const visibleBills = bills.filter(b => matchesAny(search, [b.bill_number, b.vendor_name]))
 
   return (
     <div className="page-container" style={{ padding: '2rem', maxWidth: '1100px' }}>
@@ -362,6 +366,14 @@ export default function BillsPage() {
           + Add Bill
         </button>
       </div>
+
+      <SearchInput
+        value={search}
+        onChange={setSearch}
+        placeholder="Bill number or vendor…"
+        ariaLabel="Search purchase bills"
+        style={{ maxWidth: 380, marginBottom: '1.25rem' }}
+      />
 
       {/* ITC Summary card */}
       {bills.length > 0 && (
@@ -445,7 +457,7 @@ export default function BillsPage() {
             <span>Action</span>
           </div>
 
-          {bills.map(bill => (
+          {visibleBills.map(bill => (
             <div key={bill.id} className="table-row" style={{
               display: 'grid',
               gridTemplateColumns: '1.5fr 2fr 1fr 1fr 1fr 1fr 160px',
@@ -519,6 +531,12 @@ export default function BillsPage() {
               </div>
             </div>
           ))}
+
+          {!visibleBills.length && (
+            <div style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8', fontSize: '13px' }}>
+              No bill matches “{search}”
+            </div>
+          )}
         </div>
       )}
 
@@ -888,5 +906,13 @@ export default function BillsPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function BillsPage() {
+  return (
+    <Suspense fallback={<div className="page-container"><p style={{ color: '#64748b', fontSize: 13 }}>Loading…</p></div>}>
+      <BillsPageInner />
+    </Suspense>
   )
 }

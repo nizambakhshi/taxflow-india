@@ -325,6 +325,56 @@ body {
   font-size: 13px;
 }
 
+/* ── FORM CONTROLS ── */
+.tf-input {
+  width: 100%;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 9px 11px;
+  outline: none;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.tf-input:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-ring);
+}
+
+.tf-input::placeholder { color: var(--faint); }
+
+.tf-input-wrap { position: relative; }
+.tf-input-wrap .tf-input { padding-left: 34px; padding-right: 32px; }
+
+.tf-input-icon {
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--faint);
+  pointer-events: none;
+}
+
+.tf-input-clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.tf-input-clear:hover { background: var(--surface-2); color: var(--ink-2); }
+
 /* ── PROGRESS ── */
 .tf-bar-track {
   width: 100%;
@@ -607,6 +657,7 @@ body {
   .desktop-sidebar,
   .mobile-topbar,
   .mobile-bottom-nav,
+  .tf-cmd-layer,
   #action-bar,
   #cancel-banner {
     display: none !important;
@@ -617,4 +668,298 @@ body {
     padding-top: 0 !important;
     padding-bottom: 0 !important;
   }
+}
+
+/* ── COMMAND PALETTE (⌘K) ── */
+.tf-cmd-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 11vh 1rem 1rem;
+  background: rgba(15, 23, 42, 0.42);
+  animation: tf-cmd-in 0.15s ease-out both;
+}
+
+.tf-cmd {
+  display: flex;
+  flex-direction: column;
+  width: min(680px, 100%);
+  max-height: min(560px, 74vh);
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.tf-cmd-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--faint);
+}
+
+.tf-cmd-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  padding: 0;
+}
+
+.tf-cmd-input:focus { outline: none; }
+.tf-cmd-input::placeholder { color: var(--faint); }
+
+.tf-cmd-clear {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.tf-cmd-clear:hover { background: var(--surface-2); color: var(--ink-2); }
+
+.tf-cmd-kbd {
+  display: inline-block;
+  padding: 2px 5px;
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.tf-cmd-list {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 0 8px;
+}
+
+.tf-cmd-section { padding-bottom: 4px; }
+
+.tf-cmd-group {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px 5px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--surface);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.tf-cmd-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  min-height: 44px;
+  padding: 9px 16px;
+  border: none;
+  background: none;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* The rail's active language, so the palette reads as part of the product. */
+.tf-cmd-row::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 50%;
+  width: 3px;
+  height: 0;
+  border-radius: 99px;
+  background: var(--brand);
+  transform: translateY(-50%);
+  transition: height 0.16s ease;
+}
+
+.tf-cmd-row:hover { background: var(--surface-2); }
+.tf-cmd-row.is-active { background: var(--brand-soft); }
+.tf-cmd-row.is-active::before { height: 22px; }
+
+.tf-cmd-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--slate-soft);
+  color: var(--muted);
+}
+
+.tf-cmd-row[data-kind="record"] .tf-cmd-icon { background: var(--brand-soft); color: var(--brand-dark); }
+.tf-cmd-row[data-kind="action"] .tf-cmd-icon { background: var(--green-soft); color: var(--green); }
+.tf-cmd-row[data-kind="recent"] .tf-cmd-icon { background: var(--violet-soft); color: var(--violet); }
+.tf-cmd-row.is-active .tf-cmd-icon { background: var(--surface); }
+
+.tf-cmd-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.tf-cmd-label {
+  font-size: 13.5px;
+  font-weight: 620;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tf-cmd-sub {
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tf-cmd-tag {
+  flex: none;
+  padding: 2px 8px;
+  min-height: 0;
+  border: 1px solid var(--line-soft);
+  border-radius: 99px;
+  background: var(--surface-2);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.tf-cmd-tag.is-here {
+  border-color: transparent;
+  background: var(--brand-soft);
+  color: var(--brand-dark);
+}
+
+.tf-cmd-more {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  min-height: 0;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--brand-dark);
+  cursor: pointer;
+}
+
+.tf-cmd-more:hover { text-decoration: underline; }
+
+.tf-cmd-sk {
+  display: block;
+  height: 10px;
+  border-radius: 99px;
+  background: var(--line-soft);
+}
+
+.tf-cmd-spin {
+  width: 11px;
+  height: 11px;
+  border: 2px solid var(--line);
+  border-top-color: var(--brand);
+  border-radius: 99px;
+  animation: tf-cmd-spin 0.7s linear infinite;
+}
+
+.tf-cmd-none {
+  padding: 28px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.tf-cmd-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  min-height: 0;
+  border-top: 1px solid var(--line-soft);
+  background: var(--surface-2);
+  font-size: 11px;
+  color: var(--faint);
+}
+
+.tf-cmd-foot span { display: flex; align-items: center; gap: 4px; }
+.tf-cmd-foot-hint { margin-left: auto; }
+
+.tf-cmd-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@keyframes tf-cmd-in { from { opacity: 0 } to { opacity: 1 } }
+@keyframes tf-cmd-spin { to { transform: rotate(360deg) } }
+
+@media (prefers-reduced-motion: reduce) {
+  .tf-cmd-layer { animation: none; }
+  .tf-cmd-spin { animation-duration: 1.6s; }
+}
+
+/* Full-screen, input pinned to the top: a bottom sheet hides behind the keyboard. */
+@media (max-width: 768px) {
+  .tf-cmd-layer {
+    padding: 0;
+    align-items: stretch;
+  }
+
+  .tf-cmd {
+    width: 100%;
+    height: 100dvh;
+    max-height: none;
+    border: none;
+    border-radius: 0;
+  }
+
+  .tf-cmd-row { padding: 10px 14px; }
+  .tf-cmd-foot { padding-bottom: calc(8px + env(safe-area-inset-bottom)); }
+  /* Needs the extra class: `.tf-cmd-foot span` above would otherwise win. */
+  .tf-cmd-foot .tf-cmd-foot-hint { display: none; }
 }
