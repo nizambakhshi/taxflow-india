@@ -122,7 +122,7 @@ The app produces NIC v1.10 JSON (`src/lib/einvoice.ts`) for the user to upload a
 **Traps:** a new page not in `nav.ts` is invisible; a `?q=` column list that diverges from what that page actually filters on produces a hit that lands on an empty list; icon keys must exist in `Icons.tsx` or the item renders the fallback glyph.
 
 ### ADR-020 — One Styling Kit — holds (new)
-New pages use `:root` tokens + `.tf-*` utilities (`globals.css`) and the primitives in `src/components/ui.tsx` / `Icons.tsx`. Counted honestly (R2-12): **11** pages are fully on the kit, **7** import only `SearchInput` and still hand-code their header/buttons/badges, **17** in the shell plus `login`/`signup`/`setup` are pre-kit. `4-Design-System.md` §16 is the ledger and the migration order; the earlier "~16 pages on the kit" claim counted a `SearchInput` import as a migration.
+New pages use `:root` tokens + `.tf-*` utilities (`globals.css`) and the primitives in `src/components/ui.tsx` / `Icons.tsx`. Counted honestly (R2-12): **14** pages are fully on the kit, **4** import only `SearchInput` and still hand-code their header/buttons/badges, **17** in the shell plus `login`/`signup`/`setup` are pre-kit. `4-Design-System.md` §16 is the ledger and the migration order; the earlier "~16 pages on the kit" claim counted a `SearchInput` import as a migration.
 
 ### ADR-021 — Documents Are Signed Rows — holds (new)
 Credit notes carry a negative taxable value and negative tax; they are summed, never `Math.abs()`-ed. This single decision is why a credit note dated in a month correctly reduces that month in GSTR-1, the registers, targets and the annual workpaper at once.
@@ -231,6 +231,12 @@ E-invoice threshold, e-way bill requirement, filing profile (monthly/QRMP) and T
 **Resolved:** 26Q quarterly due dates computed from `fyStart` rather than the quarter's own calendar year, so FY26-27 Q4 printed "31 May 26" instead of 31 May 27 — the due year is now relative to the quarter year; a challan amount typed before its deposit date was discarded, because `setChallan` drops dateless challans and the field handler rebuilt from state instead of from the draft, fixed by merging the whole draft on every field; workpaper rows read as date-ordered in a test expectation when they are grouped section → vendor → date; `monthLabel` returns full month names ("August 2026"), not abbreviations; an untagged vendor rendering as "Nothing to withhold" (a section that was never chosen is not a section chosen as none).  
 **Method:** 70 assertions in the strip-types suite, then the real books in the browser (bill 1244432 Mohd Faizan ₹4,42,500 taxable ₹3,75,000, VB-001 ₹3,000, VB-002 ₹300, the 20/9 payment) at 352px and inside a 1440×900 same-origin iframe; the challan draft order bug was only found by driving the actual inputs in the wrong order, which is the argument for driving them at all. Export bytes captured through `URL.createObjectURL`, deep link tested via ⌘K (the listener is on `document`, not `window`).  
 **Commits:** `cafc86b`.
+
+### Session 21 — 2026-10-07 (R2-12, batches 1–2)
+**Built:** design-system migration pass on five list pages — `invoices` (`f0e7d58`), `expenses` (`498dbbb`), then the whole masters tier: `vendors`, `customers`, `products` (`50b190f`, plus a one-line fix in `ui.tsx`). Each page keeps its behaviour and gains the kit chrome: `PageHeader` with an eyebrow, four `StatCard`s whose fourth is the compliance gap that page causes (To collect · Not yet paid · no-identifier vendors · B2B buyers without GSTIN · lines without HSN/SAC), one `Segmented` filter row over a token-driven table, a kit modal (`*-scrim` / `*-modal` / `*-field`) that collapses to a bottom sheet on phones, and a footnote that states what the page does *not* touch. Customers also gained the deactivate/reactivate action that existed as dead code, and products show stock against its alert level.  
+**Resolved:** `Segmented` rendered bare `<button>`s, so the goods/service switch inside the product `<form>` submitted the product instead of switching type (console: "Form submission canceled because the form is not connected") — the primitive now emits `type="button"`; the vendors empty state read "No no identifier vendors" once the title was built from the filter label, so each filter carries its own `noun`; a product with an alert level of 0 rendered "50 of 0 alert", now "50 in stock".  
+**Method:** every page checked at the ~341–456px panel and inside a same-origin 1440×900 iframe (`getComputedStyle` for grids, `scrollWidth` for overflow), with `window.confirm` stubbed in-page so deactivation could be tested and then reverted — twice the accidental deactivation of SHREE GANESH TRADERS was undone before the tree was confirmed clean. Writes were tested through paths that cannot persist (invalid GSTIN rejected before insert, modal edits closed with Cancel), and row counts re-read afterwards. `grep -o '#[0-9a-fA-F]\{3,8\}'` per file is the "0 hex" claim; `rgba(15,23,42,0.45)` on the scrim is the one literal the kit still allows, matching `/bank` and `/expenses`.  
+**Commits:** `f0e7d58`, `498dbbb`, `50b190f`.
 
 ---
 
@@ -349,6 +355,8 @@ Recorded so the next session does not rediscover them.
 10. **Duplicate listbox ids** — the palette must namespace option ids per group and per query.
 11. **`?q=` column parity** — a deep link must filter on exactly the columns the list page reads, or a search hit lands on an empty list.
 12. **Supabase reads are `as any[]`** with explicit `.select()` lists — the repo's accepted baseline until types are generated; compare `npx eslint` output against the pre-existing count instead of expecting zero.
+13. **A `<button>` with no `type` inside a form submits it** — the kit's `Segmented` did exactly that in the product modal, so switching goods→service saved the product. Any control that can live inside a `<form>` renders `type="button"`.
+14. **`evaluate_script` can read the DOM a render behind a click** — a status cell read right after `.click()` showed the old value twice during R2-12. Re-query in a later call, or read the derived stats as well as the row.
 
 ---
 
