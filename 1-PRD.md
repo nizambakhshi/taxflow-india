@@ -45,6 +45,7 @@ Indian businesses struggle with:
 7. Simple enough for a non-accountant to use, deep enough that a CA does not open Tally to check a number
 8. The AI features run in the browser: a supplier's bill is never uploaded, and every answer traces back to the rows it came from
 9. Bank reconciliation without a bank feed: any statement layout is read in the browser and each line is pointed at the document it matches, with the score explained — software that charges for this needs a paid feed
+10. Withholding tax read straight out of the purchase books: which section each supplier falls under, what crosses the limit, when the deposit was due and what the delay costs — the depth that costs extra in the ERPs
 
 ---
 
@@ -83,7 +84,7 @@ Round 1, closed:
 - Camera barcode scan + counter sale POS (`/pos`)
 - Bill OCR scanning and natural-language reporting (`/ai/scan-bill`, `/ai/ask`)
 
-Round 2, R2-1 … R2-10:
+Round 2, R2-1 … R2-11:
 - Design system v1 (tokens, UI kit, app shell)
 - Party ledger accounts and statements of account (`/ledger`)
 - Compliance calendar with late-fee estimation and `.ics` export (`/gst/calendar`)
@@ -94,9 +95,9 @@ Round 2, R2-1 … R2-10:
 - ⌘K command palette over pages, actions and live records
 - GSTR-9 / 9C annual workpaper (`/gst/gstr9`)
 - Bank statement import with scored matching to invoices, bills and recorded payments (`/bank`)
+- TDS & 194Q withholding workpaper with deposit calendar and interest (`/tds`)
 
 Still to come:
-- TDS / 194Q compliance, the purchase-side withholding the calendar already reserves (**R2-11, next**)
 - GSTR-4 (Composition scheme) return workpaper
 - Real GSP submission for e-invoice / e-way bill (blocked on paid GSP provider — see `6-Project-Memory.md`)
 - Email invoices directly from the app
@@ -370,6 +371,15 @@ Still to come:
 - Exact / likely / possible tiers; unexplained lines get a plain guess at what they are (interest, GST challan, salary, EMI, bank charge) instead of a blank row
 - Confirm, set aside and undo live in the browser; the ledger is still written on the Payments page, and the matched sheet exports to CSV
 
+### 3.31 TDS & 194Q Withholding Workpaper
+- Reads the financial year's purchase bills and the payments made against them; no bill is written to and nothing is filed
+- A section table (194C, 194H, 194I land/plant, 194J professional/technical, 194Q, 194M, 194A, 194R) with each rate, no-PAN rate, limit and the position taken on whole-bill versus above-the-limit charging
+- Because a purchase bill carries no expense category, the section is chosen once per supplier with a per-bill override; untagged value is reported as untagged, never guessed at
+- Base excludes GST when the supplier itemised it, tax falls on the earlier of credit and payment, deposit is due the 7th of the next month (March until 30 April)
+- Interest estimated the way the Act counts it — 1.5% a month on a late deposit, 1% a month where tax was never deducted, part-month counted — plus the ₹100-a-day 26Q statement fee capped at the tax
+- PAN read from the vendor record, else from the GSTIN, else the no-PAN rate with the gap stated
+- Deductee sheet and month-by-month deposit sheet export to CSV; tags, challans and payer type live in `taxflow:tds:<orgId>`
+
 ---
 
 ## 4. Non-Functional Requirements
@@ -409,7 +419,7 @@ Still to come:
 - Live IRP/GSP submission (e-invoice and e-way bill ship as build → download → paste-back)
 - Bank feeds / account aggregation (statement import is the next step, not a live connection)
 - Payroll
-- TDS / TCS return filing (R2-11 candidate)
+- TDS / TCS return filing — `/tds` builds the withholding workpaper and deposit calendar, but no Form 26Q or 24Q is filed, and TCS under 206C is not covered
 - Multi-currency
 - Native mobile app (the web app is an installable PWA)
 - Server-side LLM features — by design, so a business's bills never leave the device

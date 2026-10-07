@@ -55,7 +55,7 @@ node --experimental-strip-types --no-warnings --loader /tmp/ts-loader.mjs /tmp/<
 
 **GST:** dashboard, GSTR-1 and GSTR-3B workpapers, GSTR-2B ↔ books reconciliation, e-invoice (IRN) + e-way bill payloads, GSTR-9/9C annual workpaper, compliance calendar with late-fee estimates, statutory registers (party-wise, HSN/SAC, B2B, state-wise, e-way bill).
 
-**Money:** party ledger & statements of account, P&L and balance sheet derived from documents, receivables/payables ageing, bank statement matching (any bank's layout, scored against open documents with the reasons shown), UPI payment links and WhatsApp reminders, targets with festival-weighted pacing, demand-driven reorder suggestions.
+**Money:** party ledger & statements of account, P&L and balance sheet derived from documents, receivables/payables ageing, bank statement matching (any bank's layout, scored against open documents with the reasons shown), TDS & 194Q withholding workpaper read out of the purchase bills with deposit calendar and interest, UPI payment links and WhatsApp reminders, targets with festival-weighted pacing, demand-driven reorder suggestions.
 
 **At the counter and on the move:** POS screen with camera barcode scanning, installable PWA shell with an offline invoice outbox that replays through the normal save path, ⌘K command palette over pages, actions and live records.
 

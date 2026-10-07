@@ -388,13 +388,13 @@ Features ranked against Tally, Zoho, Vyapar, myBillBook, Marg, Busy, Refrens, Cl
 - ✅ **Hotfix pass** (`0aba36f`) — register line-item fetch 400, mobile toolbar overflow, 36 MB invoice PDFs
 - ✅ **R2-9 GSTR-9 / 9C annual workpaper** (`95e1ee8`) — `/gst/gstr9` + `gstr9.ts`; outward and ITC tables, 180-day credit watch, 9C books-vs-3B reconciliation, CSV export
 - ✅ **R2-10 Bank statement import + auto-match** (`7560987`) — `/bank` + `bank-statement.ts`; delimiter/header/date/amount detection for pasted or uploaded statements, direction resolved from split Dr./Cr. columns, cell sign, Dr/Cr indicator or running-balance delta, UTR de-duplication, weighted scoring (amount 40 · document number 30 · party 18 · date 12, recorded-payment reference 45) with exact/likely/possible tiers, confirm / set aside / undo, advisory text for unexplained lines, CSV export, storage in `taxflow:bank:<orgId>`
+- ✅ **R2-11 TDS / 194Q withholding workpaper** (`cafc86b`) — `/tds` + `tds.ts`; section table (194A, 194C, 194H, 194I land/plant, 194J professional/technical, 194M, 194Q, 194R) with whole-vs-excess threshold modes, base read out of purchase bills with GST excluded when itemised, deduction month on the earlier of credit or payment, deposit calendar (7th of the next month, March → 30 April), 1.5%/1% monthly interest and 26Q late-fee ₹100/day capped at the tax and ₹5,00,000, PAN from the vendor or its GSTIN else the no-PAN rate, untagged spend surfaced instead of guessed, quarterly 26Q statements, two CSV sheets, storage in `taxflow:tds:<orgId>`
 
 ---
 
 ## ROUND 2 — Backlog ⏳
 
-- ⏳ **R2-11 TDS / 194Q compliance** (next) — the calendar already reserves the events
-- ⏳ **R2-12 Design-system migration pass** — ~20 pages still carry pre-kit inline styles
+- ⏳ **R2-12 Design-system migration pass** (next) — ~20 pages still carry pre-kit inline styles
 - ⏳ GSTR-4 (Composition) workpaper
 - ⏳ Real GSP submission for e-invoice / e-way bill (blocked: no free government API; needs a contracted provider)
 
@@ -427,9 +427,9 @@ Features ranked against Tally, Zoho, Vyapar, myBillBook, Marg, Busy, Refrens, Cl
 
 ## VERSION 2 — Future ⏳
 
-Shipped: ✅ e-invoice IRN payload builder · ✅ e-way bill payload + register · ✅ GSTR-9/9C workpaper · ✅ WhatsApp reminders · ✅ payment links · ✅ OCR bill scanning · ✅ installable PWA (a web-first "mobile app")
+Shipped: ✅ e-invoice IRN payload builder · ✅ e-way bill payload + register · ✅ GSTR-9/9C workpaper · ✅ bank statement matching · ✅ TDS / 194Q withholding workpaper · ✅ WhatsApp reminders · ✅ payment links · ✅ OCR bill scanning · ✅ installable PWA (a web-first "mobile app")
 
-Remaining: ⏳ TDS / 194Q (R2-11) · ⏳ GSTR-4 (Composition) · ⏳ design-system migration pass (R2-12) · ⏳ native mobile app · ⏳ accountant portal · ⏳ API access · ⏳ payroll · ⏳ TDS/TCS returns
+Remaining: ⏳ GSTR-4 (Composition) · ⏳ TDS/TCS return filing (26Q/24Q upload, 206C collection) · ⏳ design-system migration pass (R2-12) · ⏳ native mobile app · ⏳ accountant portal · ⏳ API access · ⏳ payroll
 
 ---
 

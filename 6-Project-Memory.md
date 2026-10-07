@@ -122,7 +122,7 @@ The app produces NIC v1.10 JSON (`src/lib/einvoice.ts`) for the user to upload a
 **Traps:** a new page not in `nav.ts` is invisible; a `?q=` column list that diverges from what that page actually filters on produces a hit that lands on an empty list; icon keys must exist in `Icons.tsx` or the item renders the fallback glyph.
 
 ### ADR-020 — One Styling Kit — holds (new)
-New pages use `:root` tokens + `.tf-*` utilities (`globals.css`) and the primitives in `src/components/ui.tsx` / `Icons.tsx`. Roughly 15 pages are on the kit; ~20 pre-kit pages keep inline styles and migrate as they are touched (backlog item R2-12). Migration status and the full catalog are in `4-Design-System.md`.
+New pages use `:root` tokens + `.tf-*` utilities (`globals.css`) and the primitives in `src/components/ui.tsx` / `Icons.tsx`. Roughly 16 pages are on the kit; ~20 pre-kit pages keep inline styles and migrate as they are touched (backlog item R2-12). Migration status and the full catalog are in `4-Design-System.md`.
 
 ### ADR-021 — Documents Are Signed Rows — holds (new)
 Credit notes carry a negative taxable value and negative tax; they are summed, never `Math.abs()`-ed. This single decision is why a credit note dated in a month correctly reduces that month in GSTR-1, the registers, targets and the annual workpaper at once.
@@ -166,6 +166,9 @@ Rule 42/43 reversals, ITCA-01 demands, Table 8 importer credit and Table 9 carry
 
 ### GCD-009 — Applicability Is Declared, Not Inferred (new)
 E-invoice threshold, e-way bill requirement, filing profile (monthly/QRMP) and TDS obligations come from user settings, because turnover and registration state cannot be derived from documents the app has never seen.
+
+### GCD-010 — Withholding: the section is the user's call (new)
+`/tds` reads a purchase bill's amount and party but cannot know whether that spend is a contract, a commission or rent — goods-vs-service and the 194 section are chosen by the owner (per vendor, overridable per bill), and an untagged vendor stays visibly untagged. Rates and thresholds are printed for the CA to verify rather than made editable; a dateless challan is dropped rather than half-saved.
 
 ---
 
@@ -223,11 +226,17 @@ E-invoice threshold, e-way bill requirement, filing profile (monthly/QRMP) and T
 **Method:** 69 assertions in a throwaway strip-types suite, then the real books (`/payments`: INV-2026-27-0005 ₹14,00,000, INV-2026-27-0001 ₹10,000 due, bill 1244432 Mohd Faizan ₹4,42,500, two September payments) driven through the browser at 341px and inside a 1440×900 same-origin iframe; the exported CSV was captured from `URL.createObjectURL` and read back rather than trusted. Verification rows were removed through the app's own Remove action.  
 **Commits:** `7560987`.
 
+### Session 20 — 2026-10-07 (R2-11)
+**Built:** TDS / 194Q withholding workpaper (`/tds` + `tds.ts`, `nav.ts`, two chevron icons). The section table (194A, 194C, 194H, 194I land and plant variants, 194J professional and technical, 194M, 194Q, 194R) carries rate, threshold and whether the threshold is read against the whole amount or the excess; the base is taken out of purchase bills with GST excluded whenever it is itemised, and per-bill / per-vendor section overrides are owner choices, not guesses. Deduction falls in the earlier of credit or payment month. The deposit calendar is the 7th of the next month (March → 30 April), and interest runs at 1.5%/month where tax was deducted but not deposited and 1%/month where it was never deducted, with part-months counted; 26Q statements add the ₹100/day late-fee capped at the tax and at ₹5,00,000. PAN comes from the vendor, else from characters 3–12 of its GSTIN, else the no-PAN rate is used and flagged. Nothing is filed and no rate is treated as authoritative — the workpaper prints the rate for the owner's CA to check, and untagged spend is surfaced as a KPI and a clickable strip rather than silently dropped. Two CSV sheets (deductions, deposits); state in `taxflow:tds:<orgId>`, keyed by month so it spans FYs.  
+**Resolved:** 26Q quarterly due dates computed from `fyStart` rather than the quarter's own calendar year, so FY26-27 Q4 printed "31 May 26" instead of 31 May 27 — the due year is now relative to the quarter year; a challan amount typed before its deposit date was discarded, because `setChallan` drops dateless challans and the field handler rebuilt from state instead of from the draft, fixed by merging the whole draft on every field; workpaper rows read as date-ordered in a test expectation when they are grouped section → vendor → date; `monthLabel` returns full month names ("August 2026"), not abbreviations; an untagged vendor rendering as "Nothing to withhold" (a section that was never chosen is not a section chosen as none).  
+**Method:** 70 assertions in the strip-types suite, then the real books in the browser (bill 1244432 Mohd Faizan ₹4,42,500 taxable ₹3,75,000, VB-001 ₹3,000, VB-002 ₹300, the 20/9 payment) at 352px and inside a 1440×900 same-origin iframe; the challan draft order bug was only found by driving the actual inputs in the wrong order, which is the argument for driving them at all. Export bytes captured through `URL.createObjectURL`, deep link tested via ⌘K (the listener is on `document`, not `window`).  
+**Commits:** `cafc86b`.
+
 ---
 
 ## Files Created (Complete List)
 
-### Routes — 37 pages
+### Routes — 38 pages
 ```
 src/app/
 ├── layout.tsx, page.tsx (→ /login), manifest.ts, globals.css, favicon.ico
@@ -241,6 +250,7 @@ src/app/
     ├── payments/page  payments/links/  bank/
     ├── inventory/page  inventory/reorder/
     ├── ledger/  accounting/
+    ├── tds/                         ← withholding workpaper
     ├── gst/{page,gstr1,gstr3b,gstr9,reconciliation,einvoice,calendar}/
     ├── reports/{page,registers,targets}/
     ├── ai/{ask,scan-bill}/
@@ -248,7 +258,7 @@ src/app/
 public/sw.js  public/offline.html
 ```
 
-### Libraries — 27 modules in `src/lib/` + `src/lib/gsp/`
+### Libraries — 28 modules in `src/lib/` + `src/lib/gsp/`
 ```
 supabase.ts  constants.ts  gst-engine.ts  format.ts  words.ts  reports.ts
 create-invoice.ts  create-bill.ts            ← the only document write paths
@@ -256,6 +266,7 @@ einvoice.ts  gstr2b.ts  gstr9.ts  compliance.ts  registers.ts  payments.ts
 ledger.ts  party-ledger.ts  targets.ts  reorder.ts  barcode.ts  outbox.ts
 bill-text.ts  ocr.ts  ask.ts  commands.ts  nav.ts  deep-link-search.ts
 bank-statement.ts                             ← statement parser + match scorer
+tds.ts                                        ← withholding sections, workpaper, deposits
 gsp/{index.ts, types.ts, mock.ts}            ← provider adapter, mock transport
 ```
 (`gst-engine.ts` also still exports the legacy `numberToWords()` that the classic
@@ -317,6 +328,7 @@ anything here is either reconstructible from documents or already exported.
 | `taxflow:invoice-template:` | skin choice | `/settings` |
 | `taxflow:gstr9:` | declared 3B figures and Table 8/9 input | `/gst/gstr9` |
 | `taxflow:bank:` | imported statements and confirm/set-aside decisions | `/bank` |
+| `taxflow:tds:` | section overrides, payer type and monthly challan details for withholding | `/tds` |
 | `taxflow:palette-recents:` | recent ⌘K hits | `CommandPalette.tsx` |
 
 ---
@@ -328,7 +340,7 @@ Recorded so the next session does not rediscover them.
 1. **CSS specificity across breakpoints** — a desktop `.cols > .is-right` rule outranks the mobile `.cols > span` rule; override with equal or higher specificity, not with `!important`.
 2. **Rupee strings have no break opportunity** — one figure per line on mobile, and assert `scrollWidth − clientWidth === 0` rather than eyeballing.
 3. **`node --experimental-strip-types --loader /tmp/ts-loader.mjs`** registers the ESM hook; `--import` does not, and the test file then fails to parse TypeScript.
-4. **Library test suites live in `/tmp`** and are not committed. Recorded counts at R2-9: gstr2b + compliance 30, registers 20, words 29, targets 38, commands 26, gstr9 35 — rewrite them when a library changes.
+4. **Library test suites live in `/tmp`** and are not committed. Recorded counts at R2-11: gstr2b + compliance 30, registers 20, words 29, targets 38, commands 26, gstr9 35, tds 70 — rewrite them when a library changes.
 5. **`1-based` vs `0-based` months** — `iso(y, m, d)` vs `fyMonth()`; off-by-one shifts a whole quarter.
 6. **`Math.abs()` on a signed document** — turns a credit note into extra sales.
 7. **Unbounded `in=(...)`** — Supabase 400s; chunk at 500 ids.
@@ -343,7 +355,8 @@ Recorded so the next session does not rediscover them.
 ## Verification Environment
 
 - Dev server on `http://localhost:3000`; browser-use drives it. The panel viewport is ~371–455 CSS px, so the native mobile breakpoint is what you actually see; inspect a desktop width through a same-origin 1440×900 iframe reading `getComputedStyle` / `scrollWidth`.
-- Screenshots are not informative here — DOM assertions are authoritative.
+- Screenshots are not informative here — DOM assertions are authoritative. When `take_screenshot` and `click` are both unavailable (`NATIVE_BROWSER_VIEWPORT_UNAVAILABLE`), drive everything through `evaluate_script` with `.click()` and settle for computed style / `scrollWidth` instead of pixels.
+- The ⌘K listener is attached to `document`, not `window` — dispatching the keydown on `window` does nothing.
 - React controlled inputs are set through the native value setter plus `change`/`input` events; assigning `.value` alone leaves state stale.
 - Test data is cleaned through the in-app Cancel / Deactivate flows, never by deleting rows in the dashboard.
 - Test login credentials are for the local dev server only and must never be written into a file, source, config, fixture or commit. Do not read `.env`.
@@ -356,7 +369,7 @@ Recorded so the next session does not rediscover them.
 |----------|---------|---------|
 | Real GSP provider | which GSP, contract, per-document cost — adapter is ready and waiting | High (blocks live e-invoice/e-way bill) |
 | RLS approach | regenerate types + dashboard policies vs keep app-level isolation | High (before real customers) |
-| Bank statement format coverage | paste-only vs per-bank templates; how many banks matter | Medium (shapes R2-10) |
+| Bank statement format coverage | paste-only vs per-bank templates; how many banks matter | Medium (R2-10 ships the generic parser; this shapes refinements) |
 | Email provider for invoice delivery | Resend, SendGrid, Supabase SMTP | Medium |
 | Multi-user model | org invites + RBAC roles vs single-seat | Medium |
 | SaaS pricing | Free / Starter / Professional tiers, Razorpay | Low |
@@ -423,13 +436,10 @@ node --version
 
 ## Next Steps (Priority Order)
 
-1. **R2-10 — Bank statement import + auto-match** (next up)  
-   Parse pasted or uploaded statements: delimiter and header detection, Indian dates, `₹1,200.00`, trailing `Dr`/`Cr`, split Dr./Cr. columns, balance column, UTR/reference de-duplication. Match receipts against invoices and payments by amount, date window and narration/party tokens with confidence tiers; review screen + CSV export; state in `taxflow:bank:<orgId>`. Client-side only.
-2. **R2-11 — TDS / 194Q compliance** — the compliance calendar already reserves these events; Part A workpaper and 194Q threshold tracking.
-3. **R2-12 — Design-system migration pass** — ~20 pre-kit pages still carry inline styles; migrate as touched, batch the rest.
-4. **GSTR-4 (Composition)** workpaper for the smaller registrants.
-5. **Phase 14 — Security**: generated Supabase types, tightened dashboard RLS policies, audit log, multi-account isolation test. Do this before onboarding a real customer.
-6. **Real GSP integration** once a provider is chosen (ADR-016) — plus email invoices and multi-user, which need the pending decisions above.
+1. **R2-12 — Design-system migration pass** (next up) — ~20 pre-kit pages still carry inline styles; migrate as touched, batch the rest.
+2. **GSTR-4 (Composition)** workpaper for the smaller registrants.
+3. **Phase 14 — Security**: generated Supabase types, tightened dashboard RLS policies, audit log, multi-account isolation test. Do this before onboarding a real customer.
+4. **Real GSP integration** once a provider is chosen (ADR-016) — plus email invoices and multi-user, which need the pending decisions above.
 
 ---
 

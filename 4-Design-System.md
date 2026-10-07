@@ -250,6 +250,6 @@ A document is a document: no card shadows, no rounded corners, print-safe colour
 
 ## 16. Migration Status
 
-On the kit (15 pages): `dashboard`, `bills`, `credit-notes`, `debit-notes`, `customers`, `vendors`, `products`, `quotations`, `ledger`, `gst/calendar`, `gst/gstr9`, `inventory/reorder`, `reports/registers`, `reports/targets`, `bank`.
+On the kit (16 pages): `dashboard`, `bills`, `credit-notes`, `debit-notes`, `customers`, `vendors`, `products`, `quotations`, `ledger`, `gst/calendar`, `gst/gstr9`, `inventory/reorder`, `reports/registers`, `reports/targets`, `bank`, `tds`.
 
 Still carrying pre-kit inline styles (~20: `invoices*`, `expenses`, `payments*`, `pos`, `offline`, `accounting`, `ai/*`, `gst` hub, `gstr1`, `gstr3b`, `reconciliation`, `einvoice`, `inventory`, `reports`, `settings`). **Migrate a page when you touch it**; a dedicated pass is standing debt. While a page is unmigrated, do not introduce new hex literals into it — use tokens even in the old markup.

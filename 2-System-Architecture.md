@@ -105,6 +105,7 @@ taxflow-india/
 │   │       ├── bills/  expenses/
 │   │       ├── payments/           receivables + payables
 │   │       ├── payments/links/     UPI deep links + WhatsApp reminders
+│   │       ├── bank/               statement import and auto-match
 │   │       ├── customers/  vendors/  products/
 │   │       ├── inventory/          stock levels and movements
 │   │       ├── inventory/reorder/  (s,S) suggestions, supplier-wise POs
@@ -116,6 +117,7 @@ taxflow-india/
 │   │       ├── reports/targets/    plan vs achievement
 │   │       ├── ledger/             party statements of account
 │   │       ├── accounting/         P&L and balance sheet
+│   │       ├── tds/                withholding workpaper and deposit calendar
 │   │       ├── offline/            outbox status and replay
 │   │       ├── ai/scan-bill/       OCR bill capture
 │   │       ├── ai/ask/             natural-language reporting
@@ -135,6 +137,7 @@ taxflow-india/
 │       ├── ledger.ts  party-ledger.ts  reports.ts  targets.ts  reorder.ts
 │       ├── payments.ts  barcode.ts  outbox.ts  ocr.ts  bill-text.ts  ask.ts
 │       ├── commands.ts  nav.ts  deep-link-search.ts  bank-statement.ts
+│       ├── tds.ts                  withholding workpaper
 │       └── gsp/                    provider adapter: types, index, mock
 ├── public/
 │   ├── sw.js                       service worker (offline shell)
@@ -590,6 +593,7 @@ Features that need somewhere to put information the schema does not have use one
 | `taxflow:invoice-template:<orgId>` | Invoice print | `classic` · `modern` · `minimal` (default `classic`) |
 | `taxflow:gstr9:<orgId>` | Annual return | Per-FY declared 3B figures, Rule 42/43 reversals, 9C inputs |
 | `taxflow:bank:<orgId>` | Bank matching | Imported statements (rows are reconstructible from the source text) and confirm/set-aside decisions |
+| `taxflow:tds:<orgId>` | TDS workpaper | Payer type, section per supplier, per-bill override, challans by deduction month |
 | `taxflow:palette-recents:<orgId>` | ⌘K | Recently opened records |
 
 Rules that make this safe:
@@ -637,6 +641,7 @@ Because replay uses the production write path, an offline invoice cannot diverge
 | `/accounting` | `ledger.ts` | P&L and always-balancing balance sheet |
 | `/payments/links` | `payments.ts` | UPI deep links, WhatsApp reminder copy |
 | `/bank` | `bank-statement.ts` | Statement layout, line direction, scored candidates and confidence tier |
+| `/tds` | `tds.ts` | Section table, threshold modes, deposit calendar, interest and 26Q fee |
 | `/inventory/reorder` | `reorder.ts` | Demand window, (s, S) policy, supplier grouping |
 | `/pos` | `barcode.ts`, `create-invoice.ts` | GS1 check digits, EAN/UPC variants, cash sale write |
 | `/offline` | `outbox.ts`, `create-invoice.ts` | Queue, replay, sequence numbering |
