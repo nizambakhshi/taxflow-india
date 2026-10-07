@@ -294,7 +294,8 @@ Same structure as customers.
 | invoice_date | date | |
 | due_date | date | |
 | customer_id | uuid | FK → customers |
-| customer_name/gstin | text | Copied at time of invoice |
+| customer_name | text | Copied at time of invoice |
+| customer_gstin | text | Column is `customer_gstin`, not `gstin` — a list page that asks for `gstin` 400s |
 | place_of_supply | text | State code |
 | supply_type | text | b2b, b2c, export, sez |
 | is_reverse_charge | boolean | |
