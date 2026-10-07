@@ -394,7 +394,7 @@ Features ranked against Tally, Zoho, Vyapar, myBillBook, Marg, Busy, Refrens, Cl
 
 ## ROUND 2 — Backlog ⏳
 
-- ⏳ **R2-12 Design-system migration pass** (next) — ~20 pages still carry pre-kit inline styles
+- 🔄 **R2-12 Design-system migration pass** (in progress) — counted from the code: **11** pages fully on the kit, **7** import only `SearchInput`, **20** still pre-kit. `4-Design-System.md` §16 is the ledger and the order. Done so far: `invoices` (list), `expenses`
 - ⏳ GSTR-4 (Composition) workpaper
 - ⏳ Real GSP submission for e-invoice / e-way bill (blocked: no free government API; needs a contracted provider)
 

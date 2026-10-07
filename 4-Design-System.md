@@ -248,8 +248,16 @@ A document is a document: no card shadows, no rounded corners, print-safe colour
 
 ---
 
-## 16. Migration Status
+## 16. Migration Status (R2-12)
 
-On the kit (16 pages): `dashboard`, `bills`, `credit-notes`, `debit-notes`, `customers`, `vendors`, `products`, `quotations`, `ledger`, `gst/calendar`, `gst/gstr9`, `inventory/reorder`, `reports/registers`, `reports/targets`, `bank`, `tds`.
+Counted from the code, not from intention: a page is only "on the kit" when its header, buttons, badges and empty state are the primitives — importing `SearchInput` alone does not count.
 
-Still carrying pre-kit inline styles (~20: `invoices*`, `expenses`, `payments*`, `pos`, `offline`, `accounting`, `ai/*`, `gst` hub, `gstr1`, `gstr3b`, `reconciliation`, `einvoice`, `inventory`, `reports`, `settings`). **Migrate a page when you touch it**; a dedicated pass is standing debt. While a page is unmigrated, do not introduce new hex literals into it — use tokens even in the old markup.
+**Fully on the kit — 11 pages.** `dashboard`, `invoices`, `expenses`, `ledger`, `gst/calendar`, `gst/gstr9`, `inventory/reorder`, `reports/registers`, `reports/targets`, `bank`, `tds`. These set colour through `:root` tokens only.
+
+**Partly on the kit — 7 pages.** `bills`, `credit-notes`, `debit-notes`, `customers`, `vendors`, `products`, `quotations`. They use `SearchInput` and the shared table classes, but still hand-code the page header, buttons, badges and modal chrome with Tailwind-slate hex.
+
+**Pre-kit — 17 pages inside the shell.** `invoices/new`, `invoices/[id]`, `payments`, `payments/links`, `pos`, `inventory`, `offline`, `accounting`, `reports`, `settings`, `gst` hub, `gstr1`, `gstr3b`, `reconciliation`, `einvoice`, `ai/ask`, `ai/scan-bill`. Three more outside it: `login`, `signup`, `setup`.
+
+Migration order for the rest of R2-12: masters (three near-identical list pages, one recipe) → money (`payments`, `payments/links`, `accounting`, `offline`) → GST (`gst` hub, `gstr1`, `gstr3b`, `reconciliation`, `einvoice`) → counter and AI (`pos`, `inventory`, `ai/*`) → reports and settings → auth pages → documents last (`invoices/new`, `invoices/[id]`), because a printed document is the one surface where a styling change is a change to a legal artefact.
+
+**Migrate a page when you touch it**; do not introduce new hex literals into a page that is still on the old markup — use tokens even inside it.

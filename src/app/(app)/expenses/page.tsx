@@ -1,21 +1,27 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { formatINR } from '@/lib/gst-engine'
+import { formatDateIN } from '@/lib/format'
+import { Badge, Button, Card, EmptyState, PageHeader, SearchInput, StatCard } from '@/components/ui'
+import Icon from '@/components/Icons'
 
-const inputStyle = {
-  width: '100%', padding: '8px 10px',
-  border: '1px solid #d1d5db', borderRadius: '6px',
-  fontSize: '13px', outline: 'none',
-  color: '#1e293b', background: 'white',
-}
-
-const labelStyle = {
-  display: 'block' as const,
-  fontSize: '12px', fontWeight: '500' as const,
-  color: '#374151', marginBottom: '4px',
+interface Expense {
+  id: string
+  expense_date: string | null
+  category: string | null
+  description: string | null
+  vendor_name: string | null
+  bill_number: string | null
+  amount: number | string | null
+  gst_rate: number | string | null
+  gst_amount: number | string | null
+  taxable_amount: number | string | null
+  itc_eligible: boolean | null
+  payment_mode: string | null
+  payment_status: string | null
+  notes: string | null
 }
 
 const EXPENSE_CATEGORIES = [
@@ -29,41 +35,62 @@ const EXPENSE_CATEGORIES = [
 const PAYMENT_MODES = ['Cash', 'Bank Transfer', 'UPI', 'Credit Card', 'Debit Card', 'Cheque']
 const GST_RATES = [0, 5, 12, 18, 28]
 
+const num = (v: number | string | null | undefined) => Number(v ?? 0) || 0
+const whole = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 })
+const paise = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const money = (v: number | string | null | undefined) => `₹${whole.format(num(v))}`
+const moneyPaise = (v: number | string | null | undefined) => `₹${paise.format(num(v))}`
+
+const emptyForm = () => ({
+  expense_date: new Date().toISOString().split('T')[0],
+  category: '',
+  description: '',
+  vendor_id: '',
+  vendor_name: '',
+  vendor_gstin: '',
+  bill_number: '',
+  amount: '',
+  gst_rate: '0',
+  itc_eligible: false,
+  payment_mode: 'Bank Transfer',
+  payment_status: 'paid',
+  notes: '',
+})
+
 export default function ExpensesPage() {
   const supabase = createClient()
   const router = useRouter()
 
-  const [expenses, setExpenses] = useState<any[]>([])
+  const [expenses, setExpenses] = useState<Expense[]>([])
   const [orgId, setOrgId] = useState('')
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [vendors, setVendors] = useState<any[]>([])
+  const [loadError, setLoadError] = useState('')
+  const [vendors, setVendors] = useState<{ id: string; name: string; gstin: string | null }[]>([])
+  const [search, setSearch] = useState('')
+  const [category, setCategory] = useState('')
 
-  const [form, setForm] = useState({
-    expense_date: new Date().toISOString().split('T')[0],
-    category: '',
-    description: '',
-    vendor_id: '',
-    vendor_name: '',
-    vendor_gstin: '',
-    bill_number: '',
-    amount: '',
-    gst_rate: '0',
-    itc_eligible: false,
-    payment_mode: 'Bank Transfer',
-    payment_status: 'paid',
-    notes: '',
-  })
+  const [form, setForm] = useState(emptyForm())
 
-  // Calculated GST
+  // The amount is what was paid, so GST is carved out of it rather than added to it
   const totalAmount = parseFloat(form.amount) || 0
   const gstRate = parseFloat(form.gst_rate) || 0
   const gstAmount = gstRate > 0
     ? Math.round((totalAmount - totalAmount / (1 + gstRate / 100)) * 100) / 100
     : 0
   const taxableAmount = Math.round((totalAmount - gstAmount) * 100) / 100
+
+  async function fetchExpenses(organizationId: string) {
+    const { data, error } = await supabase
+      .from('expenses')
+      .select('id, expense_date, category, description, vendor_name, bill_number, amount, gst_rate, gst_amount, taxable_amount, itc_eligible, payment_mode, payment_status, notes')
+      .eq('organization_id', organizationId)
+      .order('expense_date', { ascending: false })
+    if (error) setLoadError(error.message)
+    setExpenses((data as Expense[]) || [])
+  }
 
   useEffect(() => {
     async function load() {
@@ -80,36 +107,23 @@ export default function ExpensesPage() {
       if (!membership) { router.push('/setup'); return }
       setOrgId(membership.organization_id)
 
-      const { data: expData } = await supabase
-        .from('expenses')
-        .select('*')
-        .eq('organization_id', membership.organization_id)
-        .order('expense_date', { ascending: false })
-
-      setExpenses(expData || [])
+      await fetchExpenses(membership.organization_id)
 
       const { data: vendorData } = await supabase
         .from('vendors')
-        .select('*')
+        .select('id, name, gstin')
         .eq('organization_id', membership.organization_id)
         .eq('is_active', true)
         .order('name')
 
-      setVendors(vendorData || [])
+      setVendors((vendorData as { id: string; name: string; gstin: string | null }[]) || [])
       setLoading(false)
     }
     load()
   }, [])
 
   function resetForm() {
-    setForm({
-      expense_date: new Date().toISOString().split('T')[0],
-      category: '', description: '',
-      vendor_id: '', vendor_name: '', vendor_gstin: '',
-      bill_number: '', amount: '', gst_rate: '0',
-      itc_eligible: false, payment_mode: 'Bank Transfer',
-      payment_status: 'paid', notes: '',
-    })
+    setForm(emptyForm())
     setError('')
   }
 
@@ -157,408 +171,320 @@ export default function ExpensesPage() {
 
       if (expError) throw expError
 
-      const { data: expData } = await supabase
-        .from('expenses')
-        .select('*')
-        .eq('organization_id', orgId)
-        .order('expense_date', { ascending: false })
-
-      setExpenses(expData || [])
+      await fetchExpenses(orgId)
       setShowForm(false)
       resetForm()
-    } catch (err: any) {
-      setError(err.message || 'Failed to save expense')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save expense')
     } finally {
       setSaving(false)
     }
   }
 
-  // Summary totals
-  const totalExpenses = expenses.reduce((s, e) => s + Number(e.amount), 0)
-  const totalGSTPaid = expenses.reduce((s, e) => s + Number(e.gst_amount), 0)
-  const totalITC = expenses
-    .filter(e => e.itc_eligible)
-    .reduce((s, e) => s + Number(e.gst_amount), 0)
+  const categories = useMemo(() => {
+    const spend: Record<string, number> = {}
+    for (const e of expenses) spend[e.category || 'Uncategorised'] = (spend[e.category || 'Uncategorised'] || 0) + num(e.amount)
+    return Object.entries(spend).sort((a, b) => b[1] - a[1]).map(([name, total]) => ({ name, total }))
+  }, [expenses])
 
-  if (loading) return (
-    <div style={{ padding: '2rem', color: '#64748b', fontSize: '14px' }}>Loading...</div>
-  )
+  const summary = useMemo(() => {
+    const visible = expenses.filter(e => {
+      if (category && (e.category || 'Uncategorised') !== category) return false
+      const q = search.trim().toLowerCase()
+      if (!q) return true
+      return [e.description, e.category, e.vendor_name, e.bill_number, e.notes]
+        .some(f => String(f ?? '').toLowerCase().includes(q))
+    })
+    return {
+      visible,
+      spend: visible.reduce((sum, e) => sum + num(e.amount), 0),
+      gst: visible.reduce((sum, e) => sum + num(e.gst_amount), 0),
+      itc: visible.filter(e => e.itc_eligible).reduce((sum, e) => sum + num(e.gst_amount), 0),
+      unpaid: visible.filter(e => e.payment_status !== 'paid').reduce((sum, e) => sum + num(e.amount), 0),
+      filtered: visible.length !== expenses.length,
+    }
+  }, [expenses, category, search])
+
+  if (loading) {
+    return <div className="page-container" style={{ color: 'var(--muted)', fontSize: 13 }}>Loading your expenses…</div>
+  }
 
   return (
-    <div className="page-container" style={{ padding: '2rem', maxWidth: '1100px' }}>
-      {/* Header */}
-      <div className="page-header" style={{
-        display: 'flex', justifyContent: 'space-between',
-        alignItems: 'center', marginBottom: '1.5rem'
-      }}>
-        <div>
-          <h1 style={{ fontSize: '22px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
-            Expenses
-          </h1>
-          <p style={{ fontSize: '14px', color: '#64748b' }}>
-            {expenses.length} expense{expenses.length !== 1 ? 's' : ''}
-          </p>
-        </div>
-        <button
-          onClick={() => { resetForm(); setShowForm(true) }}
-          style={{
-            padding: '9px 18px', background: '#2563eb', color: 'white',
-            border: 'none', borderRadius: '8px', fontSize: '14px',
-            fontWeight: '600', cursor: 'pointer'
-          }}
-        >
-          + Add Expense
-        </button>
+    <div className="page-container ex" style={{ maxWidth: 1100 }}>
+      <PageHeader
+        eyebrow="Purchases"
+        title="Expenses"
+        subtitle="Running costs with their GST split, so input credit is a decision you make per bill rather than a guess at year end."
+        actions={<Button size="sm" icon="plus" onClick={() => { resetForm(); setShowForm(true) }}>Add expense</Button>}
+      />
+
+      {loadError && (
+        <div className="ex-alert ex-alert-red"><Icon name="alert" size={14} />{loadError}</div>
+      )}
+
+      <div className="ex-stats">
+        <StatCard label="Spend" value={money(summary.spend)}
+          sub={summary.filtered ? `in ${summary.visible.length} of ${expenses.length} record(s)` : `${expenses.length} record(s)`}
+          icon="wallet" tone="blue" />
+        <StatCard label="GST paid" value={money(summary.gst)} sub="carved out of the amounts you entered" icon="percent" tone="violet" delay={40} />
+        <StatCard label="ITC claimable" value={money(summary.itc)} sub={`${expenses.filter(e => e.itc_eligible).length} bill(s) tagged eligible`} icon="check" tone="green" delay={80} />
+        <StatCard label="Not yet paid" value={money(summary.unpaid)} sub="settled from your own account" icon="clock" tone="amber" delay={120} />
       </div>
 
-      {/* Summary cards */}
-      {expenses.length > 0 && (
-        <div className="metric-grid" style={{
-          display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
-          gap: '1rem', marginBottom: '1.5rem'
-        }}>
-          {[
-            { label: 'Total Expenses', value: totalExpenses, color: '#2563eb' },
-            { label: 'GST Paid', value: totalGSTPaid, color: '#7c3aed' },
-            { label: 'ITC Claimable', value: totalITC, color: '#059669' },
-          ].map(card => (
-            <div key={card.label} style={{
-              background: 'white', border: '1px solid #e2e8f0',
-              borderRadius: '12px', padding: '1rem',
-              borderTop: `3px solid ${card.color}`
-            }}>
-              <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>
-                {card.label}
-              </div>
-              <div style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>
-                ₹{formatINR(card.value)}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="ex-toolbar">
+        <SearchInput value={search} onChange={setSearch} placeholder="Description, vendor or bill number…"
+          ariaLabel="Search expenses" style={{ flex: '1 1 260px', maxWidth: 360 }} />
+        <select className="tf-input ex-select" value={category} onChange={e => setCategory(e.target.value)} aria-label="Filter by category">
+          <option value="">All categories</option>
+          {categories.map(c => <option key={c.name} value={c.name}>{c.name} · {money(c.total)}</option>)}
+        </select>
+        {(category || search) && (
+          <button type="button" className="ex-reset" onClick={() => { setCategory(''); setSearch('') }}>
+            <Icon name="x" size={13} /> Clear filters
+          </button>
+        )}
+      </div>
 
-      {/* Expenses list */}
-      {expenses.length === 0 ? (
-        <div style={{
-          background: 'white', border: '1px solid #e2e8f0',
-          borderRadius: '12px', padding: '3rem',
-          textAlign: 'center', color: '#94a3b8'
-        }}>
-          <div style={{ fontSize: '36px', marginBottom: '1rem' }}>💸</div>
-          <div style={{ fontSize: '16px', fontWeight: '500', color: '#64748b', marginBottom: '8px' }}>
-            No expenses yet
-          </div>
-          <div style={{ fontSize: '13px' }}>
-            Track business expenses and claim GST input tax credit
-          </div>
-        </div>
+      {summary.visible.length === 0 ? (
+        <Card>
+          <EmptyState
+            icon={expenses.length ? 'search' : 'wallet'}
+            title={expenses.length ? (search ? `Nothing matches “${search}”` : `No ${category} expenses`) : 'No expenses yet'}
+            message={expenses.length
+              ? 'Clear the search or pick another category to see the rest.'
+              : 'Record rent, software, travel and professional fees here — each one keeps its own GST split.'}
+            action={!expenses.length ? (
+              <Button size="sm" icon="plus" onClick={() => { resetForm(); setShowForm(true) }}>Add expense</Button>
+            ) : undefined}
+          />
+        </Card>
       ) : (
-        <div className="responsive-table table-frame" style={{
-          background: 'white', border: '1px solid #e2e8f0',
-          borderRadius: '12px', overflow: 'hidden'
-        }}>
-          <div className="table-header" style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 1.5fr 1.5fr 1fr 1fr 1fr',
-            gap: '12px', padding: '10px 16px', background: '#f8fafc',
-            fontSize: '12px', fontWeight: '600', color: '#64748b',
-            borderBottom: '1px solid #e2e8f0'
-          }}>
-            <span>Date</span>
-            <span>Category</span>
-            <span>Description / Vendor</span>
-            <span>Amount</span>
-            <span>GST / ITC</span>
-            <span>Payment</span>
-          </div>
-
-          {expenses.map(exp => (
-            <div key={exp.id} className="table-row" style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1.5fr 1.5fr 1fr 1fr 1fr',
-              gap: '12px', padding: '12px 16px',
-              borderBottom: '1px solid #f1f5f9',
-              alignItems: 'center', fontSize: '13px'
-            }}>
-              <div data-label="Date" style={{ color: '#64748b' }}>
-                {new Date(exp.expense_date).toLocaleDateString('en-IN')}
-              </div>
-              <div data-label="Category">
-                <span style={{
-                  fontSize: '11px', padding: '2px 8px',
-                  borderRadius: '99px', background: '#f1f5f9',
-                  color: '#374151', fontWeight: '500'
-                }}>
-                  {exp.category}
-                </span>
-              </div>
-              <div data-label="Description / Vendor">
-                <div style={{ color: '#1e293b' }}>{exp.description || '—'}</div>
-                {exp.vendor_name && (
-                  <div style={{ fontSize: '12px', color: '#64748b' }}>{exp.vendor_name}</div>
-                )}
-              </div>
-              <div data-label="Amount" style={{ fontWeight: '500' }}>₹{formatINR(exp.amount)}</div>
-              <div data-label="GST / ITC">
-                {Number(exp.gst_amount) > 0 ? (
-                  <div>
-                    <div style={{ fontSize: '12px' }}>₹{formatINR(exp.gst_amount)}</div>
-                    <span style={{
-                      fontSize: '11px', padding: '1px 6px',
-                      borderRadius: '99px',
-                      background: exp.itc_eligible ? '#f0fdf4' : '#f8fafc',
-                      color: exp.itc_eligible ? '#166534' : '#94a3b8'
-                    }}>
-                      {exp.itc_eligible ? 'ITC eligible' : 'No ITC'}
-                    </span>
-                  </div>
-                ) : (
-                  <span style={{ color: '#94a3b8', fontSize: '12px' }}>No GST</span>
-                )}
-              </div>
-              <div data-label="Payment">
-                <div style={{ fontSize: '12px', color: '#64748b' }}>{exp.payment_mode}</div>
-                <span style={{
-                  fontSize: '11px', padding: '2px 6px',
-                  borderRadius: '99px',
-                  background: exp.payment_status === 'paid' ? '#f0fdf4' : '#fef2f2',
-                  color: exp.payment_status === 'paid' ? '#166534' : '#dc2626'
-                }}>
-                  {exp.payment_status}
-                </span>
-              </div>
+        <div className="table-frame">
+          <div className="responsive-table">
+            <div className="table-header ex-row ex-head">
+              <span data-label="Date">Date</span>
+              <span data-label="Category">Category</span>
+              <span data-label="Description">Description</span>
+              <span className="ex-right" data-label="Amount">Amount</span>
+              <span className="ex-right" data-label="GST">GST / ITC</span>
+              <span data-label="Payment">Payment</span>
             </div>
-          ))}
+            {summary.visible.map(exp => (
+              <div key={exp.id} className="table-row ex-row">
+                <span data-label="Date" className="ex-date">{exp.expense_date ? formatDateIN(exp.expense_date) : '—'}</span>
+
+                <span data-label="Category"><Badge tone="grey" dot={false}>{exp.category || 'Uncategorised'}</Badge></span>
+
+                <span data-label="Description" className="ex-desc">
+                  <span className="ex-desc-main">{exp.description || exp.vendor_name || '—'}</span>
+                  {(exp.vendor_name && exp.description) && (
+                    <span className="ex-sub">{exp.vendor_name}{exp.bill_number ? ` · bill ${exp.bill_number}` : ''}</span>
+                  )}
+                </span>
+
+                <span className="ex-right" data-label="Amount"><span className="tf-num ex-amount">{money(exp.amount)}</span></span>
+
+                <span className="ex-right" data-label="GST">
+                  {num(exp.gst_amount) > 0 ? (
+                    <>
+                      <span className="tf-num ex-gst">{money(exp.gst_amount)}</span>
+                      <div>{exp.itc_eligible
+                        ? <Badge tone="green" dot={false}>ITC</Badge>
+                        : <Badge tone="grey" dot={false}>No ITC</Badge>}</div>
+                    </>
+                  ) : <span className="ex-sub">No GST</span>}
+                </span>
+
+                <span data-label="Payment" className="ex-pay">
+                  <div>{exp.payment_status === 'paid'
+                    ? <Badge tone="green" dot={false}>Paid</Badge>
+                    : <Badge tone="amber" dot={false}>Unpaid</Badge>}</div>
+                  <span className="ex-sub">{exp.payment_mode}</span>
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* Add Expense Modal */}
+      {expenses.length > 0 && (
+        <div className="ex-foot">
+          <span>Shown: {summary.visible.length} of {expenses.length} · {money(summary.spend)}</span>
+          <span>Expenses reduce profit, not GST liability — only the ITC you tag here becomes credit.</span>
+        </div>
+      )}
+
       {showForm && (
-        <div className="modal-container" style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
-          display: 'flex', alignItems: 'center',
-          justifyContent: 'center', zIndex: 100, padding: '1rem'
-        }}>
-          <div className="modal-content" style={{
-            background: 'white', borderRadius: '16px',
-            padding: '2rem', width: '100%',
-            maxWidth: '580px', maxHeight: '90vh', overflowY: 'auto'
-          }}>
-            <div style={{
-              display: 'flex', justifyContent: 'space-between',
-              alignItems: 'center', marginBottom: '1.5rem'
-            }}>
-              <h2 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>
-                Add Expense
-              </h2>
-              <button
-                onClick={() => { setShowForm(false); resetForm() }}
-                style={{
-                  background: 'none', border: 'none',
-                  fontSize: '20px', cursor: 'pointer', color: '#94a3b8'
-                }}
-              >✕</button>
+        <div className="ex-scrim" role="dialog" aria-modal="true" aria-label="Add expense">
+          <div className="ex-modal">
+            <div className="ex-modal-head">
+              <h2>Add expense</h2>
+              <button type="button" className="ex-close" onClick={() => { setShowForm(false); resetForm() }} aria-label="Close">
+                <Icon name="x" size={16} />
+              </button>
             </div>
 
-            <div className="form-grid-2" style={{
-              display: 'grid', gridTemplateColumns: '1fr 1fr',
-              gap: '1rem', marginBottom: '1rem'
-            }}>
-              <div>
-                <label style={labelStyle}>Date *</label>
-                <input style={inputStyle} type="date"
-                  value={form.expense_date}
+            <div className="ex-grid">
+              <label className="ex-field">
+                <span>Date *</span>
+                <input className="tf-input" type="date" value={form.expense_date}
                   onChange={e => setForm(p => ({ ...p, expense_date: e.target.value }))} />
-              </div>
-              <div>
-                <label style={labelStyle}>Category *</label>
-                <select
-                  style={{ ...inputStyle, cursor: 'pointer' }}
-                  value={form.category}
-                  onChange={e => setForm(p => ({ ...p, category: e.target.value }))}
-                >
-                  <option value="">Select category...</option>
-                  {EXPENSE_CATEGORIES.map(c => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
+              </label>
+              <label className="ex-field">
+                <span>Category *</span>
+                <select className="tf-input" value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))}>
+                  <option value="">Select category…</option>
+                  {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
-              </div>
+              </label>
             </div>
 
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={labelStyle}>Description</label>
-              <input style={inputStyle}
-                value={form.description}
-                onChange={e => setForm(p => ({ ...p, description: e.target.value }))}
-                placeholder="What was this expense for?" />
-            </div>
+            <label className="ex-field">
+              <span>Description</span>
+              <input className="tf-input" value={form.description} placeholder="What was this expense for?"
+                onChange={e => setForm(p => ({ ...p, description: e.target.value }))} />
+            </label>
 
-            <div className="form-grid-2" style={{
-              display: 'grid', gridTemplateColumns: '1fr 1fr',
-              gap: '1rem', marginBottom: '1rem'
-            }}>
-              <div>
-                <label style={labelStyle}>Vendor (optional)</label>
-                <select
-                  style={{ ...inputStyle, cursor: 'pointer' }}
-                  value={form.vendor_id}
-                  onChange={e => handleVendorSelect(e.target.value)}
-                >
-                  <option value="">Select vendor...</option>
-                  {vendors.map(v => (
-                    <option key={v.id} value={v.id}>{v.name}</option>
-                  ))}
+            <div className="ex-grid">
+              <label className="ex-field">
+                <span>Vendor (optional)</span>
+                <select className="tf-input" value={form.vendor_id} onChange={e => handleVendorSelect(e.target.value)}>
+                  <option value="">Select vendor…</option>
+                  {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
                 </select>
-              </div>
-              <div>
-                <label style={labelStyle}>Bill / Invoice Number</label>
-                <input style={inputStyle}
-                  value={form.bill_number}
-                  onChange={e => setForm(p => ({ ...p, bill_number: e.target.value }))}
-                  placeholder="Vendor bill number" />
-              </div>
+              </label>
+              <label className="ex-field">
+                <span>Bill / invoice number</span>
+                <input className="tf-input" value={form.bill_number} placeholder="Vendor bill number"
+                  onChange={e => setForm(p => ({ ...p, bill_number: e.target.value }))} />
+              </label>
             </div>
 
-            <div className="form-grid-2" style={{
-              display: 'grid', gridTemplateColumns: '1fr 1fr',
-              gap: '1rem', marginBottom: '1rem'
-            }}>
-              <div>
-                <label style={labelStyle}>Total Amount (₹) *</label>
-                <input style={inputStyle} type="number"
-                  value={form.amount}
-                  onChange={e => setForm(p => ({ ...p, amount: e.target.value }))}
-                  placeholder="0.00" min="0" step="0.01" />
-              </div>
-              <div>
-                <label style={labelStyle}>GST Rate (if applicable)</label>
-                <select
-                  style={{ ...inputStyle, cursor: 'pointer' }}
-                  value={form.gst_rate}
-                  onChange={e => setForm(p => ({ ...p, gst_rate: e.target.value }))}
-                >
-                  {GST_RATES.map(r => (
-                    <option key={r} value={r}>{r}% {r === 0 ? '(No GST)' : ''}</option>
-                  ))}
+            <div className="ex-grid">
+              <label className="ex-field">
+                <span>Total amount (₹) *</span>
+                <input className="tf-input" type="number" value={form.amount} placeholder="0.00" min="0" step="0.01"
+                  onChange={e => setForm(p => ({ ...p, amount: e.target.value }))} />
+              </label>
+              <label className="ex-field">
+                <span>GST rate (if applicable)</span>
+                <select className="tf-input" value={form.gst_rate} onChange={e => setForm(p => ({ ...p, gst_rate: e.target.value }))}>
+                  {GST_RATES.map(r => <option key={r} value={r}>{r}% {r === 0 ? '(No GST)' : ''}</option>)}
                 </select>
-              </div>
+              </label>
             </div>
 
-            {/* GST breakdown */}
             {gstAmount > 0 && (
-              <div style={{
-                background: '#f8fafc', border: '1px solid #e2e8f0',
-                borderRadius: '8px', padding: '10px 14px',
-                marginBottom: '1rem', fontSize: '13px'
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#64748b' }}>
-                  <span>Taxable Amount</span>
-                  <span>₹{formatINR(taxableAmount)}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#64748b', marginTop: '4px' }}>
-                  <span>GST ({form.gst_rate}%)</span>
-                  <span>₹{formatINR(gstAmount)}</span>
-                </div>
-                <div style={{
-                  display: 'flex', justifyContent: 'space-between',
-                  fontWeight: '600', color: '#1e293b',
-                  marginTop: '6px', paddingTop: '6px',
-                  borderTop: '1px solid #e2e8f0'
-                }}>
-                  <span>Total</span>
-                  <span>₹{formatINR(totalAmount)}</span>
-                </div>
+              <div className="ex-split">
+                <div><span>Taxable amount</span><span className="tf-num">{moneyPaise(taxableAmount)}</span></div>
+                <div><span>GST ({form.gst_rate}%)</span><span className="tf-num">{moneyPaise(gstAmount)}</span></div>
+                <div className="ex-split-total"><span>Total</span><span className="tf-num">{moneyPaise(totalAmount)}</span></div>
               </div>
             )}
 
-            <div className="form-grid-2" style={{
-              display: 'grid', gridTemplateColumns: '1fr 1fr',
-              gap: '1rem', marginBottom: '1rem'
-            }}>
-              <div>
-                <label style={labelStyle}>Payment Mode</label>
-                <select
-                  style={{ ...inputStyle, cursor: 'pointer' }}
-                  value={form.payment_mode}
-                  onChange={e => setForm(p => ({ ...p, payment_mode: e.target.value }))}
-                >
-                  {PAYMENT_MODES.map(m => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
+            <div className="ex-grid">
+              <label className="ex-field">
+                <span>Payment mode</span>
+                <select className="tf-input" value={form.payment_mode} onChange={e => setForm(p => ({ ...p, payment_mode: e.target.value }))}>
+                  {PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
                 </select>
-              </div>
-              <div>
-                <label style={labelStyle}>Payment Status</label>
-                <select
-                  style={{ ...inputStyle, cursor: 'pointer' }}
-                  value={form.payment_status}
-                  onChange={e => setForm(p => ({ ...p, payment_status: e.target.value }))}
-                >
+              </label>
+              <label className="ex-field">
+                <span>Payment status</span>
+                <select className="tf-input" value={form.payment_status} onChange={e => setForm(p => ({ ...p, payment_status: e.target.value }))}>
                   <option value="paid">Paid</option>
                   <option value="unpaid">Unpaid</option>
                 </select>
-              </div>
+              </label>
             </div>
 
             {gstAmount > 0 && (
-              <label style={{
-                display: 'flex', alignItems: 'center',
-                gap: '8px', cursor: 'pointer', marginBottom: '1rem'
-              }}>
-                <input type="checkbox"
-                  checked={form.itc_eligible}
+              <label className="ex-check">
+                <input type="checkbox" checked={form.itc_eligible}
                   onChange={e => setForm(p => ({ ...p, itc_eligible: e.target.checked }))} />
-                <span style={{ fontSize: '13px', color: '#374151' }}>
-                  ITC eligible — GST of ₹{formatINR(gstAmount)} can be claimed as input tax credit
-                </span>
+                <span>ITC eligible — {moneyPaise(gstAmount)} can be claimed as input tax credit</span>
               </label>
             )}
 
-            <div style={{ marginBottom: '1.5rem' }}>
-              <label style={labelStyle}>Notes</label>
-              <textarea
-                style={{ ...inputStyle, height: '60px', resize: 'vertical' as const }}
-                value={form.notes}
-                onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
-                placeholder="Any additional notes..." />
-            </div>
+            <label className="ex-field">
+              <span>Notes</span>
+              <textarea className="tf-input ex-textarea" value={form.notes} placeholder="Any additional notes…"
+                onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} />
+            </label>
 
-            {error && (
-              <div style={{
-                background: '#fef2f2', border: '1px solid #fecaca',
-                color: '#dc2626', padding: '10px 12px',
-                borderRadius: '8px', fontSize: '13px', marginBottom: '1rem'
-              }}>{error}</div>
-            )}
+            {error && <div className="ex-alert ex-alert-red"><Icon name="alert" size={14} />{error}</div>}
 
-            <div className="btn-group" style={{ display: 'flex', gap: '12px' }}>
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                style={{
-                  flex: 1, padding: '11px',
-                  background: saving ? '#93c5fd' : '#2563eb',
-                  color: 'white', border: 'none',
-                  borderRadius: '8px', fontSize: '14px',
-                  fontWeight: '600',
-                  cursor: saving ? 'not-allowed' : 'pointer'
-                }}
-              >
-                {saving ? 'Saving...' : 'Save Expense'}
-              </button>
-              <button
-                onClick={() => { setShowForm(false); resetForm() }}
-                style={{
-                  padding: '11px 20px', background: 'white',
-                  color: '#374151', border: '1px solid #e2e8f0',
-                  borderRadius: '8px', fontSize: '14px', cursor: 'pointer'
-                }}
-              >Cancel</button>
+            <div className="ex-actions">
+              <Button variant="ghost" onClick={() => { setShowForm(false); resetForm() }}>Cancel</Button>
+              <Button onClick={handleSave} disabled={saving} icon={saving ? undefined : 'check'}>
+                {saving ? 'Saving…' : 'Save expense'}
+              </Button>
             </div>
           </div>
         </div>
       )}
+
+      <style>{`
+        .ex-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 1rem; }
+        .ex-alert { display: flex; align-items: center; gap: 8px; font-size: 12.5px; border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+        .ex-alert-red { background: var(--red-soft); color: var(--red); border-left: 3px solid var(--red); }
+
+        .ex-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+        .ex-select { flex: 0 1 260px; }
+        .ex-reset { display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 12px; color: var(--brand);
+          background: none; border: none; cursor: pointer; padding: 4px 8px; border-radius: 7px; }
+        .ex-reset:hover { background: var(--brand-soft); }
+
+        .ex-row { display: grid; grid-template-columns: 92px minmax(0, 1.05fr) minmax(0, 1.5fr) 110px 112px 108px;
+          gap: 12px; align-items: center; padding: 11px 14px; font-size: 12.5px; }
+        .ex-head { background: var(--surface-2); border-bottom: 1px solid var(--line-soft); font-size: 11px; font-weight: 650;
+          color: var(--faint); text-transform: uppercase; letter-spacing: 0.05em; }
+        .ex-right { text-align: right; }
+        .ex-date { color: var(--ink-2); font-weight: 600; }
+        .ex-desc { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+        .ex-desc-main { color: var(--ink); overflow-wrap: anywhere; }
+        .ex-sub { font-size: 11px; color: var(--faint); }
+        .ex-amount { font-weight: 650; color: var(--ink); }
+        .ex-gst { display: block; font-weight: 650; color: var(--violet); margin-bottom: 3px; }
+        .ex-pay { display: flex; flex-direction: column; gap: 3px; }
+
+        .ex-foot { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 11.5px;
+          color: var(--faint); margin-top: 10px; }
+
+        .ex-scrim { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); display: flex;
+          align-items: center; justify-content: center; padding: 1rem; z-index: 100; }
+        .ex-modal { background: var(--surface); border-radius: var(--radius-lg); padding: 1.4rem 1.5rem;
+          width: 100%; max-width: 600px; max-height: 90vh; overflow-y: auto; box-shadow: var(--shadow-lg);
+          display: flex; flex-direction: column; gap: 12px; }
+        .ex-modal-head { display: flex; align-items: center; justify-content: space-between; }
+        .ex-modal-head h2 { font-size: 17px; font-weight: 650; color: var(--ink); }
+        .ex-close { background: none; border: none; color: var(--faint); cursor: pointer; padding: 4px; border-radius: 6px; }
+        .ex-close:hover { background: var(--slate-soft); color: var(--ink-2); }
+        .ex-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .ex-field { display: flex; flex-direction: column; gap: 4px; }
+        .ex-field > span { font-size: 12px; font-weight: 550; color: var(--ink-2); }
+        .ex-textarea { min-height: 60px; resize: vertical; }
+        .ex-split { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm);
+          padding: 10px 12px; font-size: 12.5px; color: var(--muted); display: flex; flex-direction: column; gap: 5px; }
+        .ex-split div { display: flex; justify-content: space-between; gap: 10px; }
+        .ex-split-total { color: var(--ink); font-weight: 650; border-top: 1px solid var(--line); padding-top: 6px; }
+        .ex-check { display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; color: var(--ink-2); cursor: pointer; }
+        .ex-check input { accent-color: var(--brand); margin-top: 2px; }
+        .ex-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
+
+        @media (max-width: 1100px) { .ex-stats { grid-template-columns: 1fr 1fr; } }
+        @media (max-width: 768px) {
+          .ex-row { grid-template-columns: 1fr; gap: 6px; }
+          .ex-head { display: none; }
+          .ex-right { text-align: left; }
+          .ex-stats { grid-template-columns: 1fr 1fr; }
+          .ex-grid { grid-template-columns: 1fr; }
+          .ex-modal { padding: 1.1rem 1.15rem; }
+          .ex-scrim { align-items: flex-end; padding: 0; }
+          .ex-modal { max-width: none; border-radius: 16px 16px 0 0; max-height: 92vh; }
+          .ex-actions { flex-direction: column-reverse; }
+        }
+      `}</style>
     </div>
   )
 }
