@@ -122,7 +122,7 @@ The app produces NIC v1.10 JSON (`src/lib/einvoice.ts`) for the user to upload a
 **Traps:** a new page not in `nav.ts` is invisible; a `?q=` column list that diverges from what that page actually filters on produces a hit that lands on an empty list; icon keys must exist in `Icons.tsx` or the item renders the fallback glyph.
 
 ### ADR-020 — One Styling Kit — holds (new)
-New pages use `:root` tokens + `.tf-*` utilities (`globals.css`) and the primitives in `src/components/ui.tsx` / `Icons.tsx`. Counted honestly (R2-12): **16** pages are fully on the kit, **4** import only `SearchInput` and still hand-code their header/buttons/badges, **15** in the shell plus `login`/`signup`/`setup` are pre-kit. `4-Design-System.md` §16 is the ledger and the migration order; the earlier "~16 pages on the kit" claim counted a `SearchInput` import as a migration.
+New pages use `:root` tokens + `.tf-*` utilities (`globals.css`) and the primitives in `src/components/ui.tsx` / `Icons.tsx`. Counted honestly (R2-12): **18** pages are fully on the kit, **4** import only `SearchInput` and still hand-code their header/buttons/badges, **13** in the shell plus `login`/`signup`/`setup` are pre-kit. `4-Design-System.md` §16 is the ledger and the migration order; the pre-R2-12 "~16 pages on the kit" claim counted a `SearchInput` import as a migration.
 
 ### ADR-021 — Documents Are Signed Rows — holds (new)
 Credit notes carry a negative taxable value and negative tax; they are summed, never `Math.abs()`-ed. This single decision is why a credit note dated in a month correctly reduces that month in GSTR-1, the registers, targets and the annual workpaper at once.
@@ -244,6 +244,12 @@ E-invoice threshold, e-way bill requirement, filing profile (monthly/QRMP) and T
 **Method:** the claim "0 hex" is a `grep -o '#[0-9a-fA-F]\{3,8\}'` per file; verification is that count plus the same page measured at 344px (block rows, hidden header, `[data-label]::before` labels, two-column stats, `scrollWidth === clientWidth`) and at 1440 inside a same-origin iframe. Nothing was written to the database: the over-balance payment and the invalid VPA were exercised through their validators, and the reminder modal was left by Cancel after changing the tone and template. Restoring from a context summary can be wrong — the summary described a `fetchOutstanding` helper and a `src/lib/utils` money import that do not exist (`formatINR` comes from `@/lib/gst-engine`), so the file was read in full before rewriting.  
 **Commits:** `e5cc103`.
 
+### Session 23 — 2026-10-07 (R2-12, batch 4 — money tier closed)
+**Built:** `/accounting` and `/offline` on the kit (`f2b0d85`), which closes the money tier. Ledger: 18 pages on the kit, 4 partial, 13 pre-kit (+3 auth). The statements page keeps `computeProfitLoss` / `computeBalanceSheet` exactly as they are and puts the derived numbers in four `StatCard`s (revenue, net profit with its margin, total assets with its split, and the size of the unmapped-money plug), a `Segmented` for statement and period, and the statement itself as token-driven lines rather than a styled `<div>` tree; the opening-balances fields moved out of a `numField()` helper into a data array so the four fields share one markup path. `/offline` turned its status strip into four cards (queued here, value waiting, failed, connection) and its invoice cards into the shared table recipe, with the sync button in the header instead of a coloured bar.  
+**Resolved:** three things the old markup was hiding. The balance sheet printed an unconditional green "✓ Assets = Liab. + Funds" — the equality holds *by construction*, because `balancingReserve` is computed as `ownersFunds − openingCapital − retainedEarnings`, so the check reported nothing; it now states the plug amount and turns amber while any unmapped movement sits in it. `/offline`'s "Syncing…" button asked for `<Icon name="sync">`, and `Icons.tsx` ends with `{P[name] ?? P.dashboard}` — an unknown name renders the **dashboard** grid rather than failing, so a missing icon is invisible unless you go looking for it. And discarding a queued invoice deleted it with no confirmation, which is the loss of an unsynced financial document; it now asks, with the temporary number in the question. `react-hooks/set-state-in-effect` also rejected two effects that set state synchronously: the `?queued=1` flag became a derived value instead of state-plus-effect, and `navigator.onLine` moved into the `useState` initialiser (SSR-guarded) rather than being set inside the listener effect.  
+**Method:** styling verification is a hex count plus pixels, but these pages needed numbers too — the balance sheet was read at the real books and the two sides checked by hand (assets ₹14,20,452 − liabilities ₹5,34,111 = owner's funds ₹8,86,341, with the ₹27,480 plug matching the new card). The offline queue row layout could not be verified against real data because nothing was queued, so one synthetic entry was written to `taxflow:outbox:<orgId>`, measured at 355px and at 1440, and the key restored to its exact prior value (`[]`) afterwards; the discard guard was tested on that synthetic entry with `window.confirm` stubbed to `false` first, then to `true`. No network write was possible at any point: "Sync now" was never clicked, and it is disabled whenever the queue is empty.  
+**Commits:** `f2b0d85`.
+
 ---
 
 ## Files Created (Complete List)
@@ -364,6 +370,8 @@ Recorded so the next session does not rediscover them.
 13. **A `<button>` with no `type` inside a form submits it** — the kit's `Segmented` did exactly that in the product modal, so switching goods→service saved the product. Any control that can live inside a `<form>` renders `type="button"`.
 14. **`evaluate_script` can read the DOM a render behind a click** — a status cell read right after `.click()` showed the old value twice during R2-12. Re-query in a later call, or read the derived stats as well as the row.
 15. **A styling migration is a code review** — rewriting `/payments` surfaced a `.limit(20)` history window and a `getMonth()`-only "this month" card that counted the same month every year. Read the logic while replacing the chrome; fix what you find instead of preserving it.
+16. **`<Icon>` swallows an unknown name** — `Icons.tsx` ends with `{P[name] ?? P.dashboard}`, so a typo or a name that was never added renders the *dashboard* grid, not an error and not a blank box. `/offline`'s "Syncing…" button was quietly doing this. Grep the name against the map when adding an icon.
+17. **`Intl` currency output already carries the symbol** — `new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' })` returns `₹1,20,000`, so a hand-written `₹` prefix in the same line renders `₹₹1,20,000`. Prefix only the minus sign.
 
 ---
 
@@ -451,7 +459,7 @@ node --version
 
 ## Next Steps (Priority Order)
 
-1. **R2-12 — Design-system migration pass** (next up) — 15 pages in the shell plus the 3 auth pages still carry inline styles; §16 of `4-Design-System.md` fixes the order, and the money tier now means `accounting` and `offline`.
+1. **R2-12 — Design-system migration pass** (next up) — 13 pages in the shell plus the 3 auth pages still carry inline styles; §16 of `4-Design-System.md` fixes the order, and the money tier is finished, so the next one is GST (`gst` hub, `gstr1`, `gstr3b`, `reconciliation`, `einvoice`).
 2. **GSTR-4 (Composition)** workpaper for the smaller registrants.
 3. **Phase 14 — Security**: generated Supabase types, tightened dashboard RLS policies, audit log, multi-account isolation test. Do this before onboarding a real customer.
 4. **Real GSP integration** once a provider is chosen (ADR-016) — plus email invoices and multi-user, which need the pending decisions above.
