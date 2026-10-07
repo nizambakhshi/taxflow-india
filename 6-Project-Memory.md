@@ -122,7 +122,7 @@ The app produces NIC v1.10 JSON (`src/lib/einvoice.ts`) for the user to upload a
 **Traps:** a new page not in `nav.ts` is invisible; a `?q=` column list that diverges from what that page actually filters on produces a hit that lands on an empty list; icon keys must exist in `Icons.tsx` or the item renders the fallback glyph.
 
 ### ADR-020 — One Styling Kit — holds (new)
-New pages use `:root` tokens + `.tf-*` utilities (`globals.css`) and the primitives in `src/components/ui.tsx` / `Icons.tsx`. Roughly 14 pages are on the kit; ~20 pre-kit pages keep inline styles and migrate as they are touched (backlog item R2-12). Migration status and the full catalog are in `4-Design-System.md`.
+New pages use `:root` tokens + `.tf-*` utilities (`globals.css`) and the primitives in `src/components/ui.tsx` / `Icons.tsx`. Roughly 15 pages are on the kit; ~20 pre-kit pages keep inline styles and migrate as they are touched (backlog item R2-12). Migration status and the full catalog are in `4-Design-System.md`.
 
 ### ADR-021 — Documents Are Signed Rows — holds (new)
 Credit notes carry a negative taxable value and negative tax; they are summed, never `Math.abs()`-ed. This single decision is why a credit note dated in a month correctly reduces that month in GSTR-1, the registers, targets and the annual workpaper at once.
@@ -217,11 +217,17 @@ E-invoice threshold, e-way bill requirement, filing profile (monthly/QRMP) and T
 **Built:** this file, plus `README.md` (replaced the create-next-app boilerplate), `1-PRD.md` (v2.0 — 8 USPs, modules 3.16–3.29, refreshed out-of-scope), `2-System-Architecture.md` (v2.0 — current stack, folder tree, data model, §12 client-side state layer, §13 offline, §14 feature map, §15 verification), `3-Development-Rules.md` (v2.0 — Rules 21–28, rewritten checklists), `4-Design-System.md` (v2.0 — full token/utility/component/icon/table/print catalog and migration status) and `5-Project-Tasks.md` (Version 1 and both rounds recorded, backlog rewritten around R2-10).  
 **Method:** every statement was re-checked against the code — routes, `package.json`, `nav.ts`, `globals.css`, storage keys, commit hashes — not from recollection.
 
+### Session 19 — 2026-10-07 (R2-10)
+**Built:** bank statement matching (`/bank` + `bank-statement.ts`, `nav.ts`). The parser takes pasted or uploaded CSV/TXT from any Indian bank — delimiter chosen by modal cell width, header roles matched on wording so column order does not matter, Indian dates, `₹1,20,000.50`, `Rs. 4,500/-`, trailing dashes and parentheses, quoted narrations with embedded commas (spill merged back into the narration column), UTR de-duplication against a content-derived line id. Direction is resolved in order: split Dr./Cr. columns → signed cell → Dr/Cr indicator column → running-balance delta → narration tokens → credit default. The scorer weights amount 40 against balance due or document total, document number 30, party 18, date 12, with a recorded-payment reference worth 45 and a cap of three ranked candidates per line; tiers are exact ≥ 80, likely ≥ 58, possible ≥ 40. Unexplained lines get advisory text (interest, GST challan, salary, EMI, bank charges, expenses) instead of a blank row. Confirming writes only to `taxflow:bank:<orgId>` — the ledger is still written on the Payments page, matching the GSTR-9 workpaper stance.  
+**Resolved:** a positive figure in a lone Amount column defaulting to debit whenever a balance column existed (now `readMoney`'s ordered resolution); comma-spill merging shifting every column after the narration (`splice` must remove the extra cells, not replace one); `Rs. 4,500/-` parsing to NaN because the Indian filler dash survived cleaning; the "already in your books" path being unreachable — amount + party + date cap at 70, below the 80 gate, so the gate is now the three-signal agreement plus a 45-day window; duplicated "amount" wording in the reason strings.  
+**Method:** 69 assertions in a throwaway strip-types suite, then the real books (`/payments`: INV-2026-27-0005 ₹14,00,000, INV-2026-27-0001 ₹10,000 due, bill 1244432 Mohd Faizan ₹4,42,500, two September payments) driven through the browser at 341px and inside a 1440×900 same-origin iframe; the exported CSV was captured from `URL.createObjectURL` and read back rather than trusted. Verification rows were removed through the app's own Remove action.  
+**Commits:** `7560987`.
+
 ---
 
 ## Files Created (Complete List)
 
-### Routes — 36 pages
+### Routes — 37 pages
 ```
 src/app/
 ├── layout.tsx, page.tsx (→ /login), manifest.ts, globals.css, favicon.ico
@@ -232,7 +238,7 @@ src/app/
     ├── dashboard/                   pos/            offline/
     ├── invoices/{page,new,[id]}/    quotations/     customers/  vendors/  products/
     ├── bills/  expenses/  credit-notes/  debit-notes/
-    ├── payments/page  payments/links/
+    ├── payments/page  payments/links/  bank/
     ├── inventory/page  inventory/reorder/
     ├── ledger/  accounting/
     ├── gst/{page,gstr1,gstr3b,gstr9,reconciliation,einvoice,calendar}/
@@ -242,13 +248,14 @@ src/app/
 public/sw.js  public/offline.html
 ```
 
-### Libraries — 26 modules in `src/lib/` + `src/lib/gsp/`
+### Libraries — 27 modules in `src/lib/` + `src/lib/gsp/`
 ```
 supabase.ts  constants.ts  gst-engine.ts  format.ts  words.ts  reports.ts
 create-invoice.ts  create-bill.ts            ← the only document write paths
 einvoice.ts  gstr2b.ts  gstr9.ts  compliance.ts  registers.ts  payments.ts
 ledger.ts  party-ledger.ts  targets.ts  reorder.ts  barcode.ts  outbox.ts
 bill-text.ts  ocr.ts  ask.ts  commands.ts  nav.ts  deep-link-search.ts
+bank-statement.ts                             ← statement parser + match scorer
 gsp/{index.ts, types.ts, mock.ts}            ← provider adapter, mock transport
 ```
 (`gst-engine.ts` also still exports the legacy `numberToWords()` that the classic
@@ -309,6 +316,7 @@ anything here is either reconstructible from documents or already exported.
 | `taxflow:reorder:` | policy overrides and PO history | `/inventory/reorder` |
 | `taxflow:invoice-template:` | skin choice | `/settings` |
 | `taxflow:gstr9:` | declared 3B figures and Table 8/9 input | `/gst/gstr9` |
+| `taxflow:bank:` | imported statements and confirm/set-aside decisions | `/bank` |
 | `taxflow:palette-recents:` | recent ⌘K hits | `CommandPalette.tsx` |
 
 ---

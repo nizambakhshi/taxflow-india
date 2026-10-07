@@ -387,13 +387,13 @@ Features ranked against Tally, Zoho, Vyapar, myBillBook, Marg, Busy, Refrens, Cl
 - ✅ **R2-8 ⌘K command palette** (`f3b3d49`) — `commands.ts`, `CommandPalette.tsx`, `nav.ts`, `deep-link-search.ts`; `?q=` search added to bills, credit notes, debit notes, quotations
 - ✅ **Hotfix pass** (`0aba36f`) — register line-item fetch 400, mobile toolbar overflow, 36 MB invoice PDFs
 - ✅ **R2-9 GSTR-9 / 9C annual workpaper** (`95e1ee8`) — `/gst/gstr9` + `gstr9.ts`; outward and ITC tables, 180-day credit watch, 9C books-vs-3B reconciliation, CSV export
+- ✅ **R2-10 Bank statement import + auto-match** (`7560987`) — `/bank` + `bank-statement.ts`; delimiter/header/date/amount detection for pasted or uploaded statements, direction resolved from split Dr./Cr. columns, cell sign, Dr/Cr indicator or running-balance delta, UTR de-duplication, weighted scoring (amount 40 · document number 30 · party 18 · date 12, recorded-payment reference 45) with exact/likely/possible tiers, confirm / set aside / undo, advisory text for unexplained lines, CSV export, storage in `taxflow:bank:<orgId>`
 
 ---
 
 ## ROUND 2 — Backlog ⏳
 
-- ⏳ **R2-10 Bank statement import + auto-match** (next): parse pasted/uploaded statements (delimiter and header detection, Indian dates, `₹1,200.00`, trailing `Dr`/`Cr`, split Dr./Cr. columns, balance column, UTR/ref de-duplication) and match receipts to invoices and payments by amount, date window and narration/party tokens with confidence tiers; review screen + CSV export; statement and match decisions in `taxflow:bank:<orgId>`
-- ⏳ **R2-11 TDS / 194Q compliance** — the calendar already reserves the events
+- ⏳ **R2-11 TDS / 194Q compliance** (next) — the calendar already reserves the events
 - ⏳ **R2-12 Design-system migration pass** — ~20 pages still carry pre-kit inline styles
 - ⏳ GSTR-4 (Composition) workpaper
 - ⏳ Real GSP submission for e-invoice / e-way bill (blocked: no free government API; needs a contracted provider)
@@ -429,7 +429,7 @@ Features ranked against Tally, Zoho, Vyapar, myBillBook, Marg, Busy, Refrens, Cl
 
 Shipped: ✅ e-invoice IRN payload builder · ✅ e-way bill payload + register · ✅ GSTR-9/9C workpaper · ✅ WhatsApp reminders · ✅ payment links · ✅ OCR bill scanning · ✅ installable PWA (a web-first "mobile app")
 
-Remaining: ⏳ GSTR-4 (Composition) · ⏳ bank statement import (R2-10) · ⏳ native mobile app · ⏳ accountant portal · ⏳ API access · ⏳ payroll · ⏳ TDS/TCS returns
+Remaining: ⏳ TDS / 194Q (R2-11) · ⏳ GSTR-4 (Composition) · ⏳ design-system migration pass (R2-12) · ⏳ native mobile app · ⏳ accountant portal · ⏳ API access · ⏳ payroll · ⏳ TDS/TCS returns
 
 ---
 

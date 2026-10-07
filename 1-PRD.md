@@ -44,6 +44,7 @@ Indian businesses struggle with:
 6. Free to start — no credit card needed
 7. Simple enough for a non-accountant to use, deep enough that a CA does not open Tally to check a number
 8. The AI features run in the browser: a supplier's bill is never uploaded, and every answer traces back to the rows it came from
+9. Bank reconciliation without a bank feed: any statement layout is read in the browser and each line is pointed at the document it matches, with the score explained — software that charges for this needs a paid feed
 
 ---
 
@@ -82,7 +83,7 @@ Round 1, closed:
 - Camera barcode scan + counter sale POS (`/pos`)
 - Bill OCR scanning and natural-language reporting (`/ai/scan-bill`, `/ai/ask`)
 
-Round 2, R2-1 … R2-9:
+Round 2, R2-1 … R2-10:
 - Design system v1 (tokens, UI kit, app shell)
 - Party ledger accounts and statements of account (`/ledger`)
 - Compliance calendar with late-fee estimation and `.ics` export (`/gst/calendar`)
@@ -92,10 +93,10 @@ Round 2, R2-1 … R2-9:
 - Reorder levels and supplier-grouped purchase suggestions (`/inventory/reorder`)
 - ⌘K command palette over pages, actions and live records
 - GSTR-9 / 9C annual workpaper (`/gst/gstr9`)
+- Bank statement import with scored matching to invoices, bills and recorded payments (`/bank`)
 
 Still to come:
-- Bank statement import + automatic matching of receipts to invoices (**R2-10, next**)
-- TDS / 194Q compliance (the calendar already reserves the events)
+- TDS / 194Q compliance, the purchase-side withholding the calendar already reserves (**R2-11, next**)
 - GSTR-4 (Composition scheme) return workpaper
 - Real GSP submission for e-invoice / e-way bill (blocked on paid GSP provider — see `6-Project-Memory.md`)
 - Email invoices directly from the app
@@ -361,6 +362,13 @@ Still to come:
 - 9C books-vs-filed-3B reconciliation using the owner's declared monthly 3B figures, Rule 42/43 reversals and Table 8/9 input
 - Portal-only data is shown as a labelled gap rather than invented
 - CSV export of every table
+
+### 3.30 Bank Statement Matching
+- Paste or upload a statement from any Indian bank — delimiter, header wording, date style and amount style are detected, not configured
+- Direction read from split Dr./Cr. columns, a signed cell, a Dr/Cr indicator, or the running-balance delta
+- Each line scored against open invoices, open bills and payments already recorded, with the reasons shown ("exact amount of ₹4,42,500.00 · carries the document number 1244432 · narration names Mohd Faizan")
+- Exact / likely / possible tiers; unexplained lines get a plain guess at what they are (interest, GST challan, salary, EMI, bank charge) instead of a blank row
+- Confirm, set aside and undo live in the browser; the ledger is still written on the Payments page, and the matched sheet exports to CSV
 
 ---
 
