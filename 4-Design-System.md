@@ -183,12 +183,13 @@ Mobile gotcha: the footer hint needs the two-class selector `.tf-cmd-layer .tf-c
 }
 ```
 
-Two traps that cost real debugging time:
+Three traps that cost real debugging time:
 
 1. **Specificity.** The desktop rule `.mt-cols > .is-right { white-space: nowrap }` outranks a mobile rule written as `.mt-cols > span { white-space: normal }`. Match or exceed the desktop selector in the override (`.mt-cols > span.is-right`).
 2. **Rupees do not wrap.** `₹13,04,500` has no break opportunity, so two amount columns at `1fr 1fr` overflow a phone whatever `white-space` says. Put **one figure per line** on mobile and verify with `scrollWidth − clientWidth === 0` on every `.table-scroll`.
+3. **A totals row has no column to name.** If the foot cells reuse the header's `data-label`, the mobile card reads `Invoice no. — Total · 5 invoices`. Give the lead foot cell an empty `data-label` (or the `.is-lead` opt-out above) and hide the blank padding cells with `display: none`, or they stack up as empty lines.
 
-CSV export uses `download()` in `party-ledger.ts`, which already prefixes a UTF-8 BOM — a library that prefixes one too produces a double BOM. Ragged rows need `csvFromRows` (quoted fields, `{{` unescaping) because a plain `join(',')` cannot represent a JSON payload column.
+CSV export uses `download()` in `party-ledger.ts`, which already prefixes a UTF-8 BOM — a library that prefixes one too produces a double BOM. Ragged rows need `csvFromRows` (quoted fields, `{{` unescaping) because a plain `join(',')` cannot represent a JSON payload column. When a figure has more than two decimals because you split it (expense GST across CGST and SGST), write it through the same formatter the screen uses — `Math.round(v * 100) / 100` disagrees with `Intl` on an exact half-paisa and the file then contradicts the page.
 
 ---
 
@@ -252,12 +253,14 @@ A document is a document: no card shadows, no rounded corners, print-safe colour
 
 Counted from the code, not from intention: a page is only "on the kit" when its header, buttons, badges and empty state are the primitives — importing `SearchInput` alone does not count.
 
-**Fully on the kit — 18 pages.** `dashboard`, `invoices`, `expenses`, `vendors`, `customers`, `products`, `payments`, `payments/links`, `ledger`, `accounting`, `offline`, `gst/calendar`, `gst/gstr9`, `inventory/reorder`, `reports/registers`, `reports/targets`, `bank`, `tds`. These set colour through `:root` tokens only.
+**Fully on the kit — 21 pages.** `dashboard`, `invoices`, `expenses`, `vendors`, `customers`, `products`, `payments`, `payments/links`, `ledger`, `accounting`, `offline`, `gst` hub, `gst/gstr1`, `gst/gstr3b`, `gst/calendar`, `gst/gstr9`, `inventory/reorder`, `reports/registers`, `reports/targets`, `bank`, `tds`.
+
+"On the kit" means the chrome — header, buttons, badges, empty states, tables. It does not mean literally zero hex: a hex audit still finds 2–9 strays on most of these pages (`ledger` 7, `reports/targets` 9, `reports/registers` 6, `gst/calendar` 4, `gst/gstr9` 3, `inventory/reorder` 3, `dashboard` 2). They are all the same kind of thing — a row-hover tint, the skeleton shimmer gradient, a border tint next to a `--*-soft` fill, and the document-type colour map in `ledger` — i.e. one-off shades with no token equivalent, not the old palette. The pre-kit pages below use hex for *everything* (`gst/einvoice` 70, `gst/reconciliation` 65, `invoices/new` 58), which is the difference that matters.
 
 **Partly on the kit — 4 pages.** `bills`, `credit-notes`, `debit-notes`, `quotations`. They use `SearchInput` and the shared table classes, but still hand-code the page header, buttons, badges and modal chrome with Tailwind-slate hex.
 
-**Pre-kit — 13 pages inside the shell.** `invoices/new`, `invoices/[id]`, `pos`, `inventory`, `reports`, `settings`, `gst` hub, `gstr1`, `gstr3b`, `reconciliation`, `einvoice`, `ai/ask`, `ai/scan-bill`. Three more outside it: `login`, `signup`, `setup`.
+**Pre-kit — 10 pages inside the shell.** `pos`, `inventory`, `reports`, `settings`, `gst/reconciliation`, `gst/einvoice`, `ai/ask`, `ai/scan-bill`, plus the four partly-migrated document lists. Three more outside it: `login`, `signup`, `setup`. `invoices/new` and `invoices/[id]` are pre-kit too but sit at the end of the order for the reason below.
 
-Migration order for the rest of R2-12: ~~masters~~ (done — one recipe, three pages) → ~~money~~ (`payments`, `payments/links`, `accounting`, `offline` — the whole tier) → GST (`gst` hub, `gstr1`, `gstr3b`, `reconciliation`, `einvoice`) → counter and AI (`pos`, `inventory`, `ai/*`) → reports and settings → auth pages → documents last (`invoices/new`, `invoices/[id]`), because a printed document is the one surface where a styling change is a change to a legal artefact.
+Migration order for the rest of R2-12: ~~masters~~ (done — one recipe, three pages) → ~~money~~ (`payments`, `payments/links`, `accounting`, `offline` — the whole tier) → ~~GST returns~~ (`gst` hub, `gstr1`, `gstr3b`) → the rest of GST (`reconciliation`, `einvoice`) → counter and AI (`pos`, `inventory`, `ai/*`) → reports and settings → auth pages → documents last (`invoices/new`, `invoices/[id]`), because a printed document is the one surface where a styling change is a change to a legal artefact.
 
 **Migrate a page when you touch it**; do not introduce new hex literals into a page that is still on the old markup — use tokens even inside it.
