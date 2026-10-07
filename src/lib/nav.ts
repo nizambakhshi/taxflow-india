@@ -65,6 +65,7 @@ export const NAV_ITEMS: NavSection[] = [
       { label: 'E-Invoicing', href: '/gst/einvoice', icon: 'zap' },
       { label: 'Annual Return GSTR-9', href: '/gst/gstr9', icon: 'file-check' },
       { label: 'Compliance Calendar', href: '/gst/calendar', icon: 'calendar' },
+      { label: 'TDS & 194Q Workpaper', href: '/tds', icon: 'percent' },
     ]
   },
   {

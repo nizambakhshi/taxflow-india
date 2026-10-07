@@ -136,6 +136,8 @@ const P: Record<string, React.ReactNode> = {
     <line x1="12" y1="5" x2="12" y2="18" />
     <polyline points="18 12 12 18 6 12" />
   </>),
+  'chevron-down': <polyline points="6 9 12 15 18 9" />,
+  'chevron-right': <polyline points="9 6 15 12 9 18" />,
   trend: (<>
     <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
     <polyline points="16 7 22 7 22 13" />
