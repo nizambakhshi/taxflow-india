@@ -122,7 +122,7 @@ The app produces NIC v1.10 JSON (`src/lib/einvoice.ts`) for the user to upload a
 **Traps:** a new page not in `nav.ts` is invisible; a `?q=` column list that diverges from what that page actually filters on produces a hit that lands on an empty list; icon keys must exist in `Icons.tsx` or the item renders the fallback glyph.
 
 ### ADR-020 — One Styling Kit — holds (new)
-New pages use `:root` tokens + `.tf-*` utilities (`globals.css`) and the primitives in `src/components/ui.tsx` / `Icons.tsx`. Counted honestly (R2-12): **14** pages are fully on the kit, **4** import only `SearchInput` and still hand-code their header/buttons/badges, **17** in the shell plus `login`/`signup`/`setup` are pre-kit. `4-Design-System.md` §16 is the ledger and the migration order; the earlier "~16 pages on the kit" claim counted a `SearchInput` import as a migration.
+New pages use `:root` tokens + `.tf-*` utilities (`globals.css`) and the primitives in `src/components/ui.tsx` / `Icons.tsx`. Counted honestly (R2-12): **16** pages are fully on the kit, **4** import only `SearchInput` and still hand-code their header/buttons/badges, **15** in the shell plus `login`/`signup`/`setup` are pre-kit. `4-Design-System.md` §16 is the ledger and the migration order; the earlier "~16 pages on the kit" claim counted a `SearchInput` import as a migration.
 
 ### ADR-021 — Documents Are Signed Rows — holds (new)
 Credit notes carry a negative taxable value and negative tax; they are summed, never `Math.abs()`-ed. This single decision is why a credit note dated in a month correctly reduces that month in GSTR-1, the registers, targets and the annual workpaper at once.
@@ -237,6 +237,12 @@ E-invoice threshold, e-way bill requirement, filing profile (monthly/QRMP) and T
 **Resolved:** `Segmented` rendered bare `<button>`s, so the goods/service switch inside the product `<form>` submitted the product instead of switching type (console: "Form submission canceled because the form is not connected") — the primitive now emits `type="button"`; the vendors empty state read "No no identifier vendors" once the title was built from the filter label, so each filter carries its own `noun`; a product with an alert level of 0 rendered "50 of 0 alert", now "50 in stock".  
 **Method:** every page checked at the ~341–456px panel and inside a same-origin 1440×900 iframe (`getComputedStyle` for grids, `scrollWidth` for overflow), with `window.confirm` stubbed in-page so deactivation could be tested and then reverted — twice the accidental deactivation of SHREE GANESH TRADERS was undone before the tree was confirmed clean. Writes were tested through paths that cannot persist (invalid GSTIN rejected before insert, modal edits closed with Cancel), and row counts re-read afterwards. `grep -o '#[0-9a-fA-F]\{3,8\}'` per file is the "0 hex" claim; `rgba(15,23,42,0.45)` on the scrim is the one literal the kit still allows, matching `/bank` and `/expenses`.  
 **Commits:** `f0e7d58`, `498dbbb`, `50b190f`.
+
+### Session 22 — 2026-10-07 (R2-12, batch 3 — money)
+**Built:** `/payments` and `/payments/links` on the kit (`e5cc103`). A rewrite rather than a recolour: `PageHeader`, four `StatCard`s, `Badge`, `Button`, `Segmented`, `EmptyState` and the shared table recipe replace the hand-coded chrome, and both files now carry zero hex literals. Receivables and payables were two near-identical tables and are now one table fed by two typed mappers (`asReceivable` / `asPayable`) into a shared `Outstanding` shape, so a third kind of outstanding document costs a mapper instead of a second table. The links page runs its reminder through the kit `Segmented` over `DEFAULT_REMINDER_TEMPLATES`, with `reminderBody()` extracted so switching tone and opening WhatsApp share one code path. Ledger after the batch: 16 pages on the kit, 4 partial, 15 pre-kit (+3 auth).  
+**Resolved:** two latent data bugs that only existed because nobody read the code during a styling pass — the recorded-payments window was `.limit(20)` (any org with 21 receipts silently lost one from the summary and the list), and the "Payments This Month" card compared `getMonth()` alone, so it counted the same month of every year (`isThisMonth` now checks the year too). Both were fixed rather than migrated. Also: `alert()` on an invalid VPA became an inline notice plus opening the settings panel, and save now validates the VPA before persisting instead of failing later at link build; the history tab gained a "Settles" column that resolves `invoice_id` / `bill_id` to a document number, so a fully-paid invoice that left the outstanding lists still shows what a payment was for; `react-hooks/immutability` caught the pre-existing pattern of calling `loadInvoices` above its declaration, fixed by moving the loader above the mount effect instead of adding a dependency that would re-run it.  
+**Method:** the claim "0 hex" is a `grep -o '#[0-9a-fA-F]\{3,8\}'` per file; verification is that count plus the same page measured at 344px (block rows, hidden header, `[data-label]::before` labels, two-column stats, `scrollWidth === clientWidth`) and at 1440 inside a same-origin iframe. Nothing was written to the database: the over-balance payment and the invalid VPA were exercised through their validators, and the reminder modal was left by Cancel after changing the tone and template. Restoring from a context summary can be wrong — the summary described a `fetchOutstanding` helper and a `src/lib/utils` money import that do not exist (`formatINR` comes from `@/lib/gst-engine`), so the file was read in full before rewriting.  
+**Commits:** `e5cc103`.
 
 ---
 
@@ -357,6 +363,7 @@ Recorded so the next session does not rediscover them.
 12. **Supabase reads are `as any[]`** with explicit `.select()` lists — the repo's accepted baseline until types are generated; compare `npx eslint` output against the pre-existing count instead of expecting zero.
 13. **A `<button>` with no `type` inside a form submits it** — the kit's `Segmented` did exactly that in the product modal, so switching goods→service saved the product. Any control that can live inside a `<form>` renders `type="button"`.
 14. **`evaluate_script` can read the DOM a render behind a click** — a status cell read right after `.click()` showed the old value twice during R2-12. Re-query in a later call, or read the derived stats as well as the row.
+15. **A styling migration is a code review** — rewriting `/payments` surfaced a `.limit(20)` history window and a `getMonth()`-only "this month" card that counted the same month every year. Read the logic while replacing the chrome; fix what you find instead of preserving it.
 
 ---
 
@@ -444,7 +451,7 @@ node --version
 
 ## Next Steps (Priority Order)
 
-1. **R2-12 — Design-system migration pass** (next up) — ~20 pre-kit pages still carry inline styles; migrate as touched, batch the rest.
+1. **R2-12 — Design-system migration pass** (next up) — 15 pages in the shell plus the 3 auth pages still carry inline styles; §16 of `4-Design-System.md` fixes the order, and the money tier now means `accounting` and `offline`.
 2. **GSTR-4 (Composition)** workpaper for the smaller registrants.
 3. **Phase 14 — Security**: generated Supabase types, tightened dashboard RLS policies, audit log, multi-account isolation test. Do this before onboarding a real customer.
 4. **Real GSP integration** once a provider is chosen (ADR-016) — plus email invoices and multi-user, which need the pending decisions above.

@@ -252,12 +252,12 @@ A document is a document: no card shadows, no rounded corners, print-safe colour
 
 Counted from the code, not from intention: a page is only "on the kit" when its header, buttons, badges and empty state are the primitives — importing `SearchInput` alone does not count.
 
-**Fully on the kit — 14 pages.** `dashboard`, `invoices`, `expenses`, `vendors`, `customers`, `products`, `ledger`, `gst/calendar`, `gst/gstr9`, `inventory/reorder`, `reports/registers`, `reports/targets`, `bank`, `tds`. These set colour through `:root` tokens only.
+**Fully on the kit — 16 pages.** `dashboard`, `invoices`, `expenses`, `vendors`, `customers`, `products`, `payments`, `payments/links`, `ledger`, `gst/calendar`, `gst/gstr9`, `inventory/reorder`, `reports/registers`, `reports/targets`, `bank`, `tds`. These set colour through `:root` tokens only.
 
 **Partly on the kit — 4 pages.** `bills`, `credit-notes`, `debit-notes`, `quotations`. They use `SearchInput` and the shared table classes, but still hand-code the page header, buttons, badges and modal chrome with Tailwind-slate hex.
 
-**Pre-kit — 17 pages inside the shell.** `invoices/new`, `invoices/[id]`, `payments`, `payments/links`, `pos`, `inventory`, `offline`, `accounting`, `reports`, `settings`, `gst` hub, `gstr1`, `gstr3b`, `reconciliation`, `einvoice`, `ai/ask`, `ai/scan-bill`. Three more outside it: `login`, `signup`, `setup`.
+**Pre-kit — 15 pages inside the shell.** `invoices/new`, `invoices/[id]`, `pos`, `inventory`, `offline`, `accounting`, `reports`, `settings`, `gst` hub, `gstr1`, `gstr3b`, `reconciliation`, `einvoice`, `ai/ask`, `ai/scan-bill`. Three more outside it: `login`, `signup`, `setup`.
 
-Migration order for the rest of R2-12: ~~masters~~ (done — one recipe, three pages) → money (`payments`, `payments/links`, `accounting`, `offline`) → GST (`gst` hub, `gstr1`, `gstr3b`, `reconciliation`, `einvoice`) → counter and AI (`pos`, `inventory`, `ai/*`) → reports and settings → auth pages → documents last (`invoices/new`, `invoices/[id]`), because a printed document is the one surface where a styling change is a change to a legal artefact.
+Migration order for the rest of R2-12: ~~masters~~ (done — one recipe, three pages) → ~~two of the money pages~~ (`payments`, `payments/links` done; `accounting`, `offline` left) → GST (`gst` hub, `gstr1`, `gstr3b`, `reconciliation`, `einvoice`) → counter and AI (`pos`, `inventory`, `ai/*`) → reports and settings → auth pages → documents last (`invoices/new`, `invoices/[id]`), because a printed document is the one surface where a styling change is a change to a legal artefact.
 
 **Migrate a page when you touch it**; do not introduce new hex literals into a page that is still on the old markup — use tokens even inside it.
