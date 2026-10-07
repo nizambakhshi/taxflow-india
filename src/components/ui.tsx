@@ -254,6 +254,7 @@ export function Segmented({
       {options.map(o => (
         <button
           key={o.value}
+          type="button"
           onClick={() => onChange(o.value)}
           style={{
             fontFamily: 'inherit', fontSize: 12, fontWeight: 600, padding: '6px 13px',

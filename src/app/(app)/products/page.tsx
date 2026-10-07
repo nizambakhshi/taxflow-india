@@ -1,42 +1,57 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import BarcodeScanner from '@/components/BarcodeScanner'
 import { cameraScanSupported, validateBarcode } from '@/lib/barcode'
-import { SearchInput } from '@/components/ui'
+import { Badge, Button, Card, EmptyState, PageHeader, SearchInput, Segmented, StatCard } from '@/components/ui'
+import Icon from '@/components/Icons'
 import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
-
-const inputStyle = {
-  width: '100%', padding: '9px 12px',
-  border: '1px solid #d1d5db', borderRadius: '8px',
-  fontSize: '14px', outline: 'none',
-  color: '#1e293b', background: 'white',
-}
-
-const labelStyle = {
-  display: 'block' as const,
-  fontSize: '13px', fontWeight: '500' as const,
-  color: '#374151', marginBottom: '5px',
-}
 
 const UNITS = ['NOS', 'KGS', 'MTR', 'LTR', 'SQF', 'HRS', 'DYS', 'PCS', 'BOX', 'PKT', 'SET', 'PAI']
 const GST_RATES = [0, 5, 12, 18, 28]
 
+const whole = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 })
+const money = (v: number | string | null | undefined) => `₹${whole.format(Number(v ?? 0) || 0)}`
+
 type Product = {
   id: string
   name: string
+  description: string | null
   type: string
-  sku: string
-  hsn_sac: string
+  sku: string | null
+  hsn_sac: string | null
   unit: string
-  selling_price: number
-  gst_rate: number
+  purchase_price: number | string
+  selling_price: number | string
+  gst_rate: number | string
+  cess_rate: number | string
   is_active: boolean
   track_inventory: boolean
-  current_stock: number
+  current_stock: number | string
+  opening_stock: number | string
+  minimum_stock: number | string
 }
+
+const emptyForm = () => ({
+  name: '', description: '', sku: '',
+  type: 'goods', hsn_sac: '', unit: 'NOS',
+  purchase_price: '', selling_price: '',
+  gst_rate: '18', cess_rate: '0',
+  track_inventory: false,
+  opening_stock: '0', minimum_stock: '0',
+})
+
+const VIEWS = [
+  { value: 'all', label: 'All', noun: 'matching' },
+  { value: 'goods', label: 'Goods', noun: 'goods' },
+  { value: 'service', label: 'Services', noun: 'service' },
+]
+
+/** An item only runs short once it is being tracked and has an alert level. */
+const isLow = (p: Product) =>
+  p.track_inventory && Number(p.minimum_stock) > 0 && Number(p.current_stock) <= Number(p.minimum_stock)
 
 function ProductsPageInner() {
   const supabase = createClient()
@@ -48,19 +63,23 @@ function ProductsPageInner() {
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [loadError, setLoadError] = useState('')
   const [search, setSearch] = useSearchDeepLink()
+  const [view, setView] = useState('all')
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [filterType, setFilterType] = useState('all')
   const [scanSku, setScanSku] = useState(false)
 
-  const [form, setForm] = useState({
-    name: '', description: '', sku: '',
-    type: 'goods', hsn_sac: '', unit: 'NOS',
-    purchase_price: '', selling_price: '',
-    gst_rate: '18', cess_rate: '0',
-    track_inventory: false,
-    opening_stock: '0', minimum_stock: '0',
-  })
+  const [form, setForm] = useState(emptyForm())
+
+  async function fetchProducts(oid: string) {
+    const { data, error } = await supabase
+      .from('products')
+      .select('*')
+      .eq('organization_id', oid)
+      .order('created_at', { ascending: false })
+    if (error) setLoadError(error.message)
+    setProducts((data as Product[]) || [])
+  }
 
   useEffect(() => {
     async function load() {
@@ -82,30 +101,14 @@ function ProductsPageInner() {
     load()
   }, [])
 
-  async function fetchProducts(oid: string) {
-    const { data } = await supabase
-      .from('products')
-      .select('*')
-      .eq('organization_id', oid)
-      .order('created_at', { ascending: false })
-    setProducts(data || [])
-  }
-
   function resetForm() {
-    setForm({
-      name: '', description: '', sku: '',
-      type: 'goods', hsn_sac: '', unit: 'NOS',
-      purchase_price: '', selling_price: '',
-      gst_rate: '18', cess_rate: '0',
-      track_inventory: false,
-      opening_stock: '0', minimum_stock: '0',
-    })
+    setForm(emptyForm())
     setEditingId(null)
     setError('')
     setScanSku(false)
   }
 
-  function handleEdit(product: any) {
+  function handleEdit(product: Product) {
     setForm({
       name: product.name || '',
       description: product.description || '',
@@ -113,13 +116,13 @@ function ProductsPageInner() {
       type: product.type || 'goods',
       hsn_sac: product.hsn_sac || '',
       unit: product.unit || 'NOS',
-      purchase_price: String(product.purchase_price || ''),
-      selling_price: String(product.selling_price || ''),
+      purchase_price: String(product.purchase_price ?? ''),
+      selling_price: String(product.selling_price ?? ''),
       gst_rate: String(product.gst_rate || 18),
       cess_rate: String(product.cess_rate || 0),
       track_inventory: product.track_inventory || false,
-      opening_stock: String(product.opening_stock || 0),
-      minimum_stock: String(product.minimum_stock || 0),
+      opening_stock: String(product.opening_stock ?? 0),
+      minimum_stock: String(product.minimum_stock ?? 0),
     })
     setEditingId(product.id)
     setShowForm(true)
@@ -171,190 +174,171 @@ function ProductsPageInner() {
     setSaving(false)
   }
 
-  const filtered = products
-    .filter(p => filterType === 'all' || p.type === filterType)
-    .filter(p => matchesAny(search, [p.name, p.sku, p.hsn_sac]))
+  const summary = useMemo(() => {
+    const visible = products.filter(p => {
+      if (view !== 'all' && p.type !== view) return false
+      return matchesAny(search, [p.name, p.sku, p.hsn_sac, p.description])
+    })
+    return {
+      visible,
+      goods: products.filter(p => p.type === 'goods').length,
+      services: products.filter(p => p.type === 'service').length,
+      noHsn: products.filter(p => !p.hsn_sac?.trim()).length,
+      low: products.filter(isLow).length,
+    }
+  }, [products, view, search])
 
-  if (loading) return <div style={{ padding: '2rem', color: '#64748b', fontSize: '14px' }}>Loading...</div>
+  if (loading) {
+    return <div className="page-container" style={{ color: 'var(--muted)', fontSize: 13 }}>Loading your catalogue…</div>
+  }
 
   return (
-    <div className="page-container" style={{ maxWidth: '1100px' }}>
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-        <div>
-          <h1 style={{ fontSize: '22px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
-            Products & Services
-          </h1>
-          <p style={{ fontSize: '14px', color: '#64748b' }}>
-            {products.length} item{products.length !== 1 ? 's' : ''}
-          </p>
-        </div>
-        <button onClick={() => { resetForm(); setShowForm(true) }} style={{
-          padding: '9px 18px', background: '#2563eb', color: 'white',
-          border: 'none', borderRadius: '8px', fontSize: '14px',
-          fontWeight: '600', cursor: 'pointer'
-        }}>
-          + Add Product
-        </button>
+    <div className="page-container pr" style={{ maxWidth: 1100 }}>
+      <PageHeader
+        eyebrow="Sales"
+        title="Products & services"
+        subtitle="The catalogue every invoice line is drawn from — HSN or SAC, unit and rate are decided once here instead of per bill."
+        actions={<Button size="sm" icon="plus" onClick={() => { resetForm(); setShowForm(true) }}>Add item</Button>}
+      />
+
+      {loadError && (
+        <div className="pr-alert"><Icon name="alert" size={14} />{loadError}</div>
+      )}
+
+      <div className="pr-stats">
+        <StatCard label="Items" value={String(products.length)}
+          sub={`${summary.visible.length} shown`} icon="store" tone="blue" />
+        <StatCard label="Goods" value={String(summary.goods)} sub="carry an HSN code" icon="box" tone="violet" delay={40} />
+        <StatCard label="Services" value={String(summary.services)} sub="carry a SAC code" icon="zap" tone="cyan" delay={80} />
+        <StatCard label="No HSN / SAC" value={String(summary.noHsn)}
+          sub={summary.noHsn ? 'GSTR-1 needs a code on every line' : 'every line item is coded'}
+          icon="alert" tone={summary.noHsn ? 'amber' : 'grey'} delay={120} />
       </div>
 
-      {/* Filters */}
-      <div className="toolbar" style={{ display: 'flex', gap: '8px', marginBottom: '1rem' }}>
+      <div className="pr-toolbar">
+        <Segmented options={VIEWS} value={view} onChange={setView} />
         <SearchInput
           value={search}
           onChange={setSearch}
           placeholder="Name, SKU or HSN…"
           ariaLabel="Search products"
-          style={{ flex: '1 1 240px', maxWidth: 340 }}
+          style={{ flex: '1 1 240px', maxWidth: 340, marginLeft: 'auto' }}
         />
-        {['all', 'goods', 'service'].map(t => (
-          <button key={t} onClick={() => setFilterType(t)} style={{
-            padding: '9px 16px',
-            background: filterType === t ? '#2563eb' : 'white',
-            color: filterType === t ? 'white' : '#374151',
-            border: '1px solid #e2e8f0', borderRadius: '8px',
-            fontSize: '13px', cursor: 'pointer', fontWeight: '500',
-            textTransform: 'capitalize' as const
-          }}>
-            {t === 'all' ? 'All' : t === 'goods' ? '📦 Goods' : '⚙️ Services'}
-          </button>
-        ))}
       </div>
 
-      {filtered.length === 0 ? (
-        <div style={{
-          background: 'white', border: '1px solid #e2e8f0',
-          borderRadius: '12px', padding: '3rem', textAlign: 'center', color: '#94a3b8'
-        }}>
-          <div style={{ fontSize: '32px', marginBottom: '1rem' }}>📦</div>
-          <div style={{ fontSize: '16px', fontWeight: '500', marginBottom: '8px', color: '#64748b' }}>
-            {products.length ? 'Nothing matches these filters' : 'No products yet'}
-          </div>
-          <div style={{ fontSize: '13px' }}>
-            {products.length
+      {summary.visible.length === 0 ? (
+        <Card>
+          <EmptyState
+            icon={products.length ? 'search' : 'box'}
+            title={products.length
+              ? (search ? `Nothing matches “${search}”` : `No ${VIEWS.find(x => x.value === view)?.noun} items`)
+              : 'No products yet'}
+            message={products.length
               ? 'Try a different name, SKU or HSN, or switch the type filter back to All.'
-              : 'Add products or services to include them in invoices'}
-          </div>
-        </div>
+              : 'Add the goods and services you sell — each one carries its own HSN/SAC, rate and stock rules.'}
+            action={!products.length ? (
+              <Button size="sm" icon="plus" onClick={() => { resetForm(); setShowForm(true) }}>Add item</Button>
+            ) : undefined}
+          />
+        </Card>
       ) : (
-        <div className="responsive-table table-frame" style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
-          <div className="table-header" style={{
-            display: 'grid', gridTemplateColumns: '2.5fr 1fr 1fr 1fr 1fr 80px',
-            gap: '12px', padding: '10px 16px', background: '#f8fafc',
-            fontSize: '12px', fontWeight: '600', color: '#64748b',
-            borderBottom: '1px solid #e2e8f0'
-          }}>
-            <span>Name</span><span>HSN/SAC</span>
-            <span>Selling Price</span><span>GST Rate</span>
-            <span>Type</span><span>Actions</span>
-          </div>
-          {filtered.map((product) => (
-            <div key={product.id} className="table-row" style={{
-              display: 'grid', gridTemplateColumns: '2.5fr 1fr 1fr 1fr 1fr 80px',
-              gap: '12px', padding: '12px 16px',
-              borderBottom: '1px solid #f1f5f9',
-              alignItems: 'center', fontSize: '13px'
-            }}>
-              <div data-label="Name">
-                <div style={{ fontWeight: '500', color: '#1e293b' }}>{product.name}</div>
-                <div style={{ fontSize: '12px', color: '#64748b' }}>
-                  {product.unit}
-                  {product.track_inventory && ` · Stock: ${product.current_stock}`}
-                </div>
-              </div>
-              <div data-label="HSN/SAC" style={{ fontFamily: 'monospace', fontSize: '12px', color: '#374151' }}>
-                {product.hsn_sac || '—'}
-              </div>
-              <div data-label="Selling Price" style={{ fontWeight: '500', color: '#1e293b' }}>
-                ₹{Number(product.selling_price).toLocaleString('en-IN')}
-              </div>
-              <div data-label="GST Rate">
-                <span style={{
-                  fontSize: '11px', padding: '2px 8px', borderRadius: '99px',
-                  background: '#eff6ff', color: '#1d4ed8', fontWeight: '600'
-                }}>
-                  {product.gst_rate}%
-                </span>
-              </div>
-              <div data-label="Type">
-                <span style={{
-                  fontSize: '11px', padding: '2px 8px', borderRadius: '99px',
-                  background: product.type === 'goods' ? '#fef9c3' : '#f0fdf4',
-                  color: product.type === 'goods' ? '#854d0e' : '#166534'
-                }}>
-                  {product.type === 'goods' ? '📦 Goods' : '⚙️ Service'}
-                </span>
-              </div>
-              <div data-label="Actions" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                <button onClick={() => handleEdit(product)} style={{
-                  padding: '4px 10px', background: '#f1f5f9',
-                  border: '1px solid #e2e8f0', borderRadius: '6px',
-                  fontSize: '12px', cursor: 'pointer', color: '#374151'
-                }}>Edit</button>
-              </div>
+        <div className="table-frame">
+          <div className="responsive-table">
+            <div className="table-header pr-row pr-head">
+              <span data-label="Name">Item</span>
+              <span data-label="Code">HSN / SAC</span>
+              <span className="pr-right" data-label="Price">Selling price</span>
+              <span className="pr-right" data-label="GST">GST</span>
+              <span data-label="Stock">Stock</span>
+              <span className="pr-right" data-label="Actions">Actions</span>
             </div>
-          ))}
+            {summary.visible.map((product) => (
+              <div key={product.id} className="table-row pr-row">
+                <span data-label="Name" className="pr-name">
+                  <span className="pr-name-main">{product.name}</span>
+                  <span className="pr-sub">
+                    {product.unit}
+                    {product.sku ? ` · ${product.sku}` : ''}
+                    {Number(product.purchase_price) > 0 && Number(product.selling_price) > 0
+                      ? ` · cost ${money(Number(product.purchase_price))}` : ''}
+                  </span>
+                </span>
+
+                <span data-label="Code" className={product.hsn_sac ? 'pr-mono' : 'pr-sub'}>
+                  {product.hsn_sac || 'Not set'}
+                </span>
+
+                <span className="pr-right" data-label="Price">
+                  <span className="tf-num pr-price">{money(product.selling_price)}</span>
+                  {Number(product.cess_rate) > 0 && <div className="pr-sub">+ {Number(product.cess_rate)}% cess</div>}
+                </span>
+
+                <span className="pr-right" data-label="GST">
+                  <Badge tone={Number(product.gst_rate) === 0 ? 'grey' : 'blue'} dot={false}>
+                    {Number(product.gst_rate)}%
+                  </Badge>
+                </span>
+
+                <span data-label="Stock">
+                  {product.track_inventory ? (
+                    <>
+                      <span className="tf-num pr-stock">{whole.format(Number(product.current_stock) || 0)}</span>
+                      {' '}{isLow(product)
+                        ? <Badge tone="red" dot={false}>Below minimum</Badge>
+                        : <span className="pr-sub">{Number(product.minimum_stock) > 0 ? `of ${Number(product.minimum_stock)} alert` : 'in stock'}</span>}
+                    </>
+                  ) : <span className="pr-sub">Not tracked</span>}
+                </span>
+
+                <span className="pr-right pr-actions" data-label="Actions">
+                  <Button size="sm" variant="subtle" onClick={() => handleEdit(product)}>Edit</Button>
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* Form Modal */}
+      {products.length > 0 && (
+        <div className="pr-foot">
+          <span>Shown: {summary.visible.length} of {products.length}{summary.low ? ` · ${summary.low} below minimum` : ''}</span>
+          <span>Changing a price here does not change invoices already raised — the line keeps its own snapshot.</span>
+        </div>
+      )}
+
       {showForm && (
-        <div className="modal-container" style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 100, padding: '1rem'
-        }}>
-          <div className="modal-content" style={{
-            background: 'white', borderRadius: '16px', padding: '2rem',
-            width: '100%', maxWidth: '640px', maxHeight: '90vh', overflowY: 'auto'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h2 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>
-                {editingId ? 'Edit Product' : 'Add Product / Service'}
-              </h2>
-              <button onClick={() => { setShowForm(false); resetForm() }}
-                style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#94a3b8' }}>✕</button>
+        <div className="pr-scrim" role="dialog" aria-modal="true" aria-label={editingId ? 'Edit item' : 'Add item'}>
+          <div className="pr-modal">
+            <div className="pr-modal-head">
+              <h2>{editingId ? 'Edit item' : 'Add product or service'}</h2>
+              <button type="button" className="pr-close" onClick={() => { setShowForm(false); resetForm() }} aria-label="Close">
+                <Icon name="x" size={16} />
+              </button>
             </div>
 
-            <form onSubmit={handleSubmit}>
-              {/* Type toggle */}
-              <div style={{ display: 'flex', gap: '8px', marginBottom: '1rem' }}>
-                {['goods', 'service'].map(t => (
-                  <button key={t} type="button"
-                    onClick={() => setForm(p => ({ ...p, type: t }))}
-                    style={{
-                      flex: 1, padding: '10px',
-                      background: form.type === t ? '#2563eb' : '#f1f5f9',
-                      color: form.type === t ? 'white' : '#374151',
-                      border: '1px solid #e2e8f0', borderRadius: '8px',
-                      fontSize: '14px', cursor: 'pointer', fontWeight: '500'
-                    }}>
-                    {t === 'goods' ? '📦 Goods' : '⚙️ Service'}
-                  </button>
-                ))}
-              </div>
+            <form onSubmit={handleSubmit} className="pr-form">
+              <Segmented
+                options={[{ value: 'goods', label: 'Goods' }, { value: 'service', label: 'Service' }]}
+                value={form.type}
+                onChange={t => setForm(p => ({ ...p, type: t }))}
+              />
 
-              <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-                <div>
-                  <label style={labelStyle}>Name *</label>
-                  <input style={inputStyle} value={form.name}
-                    onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
-                    placeholder="Product or service name" required />
-                </div>
-                <div>
-                  <label style={labelStyle}>SKU / Barcode</label>
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    <input style={inputStyle} value={form.sku}
-                      onChange={e => setForm(p => ({ ...p, sku: e.target.value }))}
-                      placeholder="Barcode or internal code" />
+              <div className="pr-grid-wide">
+                <label className="pr-field">
+                  <span>Name *</span>
+                  <input className="tf-input" value={form.name} placeholder="Product or service name" required
+                    onChange={e => setForm(p => ({ ...p, name: e.target.value }))} />
+                </label>
+                <label className="pr-field">
+                  <span>SKU / barcode</span>
+                  <div className="pr-sku">
+                    <input className="tf-input" value={form.sku} placeholder="Barcode or internal code"
+                      onChange={e => setForm(p => ({ ...p, sku: e.target.value }))} />
                     {cameraScanSupported() && (
-                      <button type="button" onClick={() => setScanSku(v => !v)} style={{
-                        padding: '0 14px', whiteSpace: 'nowrap',
-                        background: scanSku ? '#eef2ff' : 'white',
-                        color: '#374151', border: '1px solid #d1d5db',
-                        borderRadius: '8px', fontSize: '13px', cursor: 'pointer'
-                      }}>
-                        {scanSku ? 'Stop' : '📷 Scan'}
-                      </button>
+                      <Button variant={scanSku ? 'primary' : 'ghost'} size="sm" icon="scan"
+                        onClick={() => setScanSku(v => !v)}>
+                        {scanSku ? 'Stop' : 'Scan'}
+                      </Button>
                     )}
                   </div>
                   {scanSku && (
@@ -370,126 +354,172 @@ function ProductsPageInner() {
                     const check = validateBarcode(form.sku)
                     if (check.valid) return null
                     return (
-                      <div style={{ fontSize: '12px', color: '#dc2626', marginTop: '4px' }}>
+                      <span className="pr-sku-error">
                         {check.message} — counter scanning will reject this code.
-                      </div>
+                      </span>
                     )
                   })()}
-                </div>
+                </label>
               </div>
 
-              <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-                <div>
-                  <label style={labelStyle}>{form.type === 'goods' ? 'HSN Code' : 'SAC Code'}</label>
-                  <input style={inputStyle} value={form.hsn_sac}
-                    onChange={e => setForm(p => ({ ...p, hsn_sac: e.target.value }))}
-                    placeholder={form.type === 'goods' ? '1234' : '998314'} />
-                </div>
-                <div>
-                  <label style={labelStyle}>Unit</label>
-                  <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.unit}
+              <div className="pr-grid">
+                <label className="pr-field">
+                  <span>{form.type === 'goods' ? 'HSN code' : 'SAC code'}</span>
+                  <input className="tf-input pr-mono-input" value={form.hsn_sac}
+                    placeholder={form.type === 'goods' ? '1234' : '998314'}
+                    onChange={e => setForm(p => ({ ...p, hsn_sac: e.target.value }))} />
+                </label>
+                <label className="pr-field">
+                  <span>Unit of measurement</span>
+                  <select className="tf-input" value={form.unit}
                     onChange={e => setForm(p => ({ ...p, unit: e.target.value }))}>
                     {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
                   </select>
-                </div>
+                </label>
               </div>
 
-              <div className="form-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-                <div>
-                  <label style={labelStyle}>Purchase Price (₹)</label>
-                  <input style={inputStyle} type="number" value={form.purchase_price}
-                    onChange={e => setForm(p => ({ ...p, purchase_price: e.target.value }))}
-                    placeholder="0.00" min="0" step="0.01" />
-                </div>
-                <div>
-                  <label style={labelStyle}>Selling Price (₹) *</label>
-                  <input style={inputStyle} type="number" value={form.selling_price}
-                    onChange={e => setForm(p => ({ ...p, selling_price: e.target.value }))}
-                    placeholder="0.00" min="0" step="0.01" required />
-                </div>
-                <div>
-                  <label style={labelStyle}>GST Rate *</label>
-                  <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.gst_rate}
+              <div className="pr-grid-3">
+                <label className="pr-field">
+                  <span>Purchase price (₹)</span>
+                  <input className="tf-input" type="number" value={form.purchase_price} placeholder="0.00" min="0" step="0.01"
+                    onChange={e => setForm(p => ({ ...p, purchase_price: e.target.value }))} />
+                </label>
+                <label className="pr-field">
+                  <span>Selling price (₹) *</span>
+                  <input className="tf-input" type="number" value={form.selling_price} placeholder="0.00" min="0" step="0.01" required
+                    onChange={e => setForm(p => ({ ...p, selling_price: e.target.value }))} />
+                </label>
+                <label className="pr-field">
+                  <span>GST rate *</span>
+                  <select className="tf-input" value={form.gst_rate}
                     onChange={e => setForm(p => ({ ...p, gst_rate: e.target.value }))}>
                     {GST_RATES.map(r => <option key={r} value={r}>{r}%</option>)}
                   </select>
-                </div>
+                </label>
               </div>
 
               {form.type === 'goods' && (
-                <div style={{
-                  background: '#f8fafc', border: '1px solid #e2e8f0',
-                  borderRadius: '8px', padding: '1rem', marginBottom: '1rem'
-                }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginBottom: '12px' }}>
+                <div className="pr-stock-box">
+                  <label className="pr-check">
                     <input type="checkbox" checked={form.track_inventory}
                       onChange={e => setForm(p => ({ ...p, track_inventory: e.target.checked }))} />
-                    <span style={{ fontSize: '13px', fontWeight: '500', color: '#374151' }}>
-                      Track inventory for this product
-                    </span>
+                    <span>Track inventory for this product</span>
                   </label>
                   {form.track_inventory && (
-                    <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                      <div>
-                        <label style={labelStyle}>Opening Stock</label>
-                        <input style={inputStyle} type="number" value={form.opening_stock}
-                          onChange={e => setForm(p => ({ ...p, opening_stock: e.target.value }))}
-                          min="0" />
-                      </div>
-                      <div>
-                        <label style={labelStyle}>Minimum Stock Alert</label>
-                        <input style={inputStyle} type="number" value={form.minimum_stock}
-                          onChange={e => setForm(p => ({ ...p, minimum_stock: e.target.value }))}
-                          min="0" />
-                      </div>
+                    <div className="pr-grid">
+                      <label className="pr-field">
+                        <span>Opening stock</span>
+                        <input className="tf-input" type="number" value={form.opening_stock} min="0"
+                          onChange={e => setForm(p => ({ ...p, opening_stock: e.target.value }))} />
+                      </label>
+                      <label className="pr-field">
+                        <span>Minimum stock alert</span>
+                        <input className="tf-input" type="number" value={form.minimum_stock} min="0"
+                          onChange={e => setForm(p => ({ ...p, minimum_stock: e.target.value }))} />
+                      </label>
                     </div>
                   )}
                 </div>
               )}
 
-              <div style={{ marginBottom: '1.5rem' }}>
-                <label style={labelStyle}>Description</label>
-                <textarea style={{ ...inputStyle, height: '60px', resize: 'vertical' as const }}
-                  value={form.description}
-                  onChange={e => setForm(p => ({ ...p, description: e.target.value }))}
-                  placeholder="Optional description" />
-              </div>
+              <label className="pr-field">
+                <span>Description</span>
+                <textarea className="tf-input pr-textarea" value={form.description} placeholder="Optional description"
+                  onChange={e => setForm(p => ({ ...p, description: e.target.value }))} />
+              </label>
 
-              {error && (
-                <div style={{
-                  background: '#fef2f2', border: '1px solid #fecaca',
-                  color: '#dc2626', padding: '10px 12px',
-                  borderRadius: '8px', fontSize: '13px', marginBottom: '1rem'
-                }}>{error}</div>
+              {!form.hsn_sac.trim() && (
+                <div className="pr-note">
+                  <Icon name="alert" size={14} />
+                  <span>{form.type === 'goods' ? 'HSN' : 'SAC'} decides the tax rate on this line and appears in GSTR-1 — leave it blank and the filed table will show it as missing.</span>
+                </div>
               )}
 
-              <div className="btn-group" style={{ display: 'flex', gap: '12px' }}>
-                <button type="submit" disabled={saving} style={{
-                  flex: 1, padding: '11px',
-                  background: saving ? '#93c5fd' : '#2563eb',
-                  color: 'white', border: 'none', borderRadius: '8px',
-                  fontSize: '14px', fontWeight: '600',
-                  cursor: saving ? 'not-allowed' : 'pointer'
-                }}>
-                  {saving ? 'Saving...' : editingId ? 'Update' : 'Add Product'}
-                </button>
-                <button type="button" onClick={() => { setShowForm(false); resetForm() }} style={{
-                  padding: '11px 20px', background: 'white', color: '#374151',
-                  border: '1px solid #e2e8f0', borderRadius: '8px',
-                  fontSize: '14px', cursor: 'pointer'
-                }}>Cancel</button>
+              {error && <div className="pr-alert"><Icon name="alert" size={14} />{error}</div>}
+
+              <div className="pr-save">
+                <Button variant="ghost" onClick={() => { setShowForm(false); resetForm() }}>Cancel</Button>
+                <Button type="submit" disabled={saving} icon={saving ? undefined : 'check'}>
+                  {saving ? 'Saving…' : editingId ? 'Update item' : 'Add item'}
+                </Button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      <style>{`
+        .pr-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 1rem; }
+        .pr-alert { display: flex; align-items: center; gap: 8px; font-size: 12.5px; border-radius: 10px;
+          padding: 10px 12px; margin-bottom: 10px; background: var(--red-soft); color: var(--red);
+          border-left: 3px solid var(--red); }
+        .pr-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+
+        .pr-row { display: grid; grid-template-columns: minmax(0, 1.5fr) 104px minmax(0, 1fr) 66px minmax(0, 1fr) 88px;
+          gap: 12px; align-items: center; padding: 11px 14px; font-size: 12.5px; }
+        .pr-head { background: var(--surface-2); border-bottom: 1px solid var(--line-soft); font-size: 11px;
+          font-weight: 650; color: var(--faint); text-transform: uppercase; letter-spacing: 0.05em; }
+        .pr-right { text-align: right; }
+        .pr-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+        .pr-name-main { color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
+        .pr-sub { font-size: 11px; color: var(--faint); overflow-wrap: anywhere; }
+        .pr-mono { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; color: var(--ink-2); }
+        .pr-price { font-weight: 650; color: var(--ink); }
+        .pr-stock { font-weight: 650; color: var(--ink); }
+        .pr-actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+
+        .pr-foot { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 11.5px;
+          color: var(--faint); margin-top: 10px; }
+
+        .pr-scrim { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); display: flex;
+          align-items: center; justify-content: center; padding: 1rem; z-index: 100; }
+        .pr-modal { background: var(--surface); border-radius: var(--radius-lg); padding: 1.4rem 1.5rem;
+          width: 100%; max-width: 660px; max-height: 90vh; overflow-y: auto; box-shadow: var(--shadow-lg); }
+        .pr-modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+        .pr-modal-head h2 { font-size: 17px; font-weight: 650; color: var(--ink); }
+        .pr-close { background: none; border: none; color: var(--faint); cursor: pointer; padding: 4px; border-radius: 6px; }
+        .pr-close:hover { background: var(--slate-soft); color: var(--ink-2); }
+        .pr-form { display: flex; flex-direction: column; gap: 12px; }
+        .pr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .pr-grid-3 { display: grid; grid-template-columns: 1fr 1fr 0.8fr; gap: 12px; }
+        .pr-grid-wide { display: grid; grid-template-columns: 1.6fr 1fr; gap: 12px; }
+        .pr-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+        .pr-field > span { font-size: 12px; font-weight: 550; color: var(--ink-2); }
+        .pr-textarea { min-height: 60px; resize: vertical; }
+        .pr-mono-input { font-family: ui-monospace, Menlo, monospace; letter-spacing: 0.03em; }
+        .pr-sku { display: flex; gap: 6px; align-items: flex-start; }
+        .pr-sku-error { font-size: 11px; color: var(--red); }
+        .pr-stock-box { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm);
+          padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+        .pr-check { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 550;
+          color: var(--ink-2); cursor: pointer; }
+        .pr-check input { accent-color: var(--brand); }
+        .pr-note { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; color: var(--ink-2);
+          background: var(--amber-soft); border-radius: var(--radius-sm); padding: 10px 12px; }
+        .pr-note svg { color: var(--amber); flex-shrink: 0; margin-top: 1px; }
+        .pr-save { display: flex; gap: 10px; justify-content: flex-end; margin-top: 2px; }
+
+        @media (max-width: 1100px) { .pr-stats { grid-template-columns: 1fr 1fr; } }
+        @media (max-width: 768px) {
+          .pr-row { grid-template-columns: 1fr; gap: 6px; }
+          .pr-head { display: none; }
+          .pr-right { text-align: left; }
+          .pr-actions { justify-content: flex-start; }
+          .pr-stats { grid-template-columns: 1fr 1fr; }
+          .pr-grid, .pr-grid-3, .pr-grid-wide { grid-template-columns: 1fr; }
+          .pr-modal { padding: 1.1rem 1.15rem; }
+          .pr-scrim { align-items: flex-end; padding: 0; }
+          .pr-modal { max-width: none; border-radius: 16px 16px 0 0; max-height: 92vh; }
+          .pr-save { flex-direction: column-reverse; }
+        }
+      `}</style>
     </div>
   )
 }
 
 export default function ProductsPage() {
   return (
-    <Suspense fallback={<div className="page-container"><p style={{ color: '#64748b', fontSize: 13 }}>Loading…</p></div>}>
+    <Suspense fallback={<div className="page-container"><p style={{ color: 'var(--muted)', fontSize: 13 }}>Loading…</p></div>}>
       <ProductsPageInner />
     </Suspense>
   )
