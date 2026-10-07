@@ -294,7 +294,7 @@ const PAGE_HREFS: string[] = NAV_ITEMS.flatMap(s => s.items.map(i => i.href))
 /**
  * Invoices are the only entity with a detail route, so they are the only prefix
  * whose children count as known. Matching every parent loosely would let a stale
- * '/gst/gstr9' recent — a route that 404s — look valid, which is the whole thing
+ * '/gst/annual' recent — a route that 404s — look valid, which is the whole thing
  * this check exists to prevent.
  */
 const DYNAMIC_CHILD_PREFIXES = ['/invoices/']

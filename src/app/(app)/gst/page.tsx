@@ -471,6 +471,19 @@ export default function GSTDashboardPage() {
             </div>
           </div>
         </Link>
+        <Link href="/gst/gstr9" style={{ textDecoration: 'none' }}>
+          <div style={{
+            background: 'white', border: '1px solid #e2e8f0',
+            borderRadius: '12px', padding: '1.25rem', cursor: 'pointer'
+          }}>
+            <div style={{ fontWeight: '600', fontSize: '15px', color: '#1e293b', marginBottom: '4px' }}>
+              🧾 GSTR-9 / 9C Workpaper
+            </div>
+            <div style={{ fontSize: '13px', color: '#64748b' }}>
+              Annual return tables, the 180-day credit watchlist and books against filed 3B
+            </div>
+          </div>
+        </Link>
       </div>
     </div>
   )
