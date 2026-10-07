@@ -1,8 +1,12 @@
 # TaxFlow India — Project Tasks
 
-**Version:** 1.0  
-**Date:** September 2026  
-**Last Updated:** September 2026  
+**Version:** 2.0  
+**Date:** October 2026  
+**Last Updated:** 2026-10-07  
+
+Phases 0–12 are the original MVP build. Version 1 and the Round 1 / Round 2
+competitive features are recorded further down — read those sections for what
+exists now, and the Backlog for what comes next.
 
 ---
 
@@ -31,9 +35,9 @@ Update this file after completing each task.
 ## PHASE 1 — Project Skeleton ✅
 
 - ✅ Install Homebrew on Mac
-- ✅ Install Node.js v20
+- ✅ Install Node.js 20+ (dev machine now runs v24)
 - ✅ Install Git
-- ✅ Install Cursor (code editor)
+- ✅ Install the code editor (Cursor, now Qoder)
 - ✅ Create GitHub account
 - ✅ Create Supabase account and project
 - ✅ Create Next.js app (taxflow-india)
@@ -324,54 +328,86 @@ Update this file after completing each task.
 
 ---
 
-## VERSION 1 — Upcoming Features ⏳
+## VERSION 1 — Shipped ✅
 
-### Settings Page ⏳
-- ⏳ Invoice number prefix (change INV to custom)
-- ⏳ Company logo upload
-- ⏳ Bank account details (for invoice footer)
-- ⏳ Default payment terms
-- ⏳ Financial year selection
-- ⏳ Invoice template selection
+### Settings Page ✅
+- ✅ Invoice number prefix (change INV to custom)
+- ✅ Company logo upload (Supabase Storage, `logos` table)
+- ✅ Bank account details (for invoice footer)
+- ✅ Default payment terms
+- ✅ Financial year selection
+- ✅ Invoice template selection (three skins, per organisation)
 
-### Quotations ⏳
-- ⏳ Create quotation
-- ⏳ Convert quotation to invoice
-- ⏳ Quotation list and detail view
-- ⏳ PDF print
+### Quotations ✅
+- ✅ Create quotation, list and detail view
+- ✅ Convert quotation to invoice
+- ✅ Own sequence per FY, PDF print
 
-### Credit Notes ⏳
-- ⏳ Create credit note against invoice
-- ⏳ Credit note list
-- ⏳ Impact on GSTR-1 (CDN section)
+### Credit Notes ✅
+- ✅ Create credit note against an invoice, list, own sequence
+- ✅ Folded into GSTR-1 / GSTR-3B / registers / targets as signed rows (CDRN reflected in the annual workpaper)
 
-### Debit Notes ⏳
-- ⏳ Create debit note
-- ⏳ Debit note list
+### Debit Notes ✅
+- ✅ Create debit note, list, own sequence, feeds the ledger and registers
+
+### Mobile responsive shell ✅ (September–October 2026)
+- ✅ Sidebar, bottom nav, sheet menu, card views at 375 / 768 / 1024 / 1440
 
 ### Email Invoices ⏳
-- ⏳ Email invoice PDF to customer
-- ⏳ Email templates
-- ⏳ Email log
+- ⏳ Email invoice PDF to customer, templates, send log
 
 ### Multi-User ⏳
-- ⏳ Invite user by email
-- ⏳ Role selection (owner, accountant, staff)
-- ⏳ Role-based access control
-- ⏳ Remove user from organization
+- ⏳ Invite user by email, role selection (owner / accountant / staff), RBAC, remove user
+
+---
+
+## ROUND 1 — Competitive Features (2026-10-05) ✅
+
+Features ranked against Tally, Zoho, Vyapar, myBillBook, Marg, Busy, Refrens, Clear, CaptainBiz and Swipez. All shipped client-side, no schema change.
+
+- ✅ **1. GSTR-2B ↔ books ITC reconciliation** — `/gst/reconciliation` + `src/lib/gstr2b.ts`
+- ✅ **2. E-invoice (IRN) + e-way bill** — `/gst/einvoice` + `src/lib/einvoice.ts` (NIC v1.10 JSON, build → download → paste ACK), GSP adapter layer `src/lib/gsp/*` + `/api/gsp/ewaybill` (mock provider)
+- ✅ **3. Payment links + WhatsApp reminders** — `/payments/links` + `src/lib/payments.ts` (`upi://pay` deep links, `wa.me` reminders, three tones)
+- ✅ **4. Light double-entry** — `/accounting` + `src/lib/ledger.ts` (P&L excluding GST, always-balancing balance sheet, localStorage opening balances)
+- ✅ **5. Offline PWA** — `/offline`, `app/manifest.ts`, `public/sw.js`, `public/offline.html`, `src/lib/outbox.ts` (temporary OFF- numbers replayed through the real save path)
+- ✅ **6. Barcode scan + POS** — `/pos`, `src/lib/barcode.ts` (GS1 mod-10, EAN-13/EAN-8/UPC-A/ITF-14/CODE-128), `src/components/BarcodeScanner.tsx`, `src/lib/create-invoice.ts` extracted as the single invoice write path
+- ✅ **7. AI features** — `/ai/scan-bill` (`bill-text.ts`, `ocr.ts`: tesseract.js + pdf.js via `/api/pdf-worker`, GST cross-validation with per-field confidence) and `/ai/ask` (`ask.ts`: 17 intents, FY-period parsing, party/product/HSN filters). Deterministic and in-browser; `src/lib/create-bill.ts` is the shared bill write path
+
+---
+
+## ROUND 2 — Depth and Craft (2026-10-06 → 2026-10-07) ✅
+
+- ✅ **R2-1 Design system v1** (`63faa25`) — tokens + `.tf-*` in `globals.css`, `Icons.tsx`, `ui.tsx`, `format.ts`, `reports.ts`; app shell and dashboard rebuilt
+- ✅ **R2-2 Party ledger** (`16257ef`) — `/ledger` + `party-ledger.ts`; document-first payment linking
+- ✅ **R2-3 Compliance calendar** (`36b3240`) — `/gst/calendar` + `compliance.ts`; filing-profile FY generator, late-fee estimates, `.ics`
+- ✅ **R2-4 Statutory registers** (`158c44b`) — `/reports/registers` + `registers.ts`; party-wise, HSN/SAC, B2B, Rule 80(1) state-wise, e-way bill log
+- ✅ **R2-5 Invoice document templates** (`a928653`) — `InvoiceDocument.tsx` (`modern`, `minimal` over the classic sheet), `words.ts`
+- ✅ **R2-6 Targets and achievement** (`bd176c4`) — `/reports/targets` + `targets.ts`; festival-weighted split, prorated pace, product goals
+- ✅ **R2-7 Reorder planner** (`83d369a`) — `/inventory/reorder` + `reorder.ts`; (s, S) policy, supplier-grouped POs; fixed the `current_stock` data-loss bug
+- ✅ **R2-8 ⌘K command palette** (`f3b3d49`) — `commands.ts`, `CommandPalette.tsx`, `nav.ts`, `deep-link-search.ts`; `?q=` search added to bills, credit notes, debit notes, quotations
+- ✅ **Hotfix pass** (`0aba36f`) — register line-item fetch 400, mobile toolbar overflow, 36 MB invoice PDFs
+- ✅ **R2-9 GSTR-9 / 9C annual workpaper** (`95e1ee8`) — `/gst/gstr9` + `gstr9.ts`; outward and ITC tables, 180-day credit watch, 9C books-vs-3B reconciliation, CSV export
+
+---
+
+## ROUND 2 — Backlog ⏳
+
+- ⏳ **R2-10 Bank statement import + auto-match** (next): parse pasted/uploaded statements (delimiter and header detection, Indian dates, `₹1,200.00`, trailing `Dr`/`Cr`, split Dr./Cr. columns, balance column, UTR/ref de-duplication) and match receipts to invoices and payments by amount, date window and narration/party tokens with confidence tiers; review screen + CSV export; statement and match decisions in `taxflow:bank:<orgId>`
+- ⏳ **R2-11 TDS / 194Q compliance** — the calendar already reserves the events
+- ⏳ **R2-12 Design-system migration pass** — ~20 pages still carry pre-kit inline styles
+- ⏳ GSTR-4 (Composition) workpaper
+- ⏳ Real GSP submission for e-invoice / e-way bill (blocked: no free government API; needs a contracted provider)
 
 ---
 
 ## PHASE 14 — Security ⏳
 
 - ⏳ Fix Supabase RLS for @supabase/ssr 0.12.x
-- ⏳ Re-enable RLS on all tables
+- ⏳ Re-enable / tighten RLS on all tables (policies are hand-managed in the dashboard)
 - ⏳ Test organization isolation with multiple accounts
-- ⏳ Add audit log table
-- ⏳ Record audit events (create, edit, cancel, delete)
-- ⏳ Audit log viewer page
-- ⏳ Rate limiting on API routes
-- ⏳ Security testing
+- ⏳ Add audit log table + viewer
+- ⏳ Rate limiting if any server route is added beyond `/api/gsp` and `/api/pdf-worker`
+- ⏳ Generated Supabase types to retire the `as any[]` baseline
 
 ---
 
@@ -391,15 +427,9 @@ Update this file after completing each task.
 
 ## VERSION 2 — Future ⏳
 
-- ⏳ E-invoice (IRN via GSP)
-- ⏳ E-way bill generation
-- ⏳ GSTR-4 (Composition)
-- ⏳ GSTR-9 annual return
-- ⏳ WhatsApp invoice sharing
-- ⏳ Payment links
-- ⏳ Bank statement import
-- ⏳ OCR bill scanning
-- ⏳ Mobile app
+Shipped: ✅ e-invoice IRN payload builder · ✅ e-way bill payload + register · ✅ GSTR-9/9C workpaper · ✅ WhatsApp reminders · ✅ payment links · ✅ OCR bill scanning · ✅ installable PWA (a web-first "mobile app")
+
+Remaining: ⏳ GSTR-4 (Composition) · ⏳ bank statement import (R2-10) · ⏳ native mobile app · ⏳ accountant portal · ⏳ API access · ⏳ payroll · ⏳ TDS/TCS returns
 
 ---
 
@@ -407,9 +437,13 @@ Update this file after completing each task.
 
 | Issue | Status | Notes |
 |-------|--------|-------|
-| RLS disabled | Pending Phase 14 | App-level isolation active, safe for now |
+| RLS disabled / partial | Pending Phase 14 | App-level `organization_id` isolation active |
 | @supabase/ssr 0.12.x proxy/middleware | Pending | Fixed by disabling RLS temporarily |
-| Invoice PDF styling | Minor | Browser print works, dedicated PDF future |
+| `as any[]` on every Supabase read | Baseline | No generated types; eslint `no-explicit-any` errors are pre-existing |
+| ~20 pages still inline-styled | Debt | R2-12 migration pass |
+| Font stack declares Inter, `next/font` loads Geist | Cosmetic | Nothing consumes `--font-geist-sans`; renders on the system stack |
+| GSP submission is a mock | Blocked | No free government API; adapter ready for a real provider |
+| Two amount-in-words implementations | Intentional | Legacy `numberToWords` still drives the classic print layout |
 
 ---
 
@@ -422,17 +456,20 @@ Update this file after completing each task.
 - [ ] Business setup saves correctly
 - [ ] Can add customer, vendor, product
 - [ ] Can create invoice with GST calculation
-- [ ] CGST+SGST for same state
-- [ ] IGST for different state
-- [ ] Invoice saves and shows in list
-- [ ] Invoice detail opens and prints
-- [ ] Can add purchase bill
-- [ ] Can add expense
-- [ ] Payment recording works
-- [ ] Inventory updates on invoice
-- [ ] Inventory updates on purchase
-- [ ] GST dashboard shows correct numbers
-- [ ] GSTR-1 CSV export works
-- [ ] GSTR-3B CSV export works
-- [ ] Reports show real data
+- [ ] CGST+SGST for same state, IGST for different state
+- [ ] Invoice saves and shows in list; detail opens, prints and exports a sane-size PDF
+- [ ] Quotation → invoice conversion keeps the numbers
+- [ ] Credit note reduces the month it is dated in (registers, targets, GSTR-1)
+- [ ] Can add purchase bill and expense; bill scan produces a valid draft
+- [ ] Payment recording works; ledger balance sign is right
+- [ ] Stock moves on invoice and on bill; a product edit does not reset `current_stock`
+- [ ] GST dashboard, GSTR-1, GSTR-3B, GSTR-9 and registers reconcile to a hand-check
+- [ ] 2B reconciliation classifies the seeded mismatches
+- [ ] E-invoice JSON validates against the NIC shape
+- [ ] Compliance calendar matches the filing profile; `.ics` imports
+- [ ] Targets pace and reorder suggestions recompute after a new invoice
+- [ ] POS: barcode scan, cash sale settles, stock moves
+- [ ] Offline: airplane-mode invoice replays with a real INV number on reconnect
+- [ ] ⌘K: pages, actions and live records; a hit never lands on an empty list
 - [ ] Dashboard shows real metrics
+- [ ] Every page above is checked at 375–455px **and** 1440px with zero horizontal overflow

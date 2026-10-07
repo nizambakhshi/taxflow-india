@@ -1,8 +1,8 @@
 # TaxFlow India — Product Requirements Document (PRD)
 
-**Version:** 1.0  
-**Date:** September 2026  
-**Status:** MVP Complete — Expanding  
+**Version:** 2.0  
+**Date:** October 2026  
+**Status:** MVP + Version 1 complete — Version 2 shipping in feature rounds (Round 1 closed, Round 2 in progress)  
 
 ---
 
@@ -38,15 +38,18 @@ Indian businesses struggle with:
 ### Unique Selling Points
 1. Built specifically for Indian GST — not adapted from foreign software
 2. Auto-detects CGST+SGST vs IGST based on state
-3. Generates GSTR-1 and GSTR-3B ready data instantly
-4. Free to start — no credit card needed
-5. Simple enough for a non-accountant to use
+3. Generates GSTR-1, GSTR-3B and the GSTR-9/9C annual workpaper instantly, with a 2B-to-books reconciliation that says exactly which input credit to leave out
+4. Compliance calendar that knows the filing profile (monthly / QRMP / composition) and prices the late fee before it happens
+5. Works at the counter: camera barcode POS, UPI payment links, WhatsApp reminders, and an offline outbox that replays invoices the moment the network returns
+6. Free to start — no credit card needed
+7. Simple enough for a non-accountant to use, deep enough that a CA does not open Tally to check a number
+8. The AI features run in the browser: a supplier's bill is never uploaded, and every answer traces back to the rows it came from
 
 ---
 
 ## 2. Product Versions
 
-### MVP (Built — Current)
+### MVP (Built)
 Everything a business needs to operate day-to-day:
 - Business setup with GSTIN
 - Customer, vendor, product management
@@ -61,36 +64,51 @@ Everything a business needs to operate day-to-day:
 - Business reports (sales, purchase, GST, profit)
 - PDF invoice printing
 
-### Version 1 (Next — 3 months)
+### Version 1 (Built)
 - Quotations → convert to invoice
-- Credit notes and debit notes
-- Email invoices directly from app
-- Company logo on invoices
-- Bank details on invoices
+- Credit notes and debit notes, folded into GST reporting as signed rows
+- Company logo on invoices, bank details on invoices
 - Settings page (invoice prefix, FY settings)
-- Multi-user with roles (invite accountant/staff)
-- Better PDF invoice templates
+- Better PDF invoice templates — three document skins, chosen per organisation
+- Mobile-responsive shell, installable PWA
 
-### Version 2 (6 months)
-- E-invoice integration (IRN generation via GSP)
-- E-way bill generation
-- GSTR-4 (Composition scheme)
-- GSTR-9 annual return preparation
-- WhatsApp invoice sharing
-- Payment links (Razorpay/PayU)
-- Bank statement import
-- OCR bill scanning
+### Version 2 (in progress — shipped as feature rounds)
+Round 1, closed:
+- GSTR-2B ↔ books ITC reconciliation (`/gst/reconciliation`)
+- E-invoice (IRN) + e-way bill payloads as download-and-paste JSON (`/gst/einvoice`)
+- Payment links + WhatsApp reminders (`/payments/links`)
+- Light double-entry: P&L and balance sheet derived from documents (`/accounting`)
+- Offline PWA with an invoice outbox that replays through the normal save path (`/offline`)
+- Camera barcode scan + counter sale POS (`/pos`)
+- Bill OCR scanning and natural-language reporting (`/ai/scan-bill`, `/ai/ask`)
+
+Round 2, R2-1 … R2-9:
+- Design system v1 (tokens, UI kit, app shell)
+- Party ledger accounts and statements of account (`/ledger`)
+- Compliance calendar with late-fee estimation and `.ics` export (`/gst/calendar`)
+- Statutory registers: party-wise, HSN/SAC, B2B, state-wise, e-way bill (`/reports/registers`)
+- Invoice print/PDF templates (`classic`, `modern`, `minimal`)
+- Targets & achievement analytics with festival-weighted pacing (`/reports/targets`)
+- Reorder levels and supplier-grouped purchase suggestions (`/inventory/reorder`)
+- ⌘K command palette over pages, actions and live records
+- GSTR-9 / 9C annual workpaper (`/gst/gstr9`)
+
+Still to come:
+- Bank statement import + automatic matching of receipts to invoices (**R2-10, next**)
+- TDS / 194Q compliance (the calendar already reserves the events)
+- GSTR-4 (Composition scheme) return workpaper
+- Real GSP submission for e-invoice / e-way bill (blocked on paid GSP provider — see `6-Project-Memory.md`)
+- Email invoices directly from the app
+- Multi-user with roles (invite accountant/staff)
 
 ### Enterprise / Future
 - Multi-company management
 - Accountant portal (manage multiple clients)
 - API access
 - Mobile app (iOS + Android)
-- AI-powered expense categorization
-- AI GST error detection
+- Server-side AI (expense categorisation, GST error detection)
 - Payroll
-- TDS / TCS management
-- Advanced accounting (P&L, Balance Sheet)
+- Full accounting with a posted journal ledger
 
 ---
 
@@ -181,6 +199,8 @@ Everything a business needs to operate day-to-day:
 - Mark as paid (sent invoices only)
 - Cancel invoice
 - Print / PDF
+- Document skin: `classic`, `modern`, `minimal`, remembered per organisation
+- Created from three paths that share one write helper: the invoice form, the POS counter, and the offline outbox replay
 
 ### 3.7 Purchase Bills
 - Vendor bill number (external)
@@ -216,6 +236,8 @@ Everything a business needs to operate day-to-day:
 - Movement history per product
 - Auto-update on invoice (reduce)
 - Auto-update on purchase bill (increase)
+- Editing a product must never rewrite stock from opening stock — `current_stock` is seeded on insert only
+- Reorder levels, lead time and demand cover per product (see 3.24)
 
 ### 3.11 GST Dashboard
 - Period selector (by month)
@@ -258,6 +280,88 @@ Everything a business needs to operate day-to-day:
 - GST return status
 - Recent invoices
 
+### 3.16 GSTR-2B Reconciliation
+- Paste or upload the 2B statement (JSON/CSV as downloaded from the portal)
+- Match line by line against purchase bills in the books
+- Classify: matched, credit in books but not 2B, credit in 2B but not booked, mismatched amount
+- Show ITC at risk and the exact bills to chase with the supplier
+- Nothing is filed — the output is a workpaper
+
+### 3.17 E-Invoicing and E-Way Bill
+- Build the NIC e-invoice JSON (DtSpec version 1.10) from a saved invoice, with IRN-side validation errors surfaced before download
+- Build a GSP-shaped e-way bill payload for the consignee, transport and distance
+- Download-and-paste flow: the user submits on the portal / GSP and pastes the IRN and ACKNo back
+- Submitted bills logged into the e-way bill register
+- Provider adapter layer (`src/lib/gsp`) with a mock simulator, ready for a real GSP when one is contracted
+
+### 3.18 Payment Collection
+- UPI deep links (`upi://pay`) built from the seller's VPA and the invoice amount
+- WhatsApp reminder links (`wa.me`) with three tones, placeholders for customer, business, invoice, amount, due date and link
+- Per-organisation payee settings stored locally; no payment gateway account required
+
+### 3.19 Party Ledger
+- Statement of account per customer/vendor: opening, invoices, credit and debit notes, receipts, running balance
+- Payments linked through their document first and a normalised party-name key second
+- Sign convention: positive = to receive, negative = to pay
+- Downloadable/printable statement
+
+### 3.20 Financial Statements
+- P&L excluding GST, derived from invoices, bills, expenses and credit notes
+- Balance sheet that always balances, with a transparent "Capital account (derived)" plug
+- Opening balances per organisation in local storage
+- Not a posting journal — documented as a derived view
+
+### 3.21 Compliance Calendar
+- Filing profile: monthly / QRMP / composition × TDS × employees × audit × professional tax
+- Generated FY of GST, TDS, income-tax and payroll due dates with countdowns
+- Late-fee estimator: ₹50/day capped ₹5,000 (₹20 nil), 234E ₹200/day, 18% GST interest
+- `.ics` export and Google Calendar links; filing state per organisation in local storage
+
+### 3.22 Statutory Registers
+- Party-wise turnover, HSN/SAC summary (rate mix per code, nil-rate flagged exempt), invoice-level B2B, Rule 80(1) state-wise outward, e-way bill log
+- Credit notes reduce the period they are dated in — signed rows, never absolute values
+- CSV export per register
+
+### 3.23 Targets and Achievement
+- Annual sales/expense plan per month, product-level goals on amount or quantity
+- Festival-weighted split (a plan must total exactly what was typed)
+- Running month judged against prorated expected-to-date with pace bands, not percent-complete
+- Measured on taxable value, GST excluded
+
+### 3.24 Reorder Planning
+- Demand from invoice lines minus credit-note lines over a trailing window
+- Classic (s, S) policy: reorder point = lead-time demand + safety; order-up-to = demand over lead+cover + safety
+- The owner's own `minimum_stock` is honoured and labelled as their opinion
+- Suggestions grouped into supplier-wise purchase orders
+
+### 3.25 Counter Sale (POS)
+- Product grid, cart, GST split through the shared engine
+- Camera barcode scanning with GS1 check-digit validation and EAN-13↔UPC-A variant matching; degrades to manual/USB keyboard-wedge input
+- Walk-in sales billed to an auto-created cash customer; Cash/UPI/Card settle the invoice on the spot
+
+### 3.26 Offline Operation
+- Installable shell: network-first navigations, cache-first hashed statics, offline fallback page
+- Invoices saved without a connection get a temporary number and are replayed through the exact online save path on reconnect — real sequence number, line items, stock movement
+- No separate offline data model, so replay cannot diverge from the online path
+
+### 3.27 Scanned Documents and Natural-Language Reporting
+- Extract supplier, GSTIN, bill number, date, HSN and line items from raw OCR/PDF text
+- Cross-validate each field against GST arithmetic (qty×rate−disc = taxable; taxable×(1+gst%) = row total) with per-field confidence
+- Answers on 17 intents (sales, purchases, expenses, profit, GST collected/ITC/payable, receivables, payables, collections, cash, invoice count, average invoice, top customers/vendors/products, breakdown) with financial-period parsing and party/product/HSN/category filters from the user's own data
+- Everything deterministic and in-browser; nothing leaves the device
+
+### 3.28 Command Palette
+- ⌘K / Ctrl-K over navigation, the two create actions, and live rows from eight tables
+- AND-token matching with field weights and a GSTIN fast path
+- Recent records, keyboard navigation, correct listbox semantics
+- Deep links: an invoice opens the document, anything else opens its list page with `?q=` pre-filled
+
+### 3.29 GSTR-9 / 9C Annual Workpaper
+- Outward and ITC tables built from the year's documents, plus the 180-day credit watchlist
+- 9C books-vs-filed-3B reconciliation using the owner's declared monthly 3B figures, Rule 42/43 reversals and Table 8/9 input
+- Portal-only data is shown as a labelled gap rather than invented
+- CSV export of every table
+
 ---
 
 ## 4. Non-Functional Requirements
@@ -266,6 +370,8 @@ Everything a business needs to operate day-to-day:
 - Page load under 3 seconds
 - Invoice calculation instant (client-side)
 - Reports load under 5 seconds
+- Register and workpaper pages fetch line items in bounded batches (500 ids at a time) so a full-FY report does not trip the gateway
+- The service worker keeps the shell and statics available with no network; invoice PDFs are capped so a document does not become a 36 MB download
 
 ### Security
 - All data isolated per organization
@@ -273,6 +379,8 @@ Everything a business needs to operate day-to-day:
 - Secure authentication via Supabase
 - HTTPS only
 - Input validation on all forms
+- Per-organisation local-storage keys (`taxflow:<feature>:<orgId>`) so one browser signed in as two businesses never mixes settings, plans or outboxes
+- OCR, bill scanning and natural-language reporting run in the browser; no document is uploaded to a third party
 
 ### GST Compliance
 - All GST rules must be configurable, not hard-coded
@@ -289,11 +397,12 @@ Everything a business needs to operate day-to-day:
 ---
 
 ## 5. Out of Scope (Current Version)
-- Direct GST portal filing (requires GSP authorization)
-- E-invoicing (requires IRP integration)
-- E-way bills
-- Bank integrations
+- Direct GST portal filing (requires GSP authorization) — the app prepares and exports workpapers only
+- Live IRP/GSP submission (e-invoice and e-way bill ship as build → download → paste-back)
+- Bank feeds / account aggregation (statement import is the next step, not a live connection)
 - Payroll
-- TDS / TCS
+- TDS / TCS return filing (R2-11 candidate)
 - Multi-currency
-- Mobile app
+- Native mobile app (the web app is an installable PWA)
+- Server-side LLM features — by design, so a business's bills never leave the device
+- New database tables or migrations; feature work rides on the existing schema plus per-organisation local storage
