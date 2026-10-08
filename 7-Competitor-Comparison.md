@@ -24,7 +24,7 @@ Everything below is "what the vendor advertises", which is exactly the thing Tax
 | Credit / debit notes | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | Purchase bills + ITC | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | Delivery challan | ✔ (R2-14) | · | ✔ | · | · | · | ✔ | · | ✔ |
-| Purchase order / sales order | · | · | ✔ | · | ✔ | · | ✔ | · | ✔ |
+| Purchase order / sales order | ✔ (R2-14) | · | ✔ | · | ✔ | · | ✔ | · | ✔ |
 | Recurring invoices | · | · | ✔ | · | · | · | · | · | ✔ |
 | Expense tracking | ✔ | · | ✔ | · | ✔ | · | · | · | · |
 | Invoice templates / branding | ✔ (3 skins) | · | ✔ | ✔ (multi-rate, formats) | ✔ (themes) | · | · | · | · |
@@ -110,7 +110,7 @@ Everything below is "what the vendor advertises", which is exactly the thing Tax
 | # | Gap | Who has it | Cost to close |
 | --- | --- | --- | --- |
 | 1 | **Actual return filing / GSP submission** — we stop at workpaper + JSON | everyone | Blocked: needs a contracted GSP (see ADR-016) |
-| 2 | **Delivery challan + purchase/sales orders + order-to-invoice flow** — the challan half is **delivered**: `/challans` register, printable token-drawn document, Rule 55(4) reasons, convert-to-invoice through the real write path (R2-14 B1, `f982aed`) | Zoho, Marg, Refrens, myBillBook, Busy | Challan: done · Sales/purchase orders: next (same `orderflow.ts` engine, SO/PO kinds already defined) |
+| 2 | **Delivery challan + purchase/sales orders + order-to-invoice flow** — **closed** (R2-14): `/challans` register and printable document (B1, `f982aed`), then sales and purchase orders on the same engine (B2, `b851818`) — confirm → close → convert to invoice, place → receive → convert to bill through the real write paths | Zoho, Marg, Refrens, myBillBook, Busy | Done — the PO-to-bill conversion asks for the vendor's own bill number (GSTR-2B matches it) instead of inventing one |
 | 3 | **Batch/expiry + serial tracking, multi-godown** | Marg, Zoho (Elite), Vyapar, Refrens | Needs real schema work — the no-migration default has to be revisited for this one |
 | 4 | **Customer portal** | Zoho (free), Busy, Marg, ClearTax | Medium — share links first, auth'd portal later |
 | 5 | **Multi-user roles / permissions** | Zoho (Professional), Busy, Marg | Auth + schema; belongs with Phase 14 security |

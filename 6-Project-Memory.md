@@ -339,7 +339,21 @@ E-invoice threshold, e-way bill requirement, filing profile (monthly/QRMP) and T
 
 **Commit:** `f982aed`.
 
-### Routes — 42 pages
+### Session 33 — 2026-10-08 (R2-14 B2 — sales orders + purchase orders)
+**Built:** the engine's other two kinds mounted (`b851818`) — one shared register (`OrderRegister.tsx`) and one shared printable document (`OrderDocument.tsx`) behind four thin route wrappers (`/sales-orders`, `/purchase-orders`, each with an `[id]` document), rather than refactoring the just-shipped challans pages: challans stays the sibling implementation and the two new kinds share their own pair. Every per-kind string — eyebrow, party label (Customer / Vendor), status labels, stats, empty states, footer — lives in one `COPY: Record<OrderKind, KindCopy>` table instead of being branched at each use site. Statuses: SO confirm → close ("Confirm order" / "Mark fulfilled"), PO place → receive ("Mark placed" / "Mark received"). Party master switches `customers` ↔ `vendors`; a product line on a PO prices from `purchase_price ?? selling_price`, on an SO from `selling_price`. Conversions ride the real write paths: SO → invoice through `createInvoice` (lazy `customers` row when the party was free-typed), PO → bill through `createPurchaseBill`. Because a purchase bill's number is the **vendor's own** — it is what GSTR-2B matches against — the PO conversion does not invent one: it opens a small modal asking "Vendor bill no. + bill date", and `buildBillPayload` (new, in `orderflow.ts`) refuses a blank number and flags `itc_eligible` on the bill and every item. New `bag` / `clipboard-check` icons; both new nav entries (`Sales Orders` in Sales, `Purchase Orders` first in Purchases). All four pages written on the kit; both printable documents token-drawn (0 hex), same anatomy as the challan with SO/PO signature blocks and "not a tax invoice".
+
+**Traps recorded:**
+- A purchase bill's number is the vendor's own, not ours to allocate — the PO cannot become a bill without it. Any auto-generated "bill number" would contradict GSTR-2B matching. The conversion asks, and the library throws if unasked.
+- The shared-component pattern for two near-identical kinds: keep one `COPY` table keyed by kind; the dead-ternary smell (`kind === 'x' ? 'orders' : 'orders'`) shows up when copy is branched per use site instead — both instances were removed before commit.
+- Modal convention holds: the bill-number modal does **not** close on scrim click — a typed vendor bill number must not vanish on a stray tap (same rule as every editor modal).
+
+**Method:** 22 new assertions in `/tmp/orderflow-test.mjs` (111 total — vendor fields, POS name resolution, ITC flags, both throw paths, `is_reverse_charge: false`, `status: 'active'`, trimmed bill number); `tsc` 0; eslint clean on every new file except the single accepted `no-img-element` warning on `OrderDocument.tsx` (same baseline as the other document pages); `npm run build` 48/48 static with all four routes in the table (`○ /sales-orders`, `ƒ /sales-orders/[id]`, `○ /purchase-orders`, `ƒ /purchase-orders/[id]`).
+
+**Ledger:** **38 pages on the kit, 4 partial, 0 pre-kit** (+3 auth). R2-14 B2 closes competitor gap #2 entirely — challans, orders and both conversion paths; B3 (registers/palette integration for the round) is the remainder. Browser pass still blocked by the expired Supabase dev session.
+
+**Commit:** `b851818`.
+
+### Routes — 46 pages
 ```
 src/app/
 ├── layout.tsx, page.tsx (→ /login), manifest.ts, globals.css, favicon.ico
@@ -350,6 +364,7 @@ src/app/
     ├── dashboard/                   pos/            offline/
     ├── invoices/{page,new,[id]}/    quotations/     customers/  vendors/  products/
     ├── challans/{page,[id]}/        ← delivery challan register + printable document
+    ├── sales-orders/{page,[id]}/    purchase-orders/{page,[id]}/  ← order register + document (R2-14 B2)
     ├── bills/  expenses/  credit-notes/  debit-notes/
     ├── payments/page  payments/links/  bank/
     ├── inventory/page  inventory/reorder/
@@ -381,14 +396,16 @@ gsp/{index.ts, types.ts, mock.ts}            ← provider adapter, mock transpor
 print layout uses. `words.ts` is the newer implementation. They intentionally
 coexist — do not "unify" them and change a printed invoice silently.)
 
-### Components — 6 in `src/components/`
+### Components — 8 in `src/components/`
 ```
-ui.tsx            ← Card, SectionTitle, StatCard, DeltaPill, Badge, Tone tokens
-Icons.tsx         ← stroke glyph set, key lookup with dashboard fallback
+ui.tsx               ← Card, SectionTitle, StatCard, DeltaPill, Badge, Tone tokens
+Icons.tsx            ← stroke glyph set, key lookup with dashboard fallback
 InvoiceDocument.tsx  ← classic / modern / minimal skins
 CommandPalette.tsx   ← ⌘K
 BarcodeScanner.tsx   ← getUserMedia + BarcodeDetector, graceful degrade
 PwaRegister.tsx      ← service-worker registration
+OrderRegister.tsx    ← shared register + editor for sales/purchase orders (kind-keyed COPY table)
+OrderDocument.tsx    ← shared printable order document, SO/PO branches inside
 ```
 
 ### Data model
@@ -438,6 +455,7 @@ anything here is either reconstructible from documents or already exported.
 | `taxflow:bank:` | imported statements and confirm/set-aside decisions | `/bank` |
 | `taxflow:tds:` | section overrides, payer type and monthly challan details for withholding | `/tds` |
 | `taxflow:gstr4:` | declared CMP-08 deposits and stock-transfer value for the year | `/gst/gstr4` |
+| `taxflow:challan:` · `taxflow:sorder:` · `taxflow:porder:` | order-flow documents + numbering per kind (`challan` / `sales_order` / `purchase_order`) | `/challans`, `/sales-orders`, `/purchase-orders` |
 | `taxflow:palette-recents:` | recent ⌘K hits | `CommandPalette.tsx` |
 
 ---
@@ -558,7 +576,7 @@ node --version
 
 ## Next Steps (Priority Order)
 
-1. **R2-14 — the order-flow round from `7-Competitor-Comparison.md` §8 — is in flight.** B1 (delivery challans + the `orderflow.ts` engine) shipped in `f982aed`. Next: **B2 — sales orders and purchase orders** on the same engine (the `sales_order` / `purchase_order` kinds, statuses and numbering already exist; PO conversion will write through `create-bill.ts` the way challan conversion writes through `createInvoice`). Then batch/serial/multi-godown (the one gap that needs a schema decision). The design-system pass (R2-12) is complete — 4 lists (`bills`, `credit-notes`, `debit-notes`, `quotations`) still hand-code their chrome and get migrated when next touched.
+1. **R2-14 — the order-flow round from `7-Competitor-Comparison.md` §8 — is nearly closed.** B1 (delivery challans + the `orderflow.ts` engine) shipped in `f982aed`; B2 (sales and purchase orders on the same engine, converting through `createInvoice` / `createPurchaseBill`) shipped in `b851818`. Gap #2 is closed. Remaining: B3 — feed the three registers into the statutory-registers/ledgers surfaces and the ⌘K palette, then batch/serial/multi-godown (the one gap that needs a schema decision). The design-system pass (R2-12) is complete — 4 lists (`bills`, `credit-notes`, `debit-notes`, `quotations`) still hand-code their chrome and get migrated when next touched.
 2. **The unfinished browser pass** — GST batch 6 (`dd7d449`) and `gst/gstr4` (`da672a2`) were verified statically only; the Supabase dev session is expired, so nothing was measured at 355px or 1440px. Needs the user to sign in at `localhost:3000`.
 3. **Phase 14 — Security**: generated Supabase types, tightened dashboard RLS policies, audit log, multi-account isolation test. Do this before onboarding a real customer.
 4. **Real GSP integration** once a provider is chosen (ADR-016) — plus email invoices and multi-user, which need the pending decisions above.
