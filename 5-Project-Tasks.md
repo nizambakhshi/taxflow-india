@@ -394,7 +394,7 @@ Features ranked against Tally, Zoho, Vyapar, myBillBook, Marg, Busy, Refrens, Cl
 
 ## ROUND 2 — Backlog ⏳
 
-- 🔄 **R2-12 Design-system migration pass** (in progress) — counted from the code: **21** pages fully on the kit, **4** import only `SearchInput`, **10** still pre-kit (+3 auth pages). `4-Design-System.md` §16 is the ledger and the order. Done so far: `invoices` (list), `expenses`, the whole masters tier — `vendors`, `customers`, `products` — the whole money tier: `payments`, `payments/links`, `accounting`, `offline`, and the GST return tier: `gst` hub, `gstr1`, `gstr3b`. Next: the rest of GST (`reconciliation`, `einvoice`)
+- 🔄 **R2-12 Design-system migration pass** (in progress) — counted from the code: **23** pages fully on the kit, **4** import only `SearchInput`, **8** still pre-kit (+3 auth pages). `4-Design-System.md` §16 is the ledger and the order. Done so far: `invoices` (list), `expenses`, the whole masters tier — `vendors`, `customers`, `products` — the whole money tier: `payments`, `payments/links`, `accounting`, `offline`, and the whole GST tier: `gst` hub, `gstr1`, `gstr3b`, `gstr9`, `calendar`, `reconciliation`, `einvoice`. Next: counter and AI (`pos`, `inventory`, `ai/ask`, `ai/scan-bill`)
 - ⏳ GSTR-4 (Composition) workpaper
 - ⏳ Real GSP submission for e-invoice / e-way bill (blocked: no free government API; needs a contracted provider)
 
@@ -440,7 +440,7 @@ Remaining: ⏳ GSTR-4 (Composition) · ⏳ TDS/TCS return filing (26Q/24Q upload
 | RLS disabled / partial | Pending Phase 14 | App-level `organization_id` isolation active |
 | @supabase/ssr 0.12.x proxy/middleware | Pending | Fixed by disabling RLS temporarily |
 | `as any[]` on every Supabase read | Baseline | No generated types; eslint `no-explicit-any` errors are pre-existing |
-| 10 pages still pre-kit, 4 partly | Debt | R2-12 migration pass; `4-Design-System.md` §16 is the ledger |
+| 8 pages still pre-kit, 4 partly | Debt | R2-12 migration pass; the whole GST tier is now on the kit. `4-Design-System.md` §16 is the ledger |
 | Font stack declares Inter, `next/font` loads Geist | Cosmetic | Nothing consumes `--font-geist-sans`; renders on the system stack |
 | GSP submission is a mock | Blocked | No free government API; adapter ready for a real provider |
 | Two amount-in-words implementations | Intentional | Legacy `numberToWords` still drives the classic print layout |
