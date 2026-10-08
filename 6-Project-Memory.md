@@ -370,7 +370,25 @@ E-invoice threshold, e-way bill requirement, filing profile (monthly/QRMP) and T
 
 **Commit:** `94b3c1c`.
 
-### Routes — 46 pages
+### Session 35 — 2026-10-08 (R2-15 B1 — batch & expiry register, FEFO consumption)
+**Built:** `src/lib/batches.ts` (`9b7a4c6`) — the first half of competitor gap #3, and the schema decision that gated the round resolved in favour of ADR-013: a batch is owner bookkeeping (the statutory paper — invoice, e-way bill — never carries the lot), so lots live in `taxflow:batches:<orgId>` and their movements in `taxflow:batchmoves:<orgId>`, no new tables. A movement is signed — a sale leaves negative, a return comes back positive — and every view (In / Out / Left / Value) is derived from the two stores, never stored. Expiry runs against the whole day printed on the pack: `daysLeft` 0 is "Expires today" (critical), not already-expired; tiers are expired / ≤30 (`EXPIRY_CRITICAL_DAYS`) / ≤90 (`EXPIRY_SOON_DAYS`) / ok / no-expiry, with the day difference taken at UTC noon so no client timezone can shift a lot across midnight. FEFO draws expired lots first by design — the register records what physically happened and the page warns (red badge, expired-take lines in the allocator preview) rather than blocking a dispatch that is already on the road; dated lots queue ahead of undated ones by receipt age; **each receipt is its own lot** — the same batch number delivered twice is two rows, never merged, because the register's job is to answer "which receipt is left". `allocateFefo` is the preview; `recordSale` appends the real moves and is quiet by design — it returns `null` when nothing is drawable and never throws, and it draws against a running working list so two lines of the same product in one invoice cannot double-draw a lot. Validation keeps the counts honest: the received quantity cannot be edited below what has left the lot (`out − back`).
+
+**Wired:** `/inventory/batches` on the kit (0 hex) — six views (On the shelf default / expired / ≤ 30 days / 31–90 days / Sold out / all), four stat cards (lots on the shelf, stock value, expiring in 30 days, expired), per-row expiry badge with days text, and three modals: the editor (live expiry hint as you type the dates), the **FEFO allocator** (pick preview with cover/shortfall and expired-take warnings before anything is written), and adjust (Leaves / Returns). CSV export of the visible rows. The real consumption hook is one call in `create-invoice.ts` after the stock-movement loop — so the invoice form, the POS counter and offline replay all draw lots down FEFO through the single write path without knowing the register exists. Nav entry under Masters ("Batches & Expiry"); a ⌘K "Add batch" action deep-links `?new=1`.
+
+**Traps recorded:**
+- One receipt is one lot. Merging two deliveries of the same batch number would destroy the answer to "which receipt is left" — the exact question expiry-first rotation exists to answer.
+- The last day printed on the pack is a usable day. `daysLeft 0` reads "Expires today" and only a negative figure says expired; the difference runs at UTC noon so no timezone can flip a lot across midnight.
+- Expired lots are drawn, not skipped. Blocking would make the register contradict the physical world it records; the allocator preview names the expired take and the badge carries the warning. The register records, the human decides.
+- `recordSale` must never throw — a broken store returns `null` and the invoice save must not depend on the register. The running move list (not the store) is what a second line of the same product reads, or one invoice would double-draw its first lot.
+- The edit floor is `out − back`. The message owns the arithmetic — "8 units have left this lot (3 returned) — the received count cannot go below 5" — because a returns-aware floor is not a number a shopkeeper should have to reconstruct from the register.
+
+**Method:** 77 assertions in `/tmp/batches-test.mjs` (day-boundary table including 0/±30/90/91, storage tolerance + SSR guard, FEFO ordering, allocateFefo expired-first / shortfall / no-op, recordSale cross-lot and two-line drawdown and every null case, the returns-aware floor, summary buckets, CSV shape); `orderflow-test` 111, `commands-test` 34 and `gst-rates` 22 still green; `tsc` 0; eslint clean on every new file — `create-invoice.ts` keeps only its 2 pre-existing findings, re-proven against HEAD via `git show HEAD:… | npx eslint --stdin`; `npm run build` 49/49 with `○ /inventory/batches` in the route table.
+
+**Ledger:** **39 pages on the kit, 4 partial, 0 pre-kit** (+3 auth). R2-15 B1 opens competitor gap #3 — batch/expiry done; serials (same localStorage pattern) and multi-godown (needs real columns → the Phase 14 schema window) remain. Browser pass still blocked by the expired Supabase dev session.
+
+**Commit:** `9b7a4c6`.
+
+### Routes — 47 pages
 ```
 src/app/
 ├── layout.tsx, page.tsx (→ /login), manifest.ts, globals.css, favicon.ico
@@ -384,7 +402,7 @@ src/app/
     ├── sales-orders/{page,[id]}/    purchase-orders/{page,[id]}/  ← order register + document (R2-14 B2)
     ├── bills/  expenses/  credit-notes/  debit-notes/
     ├── payments/page  payments/links/  bank/
-    ├── inventory/page  inventory/reorder/
+    ├── inventory/{page,reorder,batches}/  ← reorder planner + batch/expiry register (R2-15 B1)
     ├── ledger/  accounting/
     ├── tds/                         ← withholding workpaper
     ├── gst/{page,gstr1,gstr3b,gstr9,gstr4,reconciliation,einvoice,calendar}/
@@ -394,7 +412,7 @@ src/app/
 public/sw.js  public/offline.html
 ```
 
-### Libraries — 32 modules in `src/lib/` + `src/lib/gsp/`
+### Libraries — 33 modules in `src/lib/` + `src/lib/gsp/`
 ```
 supabase.ts  constants.ts  gst-engine.ts  format.ts  words.ts  reports.ts
 gst-rates.ts                                 ← the one GST rate table every picker imports
@@ -406,6 +424,7 @@ bank-statement.ts                             ← statement parser + match score
 tds.ts                                        ← withholding sections, workpaper, deposits
 gstr4.ts                                      ← composition slabs, CMP-08 quarters, deemed debit
 orderflow.ts                                  ← challans / sales orders / purchase orders (localStorage)
+batches.ts                                    ← lots, FEFO drawdown, expiry watch (localStorage)
 pdf-export.ts                                 ← shared html2canvas → jsPDF slice pipeline
 gsp/{index.ts, types.ts, mock.ts}            ← provider adapter, mock transport
 ```
@@ -473,6 +492,7 @@ anything here is either reconstructible from documents or already exported.
 | `taxflow:tds:` | section overrides, payer type and monthly challan details for withholding | `/tds` |
 | `taxflow:gstr4:` | declared CMP-08 deposits and stock-transfer value for the year | `/gst/gstr4` |
 | `taxflow:challan:` · `taxflow:sorder:` · `taxflow:porder:` | order-flow documents + numbering per kind (`challan` / `sales_order` / `purchase_order`) | `/challans`, `/sales-orders`, `/purchase-orders` |
+| `taxflow:batches:` · `taxflow:batchmoves:` | batch lots and their signed movements (FEFO drawdown) | `/inventory/batches`, `create-invoice.ts` |
 | `taxflow:palette-recents:` | recent ⌘K hits | `CommandPalette.tsx` |
 
 ---
@@ -593,7 +613,7 @@ node --version
 
 ## Next Steps (Priority Order)
 
-1. **R2-14 — the order-flow round from `7-Competitor-Comparison.md` §8 — is complete.** B1 (delivery challans + the `orderflow.ts` engine) shipped in `f982aed`; B2 (sales and purchase orders converting through `createInvoice` / `createPurchaseBill`) in `b851818`; B3 (the Order flow tab in `/reports/registers` + synchronous palette search over the three stores + `?new=1` editor deep links, plus the hyphenated-query ranker fix) in `94b3c1c`. Gap #2 is closed end-to-end. Next by rank: **gap #3 batch/expiry + serial tracking, multi-godown** — the one gap whose cost line says the no-migration default (ADR-013) has to be revisited, so it starts with a schema decision, not a page. Then #4–#12 in order. The design-system pass (R2-12) is complete — 4 lists (`bills`, `credit-notes`, `debit-notes`, `quotations`) still hand-code their chrome and get migrated when next touched.
+1. **R2-15 — gap #3, batch/expiry + serial tracking, multi-godown — is open, with the batch/expiry half shipped.** B1 (`9b7a4c6`) added the batch & expiry register with FEFO consumption wired into `create-invoice.ts`; the schema decision closed on ADR-013 — a batch is owner bookkeeping, the statutory paper never carries the lot, so no tables were needed for this half. What remains of the gap: **serials** (same localStorage pattern — likely R2-15 B2), and **multi-godown**, which does need real columns and therefore waits for the Phase 14 schema window instead of being faked. Then gaps #4–#12 by rank. R2-14 is complete (B1 `f982aed`, B2 `b851818`, B3 `94b3c1c` — gap #2 closed end-to-end), and R2-12's design-system pass is complete — 4 lists (`bills`, `credit-notes`, `debit-notes`, `quotations`) still hand-code their chrome and get migrated when next touched.
 2. **The unfinished browser pass** — GST batch 6 (`dd7d449`) and `gst/gstr4` (`da672a2`) were verified statically only; the Supabase dev session is expired, so nothing was measured at 355px or 1440px. Needs the user to sign in at `localhost:3000`.
 3. **Phase 14 — Security**: generated Supabase types, tightened dashboard RLS policies, audit log, multi-account isolation test. Do this before onboarding a real customer.
 4. **Real GSP integration** once a provider is chosen (ADR-016) — plus email invoices and multi-user, which need the pending decisions above.
