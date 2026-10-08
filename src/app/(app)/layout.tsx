@@ -466,7 +466,10 @@ function OfflineBanner({ orgId, pathname }: { orgId: string; pathname: string })
       gap: '12px', flexWrap: 'wrap',
       fontSize: '13px', color: '#92400e', fontWeight: 500
     }}>
-      <span>📶 You&apos;re offline — invoicing still works. New invoices are queued.</span>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <Icon name="alert" size={14} strokeWidth={2.2} />
+        You&apos;re offline — invoicing still works. New invoices are queued.
+      </span>
       {queued > 0 && (
         <Link href="/offline" style={{
           color: 'var(--brand)', fontWeight: 600, textDecoration: 'none',
