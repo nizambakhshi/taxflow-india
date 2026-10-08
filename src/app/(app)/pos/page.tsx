@@ -20,6 +20,8 @@ import {
 import BarcodeScanner from '@/components/BarcodeScanner'
 import { createInvoice } from '@/lib/create-invoice'
 import { queueOfflineInvoice, isNetworkError } from '@/lib/outbox'
+import { Button, Card, EmptyState, PageHeader, SearchInput, SectionTitle, Segmented, StatRow } from '@/components/ui'
+import Icon from '@/components/Icons'
 
 type Product = {
   id: string
@@ -58,12 +60,7 @@ type Notice = { tone: 'ok' | 'error'; text: string } | null
 type Receipt = { invoiceNumber: string; invoiceId: string; grandTotal: number; queued: boolean }
 
 const PAY_MODES = ['Cash', 'UPI', 'Card', 'Pending'] as const
-
-const inputStyle = {
-  width: '100%', padding: '8px 10px',
-  border: '1px solid #d1d5db', borderRadius: '6px',
-  fontSize: '13px', outline: 'none', color: '#1e293b', background: 'white',
-}
+const PAY_MODE_OPTIONS = PAY_MODES.map(m => ({ value: m, label: m }))
 
 function stateName(code: string) {
   return INDIAN_STATES.find(s => s.value === code)?.label || ''
@@ -348,50 +345,35 @@ export default function PosPage() {
   }
 
   if (loading) {
-    return <div className="page-container"><p style={{ color: '#64748b', fontSize: '13px' }}>Loading…</p></div>
+    return <div className="page-container" style={{ color: 'var(--muted)', fontSize: 13 }}>Loading the counter…</div>
   }
 
   const totalLines = priced.reduce((s, l) => s + l.quantity, 0)
 
   return (
-    <div className="page-container" style={{ maxWidth: '1200px' }}>
-      <div className="page-header" style={{ marginBottom: '1.25rem' }}>
-        <h1 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b' }}>Counter Sale</h1>
-        <p style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
-          Scan a barcode or tap a product. The sale creates a normal GST tax invoice.
-        </p>
-      </div>
+    <div className="page-container pos" style={{ maxWidth: 1200 }}>
+      <PageHeader
+        eyebrow="Sales"
+        title="Counter sale"
+        subtitle="Scan a barcode or tap a product. The sale creates a normal GST tax invoice."
+      />
 
       {receipt && (
-        <div style={{
-          padding: '16px 18px', borderRadius: '10px', marginBottom: '1rem',
-          background: receipt.queued ? '#fff7ed' : '#f0fdf4',
-          border: `1px solid ${receipt.queued ? '#fed7aa' : '#bbf7d0'}`,
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          gap: '12px', flexWrap: 'wrap'
-        }}>
+        <div className={`pos-receipt ${receipt.queued ? 'is-queued' : 'is-done'}`}>
           <div>
-            <div style={{ fontSize: '14px', fontWeight: '600', color: receipt.queued ? '#9a3412' : '#166534' }}>
+            <div className="pos-receipt-title">
               {receipt.queued ? 'Saved offline' : 'Sale completed'} — {receipt.invoiceNumber}
             </div>
-            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
+            <div className="pos-receipt-sub">
               ₹{formatINR(receipt.grandTotal)} · {paymentMode}
               {receipt.queued && ' · syncs when you are back online'}
             </div>
           </div>
-          <div className="btn-group" style={{ display: 'flex', gap: '8px' }}>
+          <div className="tf-row" style={{ gap: 8 }}>
             {receipt.invoiceId && (
-              <button onClick={() => router.push(`/invoices/${receipt.invoiceId}`)} style={{
-                padding: '8px 14px', background: 'white', color: '#2563eb',
-                border: '1px solid #bfdbfe', borderRadius: '7px', fontSize: '12px',
-                fontWeight: '500', cursor: 'pointer'
-              }}>Print invoice</button>
+              <Button size="sm" variant="ghost" onClick={() => router.push(`/invoices/${receipt.invoiceId}`)}>Print invoice</Button>
             )}
-            <button onClick={() => setReceipt(null)} style={{
-              padding: '8px 14px', background: '#2563eb', color: 'white',
-              border: 'none', borderRadius: '7px', fontSize: '12px',
-              fontWeight: '600', cursor: 'pointer'
-            }}>New sale</button>
+            <Button size="sm" icon="plus" onClick={() => setReceipt(null)}>New sale</Button>
           </div>
         </div>
       )}
@@ -399,49 +381,39 @@ export default function PosPage() {
       <div className="pos-grid">
         {/* ── Left: scanning + catalogue ── */}
         <div>
-          <div style={{
-            background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px',
-            padding: '16px', marginBottom: '1rem'
-          }}>
+          <Card style={{ marginBottom: '1rem' }}>
             <form onSubmit={e => {
               e.preventDefault()
               if (!barcode.trim()) return
               handleCode(barcode)
               setBarcode('')
             }}>
-              <label style={{ fontSize: '12px', fontWeight: '500', color: '#374151', display: 'block', marginBottom: '4px' }}>
-                Barcode / product code
-              </label>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <label className="pos-label" htmlFor="pos-barcode">Barcode / product code</label>
+              <div className="tf-row" style={{ gap: 8 }}>
                 <input
+                  id="pos-barcode"
                   ref={barcodeRef}
                   autoFocus
                   value={barcode}
                   onChange={e => setBarcode(e.target.value)}
                   placeholder="Scan with a USB scanner or type the code"
-                  style={{ ...inputStyle, fontFamily: 'monospace' }}
+                  className="tf-input pos-mono"
+                  style={{ flex: 1, minWidth: 0 }}
                 />
-                <button type="submit" style={{
-                  padding: '8px 16px', background: '#2563eb', color: 'white',
-                  border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '600',
-                  cursor: 'pointer', whiteSpace: 'nowrap'
-                }}>Add</button>
+                <Button type="submit">Add</Button>
               </div>
             </form>
 
             {scanReady && (
-              <button
+              <Button
+                variant={scanOpen ? 'subtle' : 'ghost'}
+                size="sm"
+                icon="scan"
                 onClick={() => setScanOpen(v => !v)}
-                style={{
-                  marginTop: '10px', padding: '8px 14px',
-                  background: scanOpen ? 'white' : '#0f172a',
-                  color: scanOpen ? '#374151' : 'white',
-                  border: `1px solid ${scanOpen ? '#e2e8f0' : '#0f172a'}`,
-                  borderRadius: '7px', fontSize: '12px', fontWeight: '500', cursor: 'pointer'
-                }}
+                style={{ marginTop: 10 }}
               >
                 {scanOpen ? 'Hide camera scanner' : 'Scan with camera'}
-              </button>
+              </Button>
             )}
 
             {scanOpen && (
@@ -449,124 +421,102 @@ export default function PosPage() {
             )}
 
             {notice && (
-              <div style={{
-                marginTop: '10px', fontSize: '12px', fontWeight: '500',
-                color: notice.tone === 'ok' ? '#166534' : '#991b1b',
-                background: notice.tone === 'ok' ? '#f0fdf4' : '#fef2f2',
-                border: `1px solid ${notice.tone === 'ok' ? '#bbf7d0' : '#fecaca'}`,
-                borderRadius: '7px', padding: '8px 10px'
-              }}>
+              <div className={`pos-notice ${notice.tone === 'ok' ? 'is-ok' : 'is-error'}`}>
+                <Icon name={notice.tone === 'ok' ? 'check' : 'alert'} size={14} />
                 {notice.text}
               </div>
             )}
 
             {!scanReady && (
-              <p style={{ fontSize: '11px', color: '#94a3b8', marginTop: '10px' }}>
+              <p className="pos-hint" style={{ marginTop: 10 }}>
                 Camera scanning needs Chrome, Edge or Android browser. USB scanners and typing work everywhere.
               </p>
             )}
-          </div>
+          </Card>
 
-          <div style={{
-            background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '16px'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-              <h2 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b' }}>Products</h2>
-              <input
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="Search name, SKU, HSN"
-                style={{ ...inputStyle, maxWidth: '220px' }}
-              />
-            </div>
+          <Card>
+            <SectionTitle
+              icon="box"
+              action={<SearchInput value={search} onChange={setSearch} placeholder="Name, SKU, HSN…" ariaLabel="Search products" style={{ maxWidth: 220 }} />}
+            >
+              Products
+            </SectionTitle>
             {missingBarcodeCount > 0 && (
-              <p style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '10px' }}>
+              <p className="pos-hint" style={{ marginBottom: 10 }}>
                 {missingBarcodeCount} product{missingBarcodeCount === 1 ? '' : 's'} still need a barcode —{' '}
-                <a href="/products" style={{ color: '#2563eb' }}>add SKUs</a> to scan them.
+                <a href="/products" className="pos-link">add SKUs</a> to scan them.
               </p>
             )}
-            <div className="pos-products">
-              {visibleProducts.length === 0 ? (
-                <p style={{ fontSize: '13px', color: '#64748b' }}>
-                  No products match. Add them under Products first.
-                </p>
-              ) : visibleProducts.map(p => (
-                <button
-                  key={p.id}
-                  onClick={() => { addProduct(p); setNotice({ tone: 'ok', text: `Added ${p.name}` }) }}
-                  style={{
-                    textAlign: 'left', padding: '10px 12px', background: 'white',
-                    border: '1px solid #e2e8f0', borderRadius: '9px', cursor: 'pointer',
-                    display: 'flex', flexDirection: 'column', gap: '3px'
-                  }}
-                >
-                  <span style={{ fontSize: '13px', fontWeight: '500', color: '#1e293b' }}>{p.name}</span>
-                  <span style={{ fontSize: '12px', color: '#2563eb', fontWeight: '600' }}>
-                    ₹{formatINR(Number(p.selling_price) || 0)}
-                  </span>
-                  <span style={{ fontSize: '11px', color: '#94a3b8' }}>
-                    GST {p.gst_rate}%{normalizeBarcode(p.sku || '') ? ` · ${p.sku}` : ' · no barcode'}
-                    {p.track_inventory ? ` · stock ${p.current_stock}` : ''}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
+            {visibleProducts.length === 0 ? (
+              <EmptyState
+                icon="search"
+                title="No products match"
+                message="Try a different name, SKU or HSN — or add the item to the catalogue first."
+                action={<Button size="sm" variant="subtle" href="/products" icon="plus">Add items</Button>}
+              />
+            ) : (
+              <div className="pos-products">
+                {visibleProducts.map(p => (
+                  <button
+                    key={p.id}
+                    className="pos-tile"
+                    onClick={() => { addProduct(p); setNotice({ tone: 'ok', text: `Added ${p.name}` }) }}
+                  >
+                    <span className="pos-tile-name">{p.name}</span>
+                    <span className="pos-tile-price tf-num">₹{formatINR(Number(p.selling_price) || 0)}</span>
+                    <span className="pos-tile-sub">
+                      GST {p.gst_rate}%{normalizeBarcode(p.sku || '') ? ` · ${p.sku}` : ' · no barcode'}
+                      {p.track_inventory ? ` · stock ${p.current_stock}` : ''}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </Card>
         </div>
 
         {/* ── Right: cart ── */}
         <div className="pos-cart">
-          <div style={{
-            background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '16px'
-          }}>
-            <h2 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
-              Cart {totalLines > 0 && <span style={{ color: '#64748b', fontWeight: '400' }}>({totalLines})</span>}
-            </h2>
+          <Card>
+            <SectionTitle icon="cart">
+              Cart {totalLines > 0 && <span style={{ color: 'var(--muted)', fontWeight: 400 }}>({totalLines})</span>}
+            </SectionTitle>
 
             {priced.length === 0 ? (
-              <p style={{ fontSize: '13px', color: '#64748b' }}>Nothing added yet.</p>
+              <EmptyState icon="cart" title="Cart is empty" message="Scan a barcode or tap a product to start the sale." />
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px' }}>
+              <div className="pos-lines">
                 {priced.map(line => (
-                  <div key={line.product_id} style={{
-                    display: 'flex', alignItems: 'center', gap: '8px',
-                    padding: '8px 10px', background: '#f8fafc',
-                    border: '1px solid #e2e8f0', borderRadius: '8px', flexWrap: 'wrap'
-                  }}>
-                    <div style={{ flex: '1 1 140px', minWidth: 0 }}>
-                      <div style={{ fontSize: '13px', fontWeight: '500', color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {line.item_name}
-                      </div>
-                      <div style={{ fontSize: '11px', color: '#94a3b8' }}>
-                        ₹{formatINR(line.rate)} × {line.quantity} = ₹{formatINR(line.calculated.total_amount)}
-                      </div>
+                  <div key={line.product_id} className="pos-line">
+                    <div className="pos-line-main">
+                      <div className="pos-line-name">{line.item_name}</div>
+                      <div className="pos-line-sub">₹{formatINR(line.rate)} × {line.quantity} = ₹{formatINR(line.calculated.total_amount)}</div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <button onClick={() => changeQuantity(line.product_id, line.quantity - 1)} style={stepBtn}>−</button>
-                      <span style={{ fontSize: '13px', minWidth: '22px', textAlign: 'center', color: '#1e293b' }}>{line.quantity}</span>
-                      <button onClick={() => changeQuantity(line.product_id, line.quantity + 1)} style={stepBtn}>+</button>
+                    <div className="tf-row" style={{ gap: 4 }}>
+                      <button className="pos-step" aria-label={`Reduce ${line.item_name}`} onClick={() => changeQuantity(line.product_id, line.quantity - 1)}>−</button>
+                      <span className="pos-qty tf-num">{line.quantity}</span>
+                      <button className="pos-step" aria-label={`Add one more ${line.item_name}`} onClick={() => changeQuantity(line.product_id, line.quantity + 1)}>+</button>
                     </div>
                     <input
                       type="number"
+                      className="tf-input pos-rate"
                       value={line.rate}
+                      aria-label={`Rate for ${line.item_name}`}
                       onChange={e => changeRate(line.product_id, parseFloat(e.target.value) || 0)}
-                      style={{ ...inputStyle, width: '84px', textAlign: 'right' }}
                     />
-                    <button onClick={() => changeQuantity(line.product_id, 0)} style={{
-                      background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '15px'
-                    }}>×</button>
+                    <button className="pos-x" aria-label={`Remove ${line.item_name}`} onClick={() => changeQuantity(line.product_id, 0)}>×</button>
                   </div>
                 ))}
               </div>
             )}
 
-            <label style={{ fontSize: '12px', fontWeight: '500', color: '#374151', display: 'block', marginBottom: '4px' }}>
-              Customer
-            </label>
+            <label className="pos-label" htmlFor="pos-customer">Customer</label>
             <select
+              id="pos-customer"
               value={customerId}
               onChange={e => setCustomerId(e.target.value)}
-              style={{ ...inputStyle, marginBottom: '12px' }}
+              className="tf-input"
+              style={{ marginBottom: 12 }}
             >
               <option value="">Walk-in cash sale</option>
               {customers.map(c => (
@@ -574,74 +524,49 @@ export default function PosPage() {
               ))}
             </select>
 
-            <label style={{ fontSize: '12px', fontWeight: '500', color: '#374151', display: 'block', marginBottom: '4px' }}>
-              Payment
-            </label>
-            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '14px' }}>
-              {PAY_MODES.map(mode => (
-                <button
-                  key={mode}
-                  onClick={() => setPaymentMode(mode)}
-                  style={{
-                    padding: '7px 14px', borderRadius: '999px', fontSize: '12px', fontWeight: '500', cursor: 'pointer',
-                    background: paymentMode === mode ? '#2563eb' : 'white',
-                    color: paymentMode === mode ? 'white' : '#374151',
-                    border: `1px solid ${paymentMode === mode ? '#2563eb' : '#e2e8f0'}`
-                  }}
-                >
-                  {mode}
-                </button>
-              ))}
+            <label className="pos-label">Payment</label>
+            <div style={{ marginBottom: 14 }}>
+              <Segmented
+                options={PAY_MODE_OPTIONS}
+                value={paymentMode}
+                onChange={v => setPaymentMode(v as (typeof PAY_MODES)[number])}
+              />
             </div>
 
             {totals && (
-              <div style={{
-                borderTop: '1px solid #e2e8f0', paddingTop: '12px',
-                display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '13px'
-              }}>
-                <Row label="Taxable" value={`₹ ${formatINR(totals.taxable_amount)}`} />
+              <div className="pos-totals">
+                <StatRow label="Taxable" value={`₹ ${formatINR(totals.taxable_amount)}`} />
                 {gstType === 'igst'
-                  ? <Row label="IGST" value={`₹ ${formatINR(totals.igst_amount)}`} />
+                  ? <StatRow label="IGST" value={`₹ ${formatINR(totals.igst_amount)}`} tone="cyan" />
                   : <>
-                      <Row label="CGST" value={`₹ ${formatINR(totals.cgst_amount)}`} />
-                      <Row label="SGST" value={`₹ ${formatINR(totals.sgst_amount)}`} />
+                      <StatRow label="CGST" value={`₹ ${formatINR(totals.cgst_amount)}`} tone="violet" />
+                      <StatRow label="SGST" value={`₹ ${formatINR(totals.sgst_amount)}`} tone="violet" />
                     </>}
-                {totals.cess_amount > 0 && <Row label="Cess" value={`₹ ${formatINR(totals.cess_amount)}`} />}
-                {totals.round_off !== 0 && <Row label="Round off" value={`₹ ${formatINR(totals.round_off)}`} />}
-                <div style={{
-                  display: 'flex', justifyContent: 'space-between', paddingTop: '8px',
-                  borderTop: '1px solid #e2e8f0', marginTop: '4px',
-                  fontSize: '15px', fontWeight: '600', color: '#1e293b'
-                }}>
+                {totals.cess_amount > 0 && <StatRow label="Cess" value={`₹ ${formatINR(totals.cess_amount)}`} />}
+                {totals.round_off !== 0 && <StatRow label="Round off" value={`₹ ${formatINR(totals.round_off)}`} />}
+                <div className="pos-total tf-row-between">
                   <span>Total</span>
-                  <span>₹ {formatINR(totals.grand_total)}</span>
+                  <span className="tf-num">₹ {formatINR(totals.grand_total)}</span>
                 </div>
               </div>
             )}
 
             {formError && (
-              <div style={{
-                marginTop: '12px', fontSize: '12px', fontWeight: '500', color: '#991b1b',
-                background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '7px', padding: '8px 10px'
-              }}>
+              <div className="pos-notice is-error" style={{ marginTop: 12 }}>
+                <Icon name="alert" size={14} />
                 {formError}
               </div>
             )}
 
-            <button
+            <Button
               onClick={handleCharge}
               disabled={saving || priced.length === 0}
-              style={{
-                width: '100%', marginTop: '14px', padding: '12px',
-                background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px',
-                fontSize: '14px', fontWeight: '600',
-                cursor: saving || priced.length === 0 ? 'not-allowed' : 'pointer',
-                opacity: saving || priced.length === 0 ? 0.5 : 1
-              }}
+              icon={saving ? undefined : 'check'}
+              style={{ width: '100%', marginTop: 14 }}
             >
               {saving ? 'Creating invoice…' : totals ? `Charge ₹ ${formatINR(totals.grand_total)}` : 'Charge'}
-            </button>
-          </div>
+            </Button>
+          </Card>
         </div>
       </div>
 
@@ -649,26 +574,61 @@ export default function PosPage() {
         .pos-grid { display: grid; grid-template-columns: 1.15fr 1fr; gap: 1rem; align-items: start; }
         .pos-products { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
         .pos-cart { position: sticky; top: 1rem; }
+
+        .pos-label { display: block; font-size: 12px; font-weight: 550; color: var(--ink-2); margin-bottom: 4px; }
+        .pos-mono { font-family: ui-monospace, Menlo, monospace; letter-spacing: 0.03em; }
+        .pos-hint { font-size: 11px; color: var(--faint); }
+        .pos-link { color: var(--brand); }
+
+        .pos-tile { text-align: left; padding: 10px 12px; background: var(--surface);
+          border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer;
+          display: flex; flex-direction: column; gap: 3px; font-family: inherit; }
+        .pos-tile:hover { border-color: var(--brand); box-shadow: var(--shadow-xs); }
+        .pos-tile-name { font-size: 13px; font-weight: 550; color: var(--ink); }
+        .pos-tile-price { font-size: 12px; font-weight: 650; color: var(--brand); }
+        .pos-tile-sub { font-size: 11px; color: var(--faint); }
+
+        .pos-lines { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+        .pos-line { display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+          background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm);
+          flex-wrap: wrap; }
+        .pos-line-main { flex: 1 1 140px; min-width: 0; }
+        .pos-line-name { font-size: 13px; font-weight: 550; color: var(--ink);
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .pos-line-sub { font-size: 11px; color: var(--faint); }
+        .pos-step { width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--line);
+          background: var(--surface); color: var(--ink-2); font-size: 14px; cursor: pointer; line-height: 1; }
+        .pos-step:hover { border-color: var(--brand); color: var(--brand); }
+        .pos-qty { font-size: 13px; min-width: 22px; text-align: center; color: var(--ink); }
+        .pos-rate { width: 84px; text-align: right; }
+        .pos-x { background: none; border: none; color: var(--faint); cursor: pointer; font-size: 15px; padding: 4px; }
+        .pos-x:hover { color: var(--red); }
+
+        .pos-totals { border-top: 1px solid var(--line); padding-top: 4px; }
+        .pos-totals > .tf-row-between:nth-last-child(2) { border-bottom: none; }
+        .pos-total { padding-top: 10px; margin-top: 4px; border-top: 1px solid var(--line);
+          font-size: 15px; font-weight: 700; color: var(--ink); }
+
+        .pos-notice { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 550;
+          border-radius: var(--radius-sm); padding: 8px 10px; margin-top: 10px; }
+        .pos-notice svg { flex-shrink: 0; }
+        .pos-notice.is-ok { background: var(--green-soft); color: #15803d; }
+        .pos-notice.is-error { background: var(--red-soft); color: #b91c1c; }
+
+        .pos-receipt { display: flex; justify-content: space-between; align-items: center; gap: 12px;
+          flex-wrap: wrap; padding: 14px 16px; border-radius: var(--radius); margin-bottom: 1rem; border: 1px solid; }
+        .pos-receipt.is-done { background: var(--green-soft); border-color: #bbf7d0; }
+        .pos-receipt.is-queued { background: var(--amber-soft); border-color: #fed7aa; }
+        .pos-receipt-title { font-size: 14px; font-weight: 650; }
+        .pos-receipt.is-done .pos-receipt-title { color: #15803d; }
+        .pos-receipt.is-queued .pos-receipt-title { color: #b45309; }
+        .pos-receipt-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
         @media (max-width: 900px) {
           .pos-grid { grid-template-columns: 1fr; }
           .pos-cart { position: static; }
         }
       `}</style>
-    </div>
-  )
-}
-
-const stepBtn = {
-  width: '26px', height: '26px', borderRadius: '6px',
-  border: '1px solid #e2e8f0', background: 'white',
-  color: '#374151', fontSize: '14px', cursor: 'pointer', lineHeight: '1',
-} as const
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}>
-      <span>{label}</span>
-      <span>{value}</span>
     </div>
   )
 }

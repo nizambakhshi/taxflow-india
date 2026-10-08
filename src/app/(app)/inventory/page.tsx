@@ -4,19 +4,8 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { formatINR } from '@/lib/gst-engine'
-
-const inputStyle = {
-  width: '100%', padding: '8px 10px',
-  border: '1px solid #d1d5db', borderRadius: '6px',
-  fontSize: '13px', outline: 'none',
-  color: '#1e293b', background: 'white',
-}
-
-const labelStyle = {
-  display: 'block' as const,
-  fontSize: '12px', fontWeight: '500' as const,
-  color: '#374151', marginBottom: '4px',
-}
+import { Badge, Button, Card, EmptyState, PageHeader, SearchInput, Segmented, StatCard, type Tone } from '@/components/ui'
+import Icon from '@/components/Icons'
 
 type Product = {
   id: string
@@ -41,6 +30,21 @@ type Movement = {
   notes: string
   created_at: string
 }
+
+const MOVEMENT_CONFIG: Record<string, { label: string; tone: Tone }> = {
+  opening: { label: 'Opening', tone: 'blue' },
+  purchase: { label: 'Purchase', tone: 'green' },
+  sale: { label: 'Sale', tone: 'red' },
+  adjustment_in: { label: 'Adj in', tone: 'green' },
+  adjustment_out: { label: 'Adj out', tone: 'red' },
+  sale_return: { label: 'Return', tone: 'green' },
+  purchase_return: { label: 'Return', tone: 'red' },
+}
+
+const TAB_OPTIONS = [
+  { value: 'stock', label: 'Stock levels' },
+  { value: 'movements', label: 'Stock movements' },
+]
 
 export default function InventoryPage() {
   const supabase = createClient()
@@ -181,292 +185,155 @@ export default function InventoryPage() {
   const outOfStockCount = products.filter(p => p.current_stock <= 0).length
   const totalStockValue = products.reduce((s, p) => s + (p.current_stock * p.selling_price), 0)
 
-  const movementConfig: Record<string, { label: string; color: string; bg: string }> = {
-    opening: { label: 'Opening', color: '#1d4ed8', bg: '#eff6ff' },
-    purchase: { label: 'Purchase', color: '#059669', bg: '#f0fdf4' },
-    sale: { label: 'Sale', color: '#dc2626', bg: '#fef2f2' },
-    adjustment_in: { label: 'Adj In', color: '#059669', bg: '#f0fdf4' },
-    adjustment_out: { label: 'Adj Out', color: '#dc2626', bg: '#fef2f2' },
-    sale_return: { label: 'Return', color: '#059669', bg: '#f0fdf4' },
-    purchase_return: { label: 'Return', color: '#dc2626', bg: '#fef2f2' },
-  }
-
   const filteredMovements = movements.filter(m =>
     movementProduct === 'all' || m.product_id === movementProduct
   )
 
-  const tabStyle = (key: string) => ({
-    padding: '8px 20px', background: 'none', border: 'none',
-    cursor: 'pointer' as const, fontSize: '13px',
-    fontWeight: activeTab === key ? '600' : '400',
-    color: activeTab === key ? '#2563eb' : '#64748b',
-    borderBottom: activeTab === key ? '2px solid #2563eb' : '2px solid transparent',
-    marginBottom: '-1px'
-  })
+  const filterOptions = [
+    { value: 'all', label: `All (${products.length})` },
+    { value: 'low', label: `Low (${lowStockCount})` },
+    { value: 'out', label: `Out (${outOfStockCount})` },
+  ]
 
   if (loading) return (
-    <div style={{ padding: '2rem', color: '#64748b', fontSize: '14px' }}>Loading...</div>
+    <div className="page-container" style={{ color: 'var(--muted)', fontSize: 13 }}>Reading the stock ledger…</div>
   )
 
   return (
-    <div className="page-container" style={{ maxWidth: '1100px' }}>
-      {/* Header */}
-      <div className="page-header" style={{
-        display: 'flex', justifyContent: 'space-between',
-        alignItems: 'center', marginBottom: '1.5rem'
-      }}>
-        <div>
-          <h1 style={{ fontSize: '22px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
-            Inventory
-          </h1>
-          <p style={{ fontSize: '14px', color: '#64748b' }}>
-            {products.length} tracked product{products.length !== 1 ? 's' : ''}
-          </p>
-        </div>
-        <button
-          onClick={() => router.push('/products')}
-          style={{
-            padding: '9px 18px', background: '#f1f5f9',
-            color: '#374151', border: '1px solid #e2e8f0',
-            borderRadius: '8px', fontSize: '13px', cursor: 'pointer'
-          }}
-        >
-          ⚙️ Manage Products
-        </button>
-      </div>
+    <div className="page-container inv" style={{ maxWidth: 1100 }}>
+      <PageHeader
+        eyebrow="Masters"
+        title="Inventory"
+        subtitle={`${products.length} tracked product${products.length !== 1 ? 's' : ''} — stock moves only through recorded movements, never by editing a product.`}
+        actions={<Button variant="ghost" icon="settings" href="/products">Manage products</Button>}
+      />
 
       {/* Summary cards */}
-      <div className="metric-grid" style={{
-        display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
-        gap: '1rem', marginBottom: '1.5rem'
-      }}>
-        {[
-          {
-            label: 'Total Products Tracked',
-            value: products.length, isCount: true, color: '#2563eb'
-          },
-          {
-            label: 'Stock Value (Selling Price)',
-            value: totalStockValue, color: '#059669'
-          },
-          {
-            label: 'Low Stock Items',
-            value: lowStockCount, isCount: true,
-            color: lowStockCount > 0 ? '#d97706' : '#059669'
-          },
-          {
-            label: 'Out of Stock',
-            value: outOfStockCount, isCount: true,
-            color: outOfStockCount > 0 ? '#dc2626' : '#059669'
-          },
-        ].map(card => (
-          <div key={card.label} style={{
-            background: 'white', border: '1px solid #e2e8f0',
-            borderRadius: '12px', padding: '1rem',
-            borderTop: `3px solid ${card.color}`
-          }}>
-            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>
-              {card.label}
-            </div>
-            <div style={{ fontSize: '20px', fontWeight: '600', color: card.color }}>
-              {card.isCount ? card.value : `₹${formatINR(card.value as number)}`}
-            </div>
-          </div>
-        ))}
+      <div className="inv-stats">
+        <StatCard label="Products tracked" value={String(products.length)}
+          sub="goods with stock counting on" icon="box" tone="blue" />
+        <StatCard label="Stock value" value={totalStockValue}
+          sub="at selling price" icon="scale" tone="green" delay={40} />
+        <StatCard label="Low stock" value={String(lowStockCount)}
+          sub={lowStockCount ? 'at or below the minimum' : 'every item above its minimum'}
+          icon="alert" tone={lowStockCount > 0 ? 'amber' : 'green'} delay={80} />
+        <StatCard label="Out of stock" value={String(outOfStockCount)}
+          sub={outOfStockCount ? 'zero or below — reorder now' : 'nothing has run out'}
+          icon="cart" tone={outOfStockCount > 0 ? 'red' : 'green'} delay={120} />
       </div>
 
       {/* Tabs */}
-      <div className="tab-bar" style={{ borderBottom: '1px solid #e2e8f0', marginBottom: '1rem', display: 'flex' }}>
-        <button style={tabStyle('stock')} onClick={() => setActiveTab('stock')}>
-          📦 Stock Levels
-        </button>
-        <button style={tabStyle('movements')} onClick={() => setActiveTab('movements')}>
-          📋 Stock Movements ({movements.length})
-        </button>
+      <div style={{ marginBottom: '1rem' }}>
+        <Segmented
+          options={TAB_OPTIONS.map(t => t.value === 'movements' ? { ...t, label: `${t.label} (${movements.length})` } : t)}
+          value={activeTab}
+          onChange={v => setActiveTab(v as 'stock' | 'movements')}
+        />
       </div>
 
       {/* STOCK LEVELS TAB */}
       {activeTab === 'stock' && (
         <>
           {/* Filters */}
-          <div className="toolbar" style={{ display: 'flex', gap: '8px', marginBottom: '1rem' }}>
-            <input
-              style={{ ...inputStyle, maxWidth: '280px' }}
-              placeholder="Search products..."
+          <div className="inv-toolbar">
+            <SearchInput
               value={search}
-              onChange={e => setSearch(e.target.value)}
+              onChange={setSearch}
+              placeholder="Name, SKU or HSN…"
+              ariaLabel="Search stock"
+              style={{ flex: '1 1 240px', maxWidth: 300 }}
             />
-            {[
-              { key: 'all', label: `All (${products.length})` },
-              { key: 'low', label: `Low Stock (${lowStockCount})` },
-              { key: 'out', label: `Out of Stock (${outOfStockCount})` },
-            ].map(f => (
-              <button key={f.key} onClick={() => setFilter(f.key)} style={{
-                padding: '8px 14px',
-                background: filter === f.key ? '#2563eb' : 'white',
-                color: filter === f.key ? 'white' : '#374151',
-                border: '1px solid #e2e8f0', borderRadius: '8px',
-                fontSize: '12px', cursor: 'pointer', fontWeight: '500'
-              }}>
-                {f.label}
-              </button>
-            ))}
+            <div style={{ marginLeft: 'auto' }}>
+              <Segmented options={filterOptions} value={filter} onChange={setFilter} />
+            </div>
           </div>
 
           {products.length === 0 ? (
-            <div style={{
-              background: 'white', border: '1px solid #e2e8f0',
-              borderRadius: '12px', padding: '3rem',
-              textAlign: 'center', color: '#94a3b8'
-            }}>
-              <div style={{ fontSize: '36px', marginBottom: '1rem' }}>📦</div>
-              <div style={{ fontSize: '16px', fontWeight: '500', color: '#64748b', marginBottom: '8px' }}>
-                No products with inventory tracking
-              </div>
-              <div style={{ fontSize: '13px', marginBottom: '1.5rem' }}>
-                Go to Products and enable "Track inventory" on goods you want to track
-              </div>
-              <button
-                onClick={() => router.push('/products')}
-                style={{
-                  padding: '10px 20px', background: '#2563eb',
-                  color: 'white', border: 'none', borderRadius: '8px',
-                  fontSize: '13px', cursor: 'pointer', fontWeight: '600'
-                }}
-              >
-                Go to Products →
-              </button>
-            </div>
+            <Card>
+              <EmptyState
+                icon="box"
+                title="No products with inventory tracking"
+                message="Go to Products and switch on “Track inventory” for the goods you want counted — every invoice and purchase then moves the stock for you."
+                action={<Button size="sm" icon="plus" href="/products">Go to products</Button>}
+              />
+            </Card>
           ) : filtered.length === 0 ? (
-            <div style={{
-              background: 'white', border: '1px solid #e2e8f0',
-              borderRadius: '12px', padding: '2rem',
-              textAlign: 'center', color: '#94a3b8', fontSize: '14px'
-            }}>
-              No products match your filter
-            </div>
+            <Card>
+              <EmptyState
+                icon="search"
+                title="No products match this filter"
+                message="Clear the search or switch the filter back to All."
+              />
+            </Card>
           ) : (
-            <div className="responsive-table table-frame" style={{
-              background: 'white', border: '1px solid #e2e8f0',
-              borderRadius: '12px', overflow: 'hidden'
-            }}>
-              <div className="table-header" style={{
-                display: 'grid',
-                gridTemplateColumns: '2.5fr 1fr 1fr 1fr 1fr 1fr 120px',
-                gap: '12px', padding: '10px 16px', background: '#f8fafc',
-                fontSize: '12px', fontWeight: '600', color: '#64748b',
-                borderBottom: '1px solid #e2e8f0'
-              }}>
-                <span>Product</span>
-                <span>Unit</span>
-                <span>Current Stock</span>
-                <span>Min Stock</span>
-                <span>Stock Value</span>
-                <span>Status</span>
-                <span>Actions</span>
-              </div>
+            <div className="table-frame">
+              <div className="responsive-table">
+                <div className="table-header inv-row inv-head">
+                  <span>Product</span>
+                  <span>Unit</span>
+                  <span className="inv-right">Current stock</span>
+                  <span className="inv-right">Min stock</span>
+                  <span className="inv-right">Stock value</span>
+                  <span>Status</span>
+                  <span>Actions</span>
+                </div>
 
-              {filtered.map(product => {
-                const isLow = product.current_stock <= product.minimum_stock
-                  && product.current_stock > 0
-                const isOut = product.current_stock <= 0
-                const stockValue = product.current_stock * product.selling_price
+                {filtered.map(product => {
+                  const isLow = product.current_stock <= product.minimum_stock
+                    && product.current_stock > 0
+                  const isOut = product.current_stock <= 0
+                  const stockValue = product.current_stock * product.selling_price
 
-                return (
-                  <div key={product.id} className="table-row" style={{
-                    display: 'grid',
-                    gridTemplateColumns: '2.5fr 1fr 1fr 1fr 1fr 1fr 120px',
-                    gap: '12px', padding: '12px 16px',
-                    borderBottom: '1px solid #f1f5f9',
-                    alignItems: 'center', fontSize: '13px',
-                    background: isOut ? '#fff5f5' : isLow ? '#fffbeb' : 'white'
-                  }}>
-                    <div data-label="Product">
-                      <div style={{ fontWeight: '500', color: '#1e293b' }}>
-                        {product.name}
+                  return (
+                    <div key={product.id} className={`table-row inv-row ${isOut ? 'is-out' : isLow ? 'is-low' : ''}`}>
+                      <div data-label="Product" className="inv-name">
+                        <span className="inv-name-main">{product.name}</span>
+                        {product.sku && <span className="inv-sub">SKU: {product.sku}</span>}
+                        {product.hsn_sac && <span className="inv-sub">HSN: {product.hsn_sac}</span>}
                       </div>
-                      {product.sku && (
-                        <div style={{ fontSize: '11px', color: '#94a3b8' }}>
-                          SKU: {product.sku}
-                        </div>
-                      )}
-                      {product.hsn_sac && (
-                        <div style={{ fontSize: '11px', color: '#94a3b8' }}>
-                          HSN: {product.hsn_sac}
-                        </div>
-                      )}
-                    </div>
-                    <div data-label="Unit" style={{ color: '#64748b' }}>{product.unit}</div>
-                    <div data-label="Current Stock" style={{
-                      fontWeight: '700', fontSize: '15px',
-                      color: isOut ? '#dc2626' : isLow ? '#d97706' : '#059669'
-                    }}>
-                      {Number(product.current_stock).toFixed(2)}
-                    </div>
-                    <div data-label="Min Stock" style={{ color: '#64748b' }}>
-                      {Number(product.minimum_stock).toFixed(2)}
-                    </div>
-                    <div data-label="Stock Value" style={{ fontWeight: '500', color: '#374151' }}>
-                      ₹{formatINR(stockValue)}
-                    </div>
-                    <div data-label="Status">
-                      {isOut ? (
-                        <span style={{
-                          fontSize: '11px', padding: '3px 8px',
-                          borderRadius: '99px', background: '#fef2f2',
-                          color: '#dc2626', fontWeight: '600'
-                        }}>Out of Stock</span>
-                      ) : isLow ? (
-                        <span style={{
-                          fontSize: '11px', padding: '3px 8px',
-                          borderRadius: '99px', background: '#fef9c3',
-                          color: '#854d0e', fontWeight: '600'
-                        }}>Low Stock</span>
-                      ) : (
-                        <span style={{
-                          fontSize: '11px', padding: '3px 8px',
-                          borderRadius: '99px', background: '#f0fdf4',
-                          color: '#166534', fontWeight: '600'
-                        }}>In Stock</span>
-                      )}
-                    </div>
-                    <div data-label="Actions" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                      <button
-                        onClick={() => {
+                      <div data-label="Unit" className="inv-sub" style={{ fontSize: 12.5 }}>{product.unit}</div>
+                      <div data-label="Current stock" className="inv-right">
+                        <span className="inv-cur tf-num" style={{ color: isOut ? 'var(--red)' : isLow ? 'var(--amber)' : 'var(--green)' }}>
+                          {Number(product.current_stock).toFixed(2)}
+                        </span>
+                      </div>
+                      <div data-label="Min stock" className="inv-right">
+                        <span className="tf-num" style={{ color: 'var(--muted)' }}>{Number(product.minimum_stock).toFixed(2)}</span>
+                      </div>
+                      <div data-label="Stock value" className="inv-right">
+                        <span className="tf-num" style={{ fontWeight: 550, color: 'var(--ink-2)' }}>₹{formatINR(stockValue)}</span>
+                      </div>
+                      <div data-label="Status">
+                        {isOut ? (
+                          <Badge tone="red">Out of stock</Badge>
+                        ) : isLow ? (
+                          <Badge tone="amber">Low stock</Badge>
+                        ) : (
+                          <Badge tone="green">In stock</Badge>
+                        )}
+                      </div>
+                      <div data-label="Actions" className="inv-actions">
+                        <Button size="sm" variant="subtle" onClick={() => {
                           setSelectedProduct(product)
                           setAdjustType('in')
                           setAdjustQty('')
                           setAdjustNotes('')
                           setAdjustError('')
                           setShowAdjustForm(true)
-                        }}
-                        style={{
-                          padding: '4px 10px', background: '#f0fdf4',
-                          border: '1px solid #bbf7d0', borderRadius: '6px',
-                          fontSize: '11px', cursor: 'pointer',
-                          color: '#166534', fontWeight: '500'
-                        }}
-                      >+ Add</button>
-                      <button
-                        onClick={() => {
+                        }}>+ Add</Button>
+                        <Button size="sm" variant="danger" onClick={() => {
                           setSelectedProduct(product)
                           setAdjustType('out')
                           setAdjustQty('')
                           setAdjustNotes('')
                           setAdjustError('')
                           setShowAdjustForm(true)
-                        }}
-                        style={{
-                          padding: '4px 10px', background: '#fef2f2',
-                          border: '1px solid #fecaca', borderRadius: '6px',
-                          fontSize: '11px', cursor: 'pointer',
-                          color: '#dc2626', fontWeight: '500'
-                        }}
-                      >− Remove</button>
+                        }}>− Remove</Button>
+                      </div>
                     </div>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
             </div>
           )}
         </>
@@ -475,13 +342,15 @@ export default function InventoryPage() {
       {/* MOVEMENTS TAB */}
       {activeTab === 'movements' && (
         <>
-          <div className="toolbar" style={{ display: 'flex', gap: '8px', marginBottom: '1rem' }}>
+          <div className="inv-toolbar">
             <select
-              style={{ ...inputStyle, maxWidth: '280px', cursor: 'pointer' }}
+              className="tf-input"
+              style={{ maxWidth: 300, cursor: 'pointer' }}
               value={movementProduct}
               onChange={e => setMovementProduct(e.target.value)}
+              aria-label="Filter movements by product"
             >
-              <option value="all">All Products</option>
+              <option value="all">All products</option>
               {products.map(p => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
@@ -489,93 +358,62 @@ export default function InventoryPage() {
           </div>
 
           {filteredMovements.length === 0 ? (
-            <div style={{
-              background: 'white', border: '1px solid #e2e8f0',
-              borderRadius: '12px', padding: '3rem',
-              textAlign: 'center', color: '#94a3b8'
-            }}>
-              <div style={{ fontSize: '32px', marginBottom: '1rem' }}>📋</div>
-              <div style={{ fontSize: '15px', fontWeight: '500', color: '#64748b' }}>
-                No stock movements yet
-              </div>
-              <div style={{ fontSize: '13px', marginTop: '6px' }}>
-                Stock movements will appear here when you create invoices,
-                record purchases, or make manual adjustments
-              </div>
-            </div>
+            <Card>
+              <EmptyState
+                icon="clipboard"
+                title="No stock movements yet"
+                message="Every invoice, purchase and manual adjustment lands here as a dated movement with the balance it left behind."
+              />
+            </Card>
           ) : (
-            <div className="responsive-table table-frame" style={{
-              background: 'white', border: '1px solid #e2e8f0',
-              borderRadius: '12px', overflow: 'hidden'
-            }}>
-              <div className="table-header" style={{
-                display: 'grid',
-                gridTemplateColumns: '1.5fr 2fr 1fr 1fr 1fr 1.5fr',
-                gap: '12px', padding: '10px 16px', background: '#f8fafc',
-                fontSize: '12px', fontWeight: '600', color: '#64748b',
-                borderBottom: '1px solid #e2e8f0'
-              }}>
-                <span>Date</span>
-                <span>Product</span>
-                <span>Type</span>
-                <span>Qty Change</span>
-                <span>Balance</span>
-                <span>Reference</span>
-              </div>
+            <div className="table-frame">
+              <div className="responsive-table">
+                <div className="table-header inv-row2 inv-head">
+                  <span>Date</span>
+                  <span>Product</span>
+                  <span>Type</span>
+                  <span className="inv-right">Qty change</span>
+                  <span className="inv-right">Balance</span>
+                  <span>Reference</span>
+                </div>
 
-              {filteredMovements.map(m => {
-                const mc = movementConfig[m.movement_type] || {
-                  label: m.movement_type, color: '#374151', bg: '#f1f5f9'
-                }
-                const product = m.products as any
-                return (
-                  <div key={m.id} className="table-row" style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1.5fr 2fr 1fr 1fr 1fr 1.5fr',
-                    gap: '12px', padding: '11px 16px',
-                    borderBottom: '1px solid #f1f5f9',
-                    alignItems: 'center', fontSize: '13px'
-                  }}>
-                    <div data-label="Date" style={{ color: '#64748b' }}>
-                      {new Date(m.created_at).toLocaleDateString('en-IN', {
-                        day: '2-digit', month: 'short', year: 'numeric'
-                      })}
-                      <div style={{ fontSize: '11px', color: '#94a3b8' }}>
-                        {new Date(m.created_at).toLocaleTimeString('en-IN', {
-                          hour: '2-digit', minute: '2-digit'
+                {filteredMovements.map(m => {
+                  const mc = MOVEMENT_CONFIG[m.movement_type] || { label: m.movement_type, tone: 'grey' as Tone }
+                  const product = m.products as any
+                  return (
+                    <div key={m.id} className="table-row inv-row2">
+                      <div data-label="Date" className="inv-sub" style={{ fontSize: 12.5 }}>
+                        {new Date(m.created_at).toLocaleDateString('en-IN', {
+                          day: '2-digit', month: 'short', year: 'numeric'
                         })}
+                        <div>{new Date(m.created_at).toLocaleTimeString('en-IN', {
+                          hour: '2-digit', minute: '2-digit'
+                        })}</div>
+                      </div>
+                      <div data-label="Product" className="inv-name">
+                        <span className="inv-name-main">{product?.name || '—'}</span>
+                        {product?.unit && <span className="inv-sub">{product.unit}</span>}
+                      </div>
+                      <div data-label="Type">
+                        <Badge tone={mc.tone}>{mc.label}</Badge>
+                      </div>
+                      <div data-label="Qty change" className="inv-right">
+                        <span className="tf-num inv-qty" style={{ color: Number(m.quantity) > 0 ? 'var(--green)' : 'var(--red)' }}>
+                          {Number(m.quantity) > 0 ? '+' : ''}{Number(m.quantity).toFixed(2)}
+                        </span>
+                      </div>
+                      <div data-label="Balance" className="inv-right">
+                        <span className="tf-num" style={{ fontWeight: 550, color: 'var(--ink-2)' }}>
+                          {Number(m.balance_after).toFixed(2)}
+                        </span>
+                      </div>
+                      <div data-label="Reference" className="inv-sub" style={{ fontSize: 12.5 }}>
+                        {m.reference_number || m.notes || '—'}
                       </div>
                     </div>
-                    <div data-label="Product" style={{ fontWeight: '500', color: '#1e293b' }}>
-                      {product?.name || '—'}
-                      <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: '400' }}>
-                        {product?.unit || ''}
-                      </div>
-                    </div>
-                    <div data-label="Type">
-                      <span style={{
-                        fontSize: '11px', padding: '2px 8px',
-                        borderRadius: '99px', fontWeight: '600',
-                        background: mc.bg, color: mc.color
-                      }}>
-                        {mc.label}
-                      </span>
-                    </div>
-                    <div data-label="Qty Change" style={{
-                      fontWeight: '600', fontSize: '14px',
-                      color: Number(m.quantity) > 0 ? '#059669' : '#dc2626'
-                    }}>
-                      {Number(m.quantity) > 0 ? '+' : ''}{Number(m.quantity).toFixed(2)}
-                    </div>
-                    <div data-label="Balance" style={{ fontWeight: '500', color: '#374151' }}>
-                      {Number(m.balance_after).toFixed(2)}
-                    </div>
-                    <div data-label="Reference" style={{ color: '#64748b', fontSize: '12px' }}>
-                      {m.reference_number || m.notes || '—'}
-                    </div>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
             </div>
           )}
         </>
@@ -583,83 +421,47 @@ export default function InventoryPage() {
 
       {/* Adjustment Modal */}
       {showAdjustForm && selectedProduct && (
-        <div className="modal-container" style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
-          display: 'flex', alignItems: 'center',
-          justifyContent: 'center', zIndex: 100, padding: '1rem'
-        }}>
-          <div className="modal-content" style={{
-            background: 'white', borderRadius: '16px',
-            padding: '2rem', width: '100%', maxWidth: '440px'
-          }}>
-            <div style={{
-              display: 'flex', justifyContent: 'space-between',
-              alignItems: 'center', marginBottom: '1.5rem'
-            }}>
-              <h2 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>
-                Stock Adjustment
-              </h2>
-              <button
-                onClick={() => { setShowAdjustForm(false); setSelectedProduct(null) }}
-                style={{
-                  background: 'none', border: 'none',
-                  fontSize: '20px', cursor: 'pointer', color: '#94a3b8'
-                }}
-              >✕</button>
+        <div className="inv-scrim">
+          <div className="inv-modal">
+            <div className="inv-modal-head">
+              <h2>Stock adjustment</h2>
+              <button className="inv-close" aria-label="Close" onClick={() => { setShowAdjustForm(false); setSelectedProduct(null) }}>
+                <Icon name="x" size={16} />
+              </button>
             </div>
 
             {/* Product info */}
-            <div style={{
-              background: '#f8fafc', border: '1px solid #e2e8f0',
-              borderRadius: '8px', padding: '12px 14px', marginBottom: '1.5rem'
-            }}>
-              <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
+            <div className="inv-info">
+              <div style={{ fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>
                 {selectedProduct.name}
               </div>
-              <div style={{ fontSize: '13px', color: '#64748b' }}>
+              <div className="inv-sub" style={{ fontSize: 13 }}>
                 Current stock:{' '}
-                <strong style={{ color: '#1e293b' }}>
+                <strong style={{ color: 'var(--ink)' }}>
                   {Number(selectedProduct.current_stock).toFixed(2)} {selectedProduct.unit}
                 </strong>
               </div>
             </div>
 
             {/* Type toggle */}
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '1rem' }}>
-              <button
-                onClick={() => setAdjustType('in')}
-                style={{
-                  flex: 1, padding: '10px',
-                  background: adjustType === 'in' ? '#f0fdf4' : '#f8fafc',
-                  color: adjustType === 'in' ? '#166534' : '#64748b',
-                  border: `1px solid ${adjustType === 'in' ? '#bbf7d0' : '#e2e8f0'}`,
-                  borderRadius: '8px', fontSize: '14px',
-                  cursor: 'pointer', fontWeight: '600'
-                }}
-              >
-                + Add Stock
-              </button>
-              <button
-                onClick={() => setAdjustType('out')}
-                style={{
-                  flex: 1, padding: '10px',
-                  background: adjustType === 'out' ? '#fef2f2' : '#f8fafc',
-                  color: adjustType === 'out' ? '#dc2626' : '#64748b',
-                  border: `1px solid ${adjustType === 'out' ? '#fecaca' : '#e2e8f0'}`,
-                  borderRadius: '8px', fontSize: '14px',
-                  cursor: 'pointer', fontWeight: '600'
-                }}
-              >
-                − Remove Stock
-              </button>
+            <div style={{ marginBottom: '1rem' }}>
+              <Segmented
+                options={[
+                  { value: 'in', label: '+ Add stock' },
+                  { value: 'out', label: '− Remove stock' },
+                ]}
+                value={adjustType}
+                onChange={v => setAdjustType(v as 'in' | 'out')}
+              />
             </div>
 
             <div style={{ marginBottom: '1rem' }}>
-              <label style={labelStyle}>
+              <label className="inv-label" htmlFor="inv-qty">
                 Quantity ({selectedProduct.unit}) *
               </label>
               <input
-                style={inputStyle}
+                id="inv-qty"
+                className="tf-input"
                 type="number"
                 value={adjustQty}
                 onChange={e => setAdjustQty(e.target.value)}
@@ -669,31 +471,26 @@ export default function InventoryPage() {
                 autoFocus
               />
               {adjustType === 'out' && (
-                <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>
+                <div className="inv-hint">
                   Max: {Number(selectedProduct.current_stock).toFixed(2)} {selectedProduct.unit}
                 </div>
               )}
             </div>
 
             <div style={{ marginBottom: '1.5rem' }}>
-              <label style={labelStyle}>Reason / Notes</label>
+              <label className="inv-label" htmlFor="inv-notes">Reason / notes</label>
               <input
-                style={inputStyle}
+                id="inv-notes"
+                className="tf-input"
                 value={adjustNotes}
                 onChange={e => setAdjustNotes(e.target.value)}
-                placeholder="e.g. Stock count correction, damaged goods..."
+                placeholder="e.g. Stock count correction, damaged goods…"
               />
             </div>
 
             {/* Preview */}
             {adjustQty && parseFloat(adjustQty) > 0 && (
-              <div style={{
-                background: adjustType === 'in' ? '#f0fdf4' : '#fef2f2',
-                border: `1px solid ${adjustType === 'in' ? '#bbf7d0' : '#fecaca'}`,
-                borderRadius: '8px', padding: '10px 14px', marginBottom: '1rem',
-                fontSize: '13px',
-                color: adjustType === 'in' ? '#166534' : '#dc2626'
-              }}>
+              <div className={`inv-preview ${adjustType === 'in' ? 'is-in' : 'is-out'}`}>
                 Stock will change from{' '}
                 <strong>{Number(selectedProduct.current_stock).toFixed(2)}</strong>
                 {' → '}
@@ -706,42 +503,77 @@ export default function InventoryPage() {
             )}
 
             {adjustError && (
-              <div style={{
-                background: '#fef2f2', border: '1px solid #fecaca',
-                color: '#dc2626', padding: '10px 12px',
-                borderRadius: '8px', fontSize: '13px', marginBottom: '1rem'
-              }}>{adjustError}</div>
+              <div className="inv-preview is-out">{adjustError}</div>
             )}
 
-            <div className="btn-group" style={{ display: 'flex', gap: '12px' }}>
-              <button
-                onClick={handleAdjustment}
+            <div className="inv-save">
+              <Button
+                variant={adjustType === 'in' ? 'primary' : 'danger'}
                 disabled={adjusting}
-                style={{
-                  flex: 1, padding: '11px',
-                  background: adjusting ? '#93c5fd' :
-                    adjustType === 'in' ? '#059669' : '#dc2626',
-                  color: 'white', border: 'none',
-                  borderRadius: '8px', fontSize: '14px',
-                  fontWeight: '600',
-                  cursor: adjusting ? 'not-allowed' : 'pointer'
-                }}
+                onClick={handleAdjustment}
+                style={{ flex: 1 }}
               >
-                {adjusting ? 'Saving...' :
-                  adjustType === 'in' ? '+ Add Stock' : '− Remove Stock'}
-              </button>
-              <button
+                {adjusting ? 'Saving…' : adjustType === 'in' ? 'Add stock' : 'Remove stock'}
+              </Button>
+              <Button
+                variant="ghost"
                 onClick={() => { setShowAdjustForm(false); setSelectedProduct(null) }}
-                style={{
-                  padding: '11px 20px', background: 'white',
-                  color: '#374151', border: '1px solid #e2e8f0',
-                  borderRadius: '8px', fontSize: '14px', cursor: 'pointer'
-                }}
-              >Cancel</button>
+              >Cancel</Button>
             </div>
           </div>
         </div>
       )}
+
+      <style>{`
+        .inv-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 1rem; }
+        .inv-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+
+        .inv-row { display: grid; grid-template-columns: minmax(0, 2.5fr) 70px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 118px 170px;
+          gap: 12px; align-items: center; padding: 11px 16px; font-size: 12.5px; }
+        .inv-row2 { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 2fr) 92px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.5fr);
+          gap: 12px; align-items: center; padding: 11px 16px; font-size: 12.5px; }
+        .inv-head { background: var(--surface-2); border-bottom: 1px solid var(--line-soft); font-size: 11px;
+          font-weight: 650; color: var(--faint); text-transform: uppercase; letter-spacing: 0.05em; }
+        .inv-right { text-align: right; }
+        .inv-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+        .inv-name-main { color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
+        .inv-sub { font-size: 11px; color: var(--faint); overflow-wrap: anywhere; }
+        .inv-cur { font-weight: 700; font-size: 14px; }
+        .inv-qty { font-weight: 650; font-size: 13.5px; }
+        .inv-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+        .inv-row.is-out { background: var(--red-soft); }
+        .inv-row.is-low { background: var(--amber-soft); }
+
+        .inv-label { display: block; font-size: 12px; font-weight: 550; color: var(--ink-2); margin-bottom: 4px; }
+        .inv-hint { font-size: 11px; color: var(--faint); margin-top: 4px; }
+
+        .inv-scrim { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); display: flex;
+          align-items: center; justify-content: center; padding: 1rem; z-index: 100; }
+        .inv-modal { background: var(--surface); border-radius: var(--radius-lg); padding: 1.4rem 1.5rem;
+          width: 100%; max-width: 460px; max-height: 90vh; overflow-y: auto; box-shadow: var(--shadow-lg); }
+        .inv-modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem; }
+        .inv-modal-head h2 { font-size: 17px; font-weight: 650; color: var(--ink); }
+        .inv-close { background: none; border: none; color: var(--faint); cursor: pointer; padding: 4px; border-radius: 6px; }
+        .inv-close:hover { background: var(--slate-soft); color: var(--ink-2); }
+        .inv-info { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm);
+          padding: 12px 14px; margin-bottom: 1.25rem; }
+
+        .inv-preview { border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: 1rem; font-size: 13px; }
+        .inv-preview.is-in { background: var(--green-soft); border: 1px solid #bbf7d0; color: #15803d; }
+        .inv-preview.is-out { background: var(--red-soft); border: 1px solid #fecaca; color: #b91c1c; }
+
+        .inv-save { display: flex; gap: 10px; }
+
+        @media (max-width: 1100px) { .inv-stats { grid-template-columns: 1fr 1fr; } }
+        @media (max-width: 768px) {
+          .inv-stats { grid-template-columns: 1fr 1fr; }
+          .inv-right { text-align: left; }
+          .inv-actions { justify-content: flex-start; }
+          .inv-scrim { align-items: flex-end; padding: 0; }
+          .inv-modal { max-width: none; border-radius: 16px 16px 0 0; max-height: 92vh; }
+          .inv-save { flex-direction: column-reverse; }
+        }
+      `}</style>
     </div>
   )
 }

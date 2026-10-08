@@ -25,23 +25,8 @@ import {
   ScanOnlyPdfError,
   type OcrProgress,
 } from '@/lib/ocr'
-
-const sectionStyle = {
-  background: 'white', border: '1px solid #e2e8f0',
-  borderRadius: '12px', padding: '1.5rem', marginBottom: '1rem',
-}
-const inputStyle = {
-  width: '100%', padding: '8px 10px', border: '1px solid #e2e8f0',
-  borderRadius: '8px', fontSize: '13px', boxSizing: 'border-box' as const,
-}
-const labelStyle = {
-  display: 'block', fontSize: '11px', fontWeight: 600 as const, color: '#64748b',
-  textTransform: 'uppercase' as const, letterSpacing: '0.03em', marginBottom: '4px',
-}
-const thStyle = {
-  display: 'grid', gap: '8px', padding: '8px 0', fontSize: '12px', fontWeight: 600 as const,
-  color: '#94a3b8', borderBottom: '1px solid #f1f5f9', marginBottom: '4px',
-}
+import { Badge, Button, Card, PageHeader, ProgressBar, SectionTitle, type Tone } from '@/components/ui'
+import Icon from '@/components/Icons'
 
 const EXPENSE_CATEGORIES = [
   'Office Supplies', 'Travel & Transport', 'Meals & Entertainment',
@@ -88,11 +73,11 @@ function nameScore(a: string, b: string): number {
   return hits / Math.max(ta.length, tb.length)
 }
 
-function confidenceBadge(value: number | undefined): { label: string; color: string; bg: string } {
-  if (value === undefined || value <= 0) return { label: 'not read', color: '#b91c1c', bg: '#fef2f2' }
-  if (value >= 0.8) return { label: 'high', color: '#166534', bg: '#f0fdf4' }
-  if (value >= 0.55) return { label: 'medium', color: '#a16207', bg: '#fefce8' }
-  return { label: 'low', color: '#b91c1c', bg: '#fef2f2' }
+function confidenceBadge(value: number | undefined): { label: string; tone: Tone } {
+  if (value === undefined || value <= 0) return { label: 'not read', tone: 'red' }
+  if (value >= 0.8) return { label: 'high', tone: 'green' }
+  if (value >= 0.55) return { label: 'medium', tone: 'amber' }
+  return { label: 'low', tone: 'red' }
 }
 
 export default function ScanBillPage() {
@@ -441,7 +426,7 @@ export default function ScanBillPage() {
     setNotes('')
   }
 
-  if (loading) return <div style={{ padding: '2rem', color: '#64748b', fontSize: '14px' }}>Loading…</div>
+  if (loading) return <div className="page-container" style={{ color: 'var(--muted)', fontSize: 13 }}>Loading the scanner…</div>
 
   // Follow the draft, not what was printed: the user may have corrected the
   // place of supply, and that is what actually gets saved.
@@ -473,83 +458,61 @@ export default function ScanBillPage() {
     : []
 
   return (
-    <div className="page-container" style={{ padding: '2rem', maxWidth: '1000px' }}>
-      <div style={{ marginBottom: '1.25rem' }}>
-        <h1 style={{ fontSize: '22px', fontWeight: 700, color: '#1e293b', margin: 0 }}>
-          🤖 Scan a bill
-        </h1>
-        <p style={{ fontSize: '13px', color: '#64748b', marginTop: '6px' }}>
-          Photograph or drop a supplier&apos;s invoice and the figures become a draft bill.
-          Reading happens in this browser — no copy of your supplier&apos;s bill is uploaded anywhere.
-        </p>
-      </div>
+    <div className="page-container sb" style={{ maxWidth: 1000 }}>
+      <PageHeader
+        eyebrow="AI"
+        title="Scan a bill"
+        subtitle="Photograph or drop a supplier's invoice and the figures become a draft bill. Reading happens in this browser — no copy of your supplier's bill is uploaded anywhere."
+      />
 
       {error && (
-        <div style={{
-          background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626',
-          padding: '10px 12px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem',
-        }}>
+        <div className="sb-alert is-error">
+          <Icon name="alert" size={14} />
           {error}
         </div>
       )}
 
       {stage !== 'review' && (
-        <div style={sectionStyle}>
+        <Card style={{ marginBottom: '1rem' }}>
           <div
+            className={`sb-drop ${dragOver ? 'is-over' : ''}`}
             onDragOver={e => { e.preventDefault(); setDragOver(true) }}
             onDragLeave={() => setDragOver(false)}
             onDrop={e => { e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files?.[0]) }}
             onClick={() => fileInputRef.current?.click()}
-            style={{
-              border: `2px dashed ${dragOver ? '#2563eb' : '#cbd5e1'}`,
-              borderRadius: '12px', padding: '2.5rem 1rem', textAlign: 'center',
-              cursor: 'pointer', background: dragOver ? '#eff6ff' : '#f8fafc',
-            }}
           >
-            <div style={{ fontSize: '32px', marginBottom: '8px' }}>📸</div>
-            <div style={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
+            <span className="sb-drop-chip"><Icon name="upload" size={22} /></span>
+            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-2)' }}>
               {stage === 'reading' ? 'Reading the bill…' : 'Drop a bill photo or PDF here'}
             </div>
-            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
               JPG, PNG or PDF — a single page works best
             </div>
 
             {stage === 'reading' && (
-              <div style={{ marginTop: '16px' }}>
-                <div style={{
-                  height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden',
-                  maxWidth: '320px', margin: '0 auto',
-                }}>
-                  <div style={{
-                    height: '100%', width: `${Math.round((progress?.progress || 0.02) * 100)}%`,
-                    background: '#2563eb', transition: 'width 200ms',
-                  }} />
-                </div>
-                <div style={{ fontSize: '12px', color: '#64748b', marginTop: '8px' }}>
+              <div className="sb-progress">
+                <ProgressBar value={Math.round((progress?.progress || 0.02) * 100)} height={6} />
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8 }}>
                   {progress?.message || 'Starting…'} (first run downloads the recognition model, about 4 MB)
                 </div>
               </div>
             )}
           </div>
 
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '12px' }} className="btn-group">
-            <button onClick={() => fileInputRef.current?.click()} disabled={stage === 'reading'} style={{
-              padding: '8px 16px', background: '#2563eb', color: 'white', border: 'none',
-              borderRadius: '8px', fontSize: '13px', cursor: 'pointer',
-            }}>
+          <div className="tf-row tf-wrap" style={{ gap: 8, marginTop: 12 }}>
+            <Button icon="upload" disabled={stage === 'reading'} onClick={() => fileInputRef.current?.click()}>
               Choose file
-            </button>
-            <button onClick={() => cameraInputRef.current?.click()} disabled={stage === 'reading'} style={{
-              padding: '8px 16px', background: '#f1f5f9', color: '#374151', border: '1px solid #e2e8f0',
-              borderRadius: '8px', fontSize: '13px', cursor: 'pointer',
-            }}>
-              📷 Take photo
-            </button>
+            </Button>
+            <Button variant="ghost" icon="scan" disabled={stage === 'reading'} onClick={() => cameraInputRef.current?.click()}>
+              Take photo
+            </Button>
             <select
+              className="tf-input"
+              aria-label="Languages to read"
               value={langs}
               onChange={e => setLangs(e.target.value)}
               disabled={stage === 'reading'}
-              style={{ ...inputStyle, width: 'auto' }}
+              style={{ width: 'auto' }}
             >
               <option value="eng">English text</option>
               <option value="eng+hin">English + Hindi</option>
@@ -563,61 +526,52 @@ export default function ScanBillPage() {
           <input ref={cameraInputRef} type="file" accept="image/*" capture="environment"
             onChange={e => handleFile(e.target.files?.[0])} style={{ display: 'none' }} />
 
-          <div style={{ marginTop: '16px', borderTop: '1px solid #f1f5f9', paddingTop: '12px' }}>
-            <button onClick={() => setShowPaste(v => !v)} style={{
-              background: 'none', border: 'none', color: '#2563eb', fontSize: '13px', cursor: 'pointer', padding: 0,
-            }}>
+          <div style={{ marginTop: 16, borderTop: '1px solid var(--line-soft)', paddingTop: 12 }}>
+            <button className="sb-textbtn" onClick={() => setShowPaste(v => !v)}>
               {showPaste ? '− Hide' : '+ Paste the bill text instead'}
             </button>
             {showPaste && (
-              <div style={{ marginTop: '10px' }}>
+              <div style={{ marginTop: 10 }}>
                 <textarea
+                  className="tf-input"
                   value={pasteText}
                   onChange={e => setPasteText(e.target.value)}
                   rows={8}
                   placeholder={'Paste what the bill says — description, HSN, qty, rate, GST and totals.'}
-                  style={{ ...inputStyle, fontFamily: 'ui-monospace, monospace', fontSize: '12px' }}
+                  style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12 }}
                 />
-                <button
+                <Button
+                  size="sm"
+                  style={{ marginTop: 8 }}
                   onClick={() => pasteText.trim() && handleText(pasteText, 'pasted-text')}
-                  style={{
-                    marginTop: '8px', padding: '8px 16px', background: '#2563eb', color: 'white',
-                    border: 'none', borderRadius: '8px', fontSize: '13px', cursor: 'pointer',
-                  }}
                 >
                   Extract bill details
-                </button>
+                </Button>
               </div>
             )}
           </div>
-        </div>
+        </Card>
       )}
 
       {stage === 'review' && parsed && (
         <>
           {problems.length > 0 && (
-            <div style={{
-              background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '12px',
-              padding: '1rem 1.5rem', marginBottom: '1rem',
-            }}>
-              <div style={{ fontSize: '13px', fontWeight: 700, color: '#92400e', marginBottom: '6px' }}>
-                Check these before saving
-              </div>
-              <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '12.5px', color: '#92400e', lineHeight: 1.7 }}>
+            <div className="sb-warn">
+              <div className="sb-warn-title">Check these before saving</div>
+              <ul className="sb-warn-list">
                 {problems.map((w, i) => <li key={i}>{w}</li>)}
               </ul>
             </div>
           )}
 
-          <div style={sectionStyle}>
-            <div style={{ fontSize: '13px', fontWeight: 700, color: '#374151', marginBottom: '1rem' }}>
-              Supplier and document
-            </div>
+          <Card style={{ marginBottom: '1rem' }}>
+            <SectionTitle>Supplier and document</SectionTitle>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+            <div className="sb-grid">
               <div style={{ gridColumn: '1 / -1' }}>
-                <label style={labelStyle}>Vendor on file</label>
+                <label className="sb-label">Vendor on file</label>
                 <select
+                  className="tf-input"
                   value={vendorId}
                   onChange={e => {
                     const v = vendors.find(x => x.id === e.target.value)
@@ -628,7 +582,6 @@ export default function ScanBillPage() {
                       if (v.state_code) setPlaceOfSupply(v.state_code)
                     }
                   }}
-                  style={inputStyle}
                 >
                   <option value="">— not matched, will create “{vendorName || 'new supplier'}” —</option>
                   {vendors.map(v => (
@@ -638,119 +591,109 @@ export default function ScanBillPage() {
               </div>
 
               <div>
-                <label style={labelStyle}>Supplier name <Chip bill={parsed} field="vendor_name" /></label>
-                <input value={vendorName} onChange={e => setVendorName(e.target.value)} style={inputStyle} />
+                <label className="sb-label">Supplier name <Chip bill={parsed} field="vendor_name" /></label>
+                <input className="tf-input" value={vendorName} onChange={e => setVendorName(e.target.value)} />
               </div>
               <div>
-                <label style={labelStyle}>GSTIN <Chip bill={parsed} field="vendor_gstin" /></label>
-                <input value={vendorGstin} onChange={e => setVendorGstin(e.target.value.toUpperCase())}
-                  placeholder="27ABCDE1234F1Z5" style={inputStyle} />
+                <label className="sb-label">GSTIN <Chip bill={parsed} field="vendor_gstin" /></label>
+                <input className="tf-input" value={vendorGstin} onChange={e => setVendorGstin(e.target.value.toUpperCase())}
+                  placeholder="27ABCDE1234F1Z5" />
               </div>
               <div>
-                <label style={labelStyle}>Bill number <Chip bill={parsed} field="bill_number" /></label>
-                <input value={billNumber} onChange={e => setBillNumber(e.target.value)} style={inputStyle} />
+                <label className="sb-label">Bill number <Chip bill={parsed} field="bill_number" /></label>
+                <input className="tf-input" value={billNumber} onChange={e => setBillNumber(e.target.value)} />
               </div>
               <div>
-                <label style={labelStyle}>Bill date <Chip bill={parsed} field="bill_date" /></label>
-                <input type="date" value={billDate} onChange={e => setBillDate(e.target.value)} style={inputStyle} />
+                <label className="sb-label">Bill date <Chip bill={parsed} field="bill_date" /></label>
+                <input className="tf-input" type="date" value={billDate} onChange={e => setBillDate(e.target.value)} />
               </div>
               <div>
-                <label style={labelStyle}>Place of supply</label>
-                <select value={placeOfSupply} onChange={e => setPlaceOfSupply(e.target.value)} style={inputStyle}>
+                <label className="sb-label">Place of supply</label>
+                <select className="tf-input" value={placeOfSupply} onChange={e => setPlaceOfSupply(e.target.value)}>
                   <option value="">Select state</option>
                   {INDIAN_STATES.map(s => <option key={s.value} value={s.value}>{s.value} — {s.label}</option>)}
                 </select>
               </div>
               <div>
-                <label style={labelStyle}>Due date</label>
-                <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} style={inputStyle} />
+                <label className="sb-label">Due date</label>
+                <input className="tf-input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
               </div>
             </div>
 
             {split && (
-              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '12px' }}>
-                Tax treatment: <strong>{split.type === 'igst' ? 'IGST' : 'CGST + SGST'}</strong> — {split.reason}
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 12 }}>
+                Tax treatment: <strong style={{ color: 'var(--ink)' }}>{split.type === 'igst' ? 'IGST' : 'CGST + SGST'}</strong> — {split.reason}
               </div>
             )}
-          </div>
+          </Card>
 
-          <div className="responsive-table table-frame" style={sectionStyle}>
-            <div style={{ fontSize: '13px', fontWeight: 700, color: '#374151', marginBottom: '1rem' }}>
-              Line items <Chip bill={parsed} field="line_items" />
-            </div>
+          <Card style={{ marginBottom: '1rem' }}>
+            <SectionTitle>Line items <Chip bill={parsed} field="line_items" /></SectionTitle>
 
-            <div className="table-header" style={{ ...thStyle, gridTemplateColumns: '2.4fr 1fr 0.7fr 1fr 0.8fr 0.8fr 1.1fr' }}>
-              <div>Description / product</div>
-              <div>HSN / SAC</div>
-              <div>Qty</div>
-              <div>Rate</div>
-              <div>Disc %</div>
-              <div>GST %</div>
-              <div>Taxable</div>
-            </div>
-
-            {lines.map(line => (
-              <div key={line.key} className="table-row" style={{
-                display: 'grid', gridTemplateColumns: '2.4fr 1fr 0.7fr 1fr 0.8fr 0.8fr 1.1fr',
-                gap: '8px', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #f8fafc',
-              }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }} data-label="Description">
-                  <input value={line.item_name} onChange={e => updateLine(line.key, 'item_name', e.target.value)}
-                    style={{ ...inputStyle, fontSize: '12.5px' }} />
-                  {products.length > 0 && (
-                    <select
-                      value={line.product_id}
-                      onChange={e => selectProduct(line.key, e.target.value)}
-                      style={{ ...inputStyle, fontSize: '11px', padding: '4px 6px' }}
-                    >
-                      <option value="">link to a product…</option>
-                      {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </select>
-                  )}
-                </div>
-                <div data-label="HSN"><input value={line.hsn_sac}
-                  onChange={e => updateLine(line.key, 'hsn_sac', e.target.value)}
-                  style={{ ...inputStyle, fontSize: '12px' }} /></div>
-                <div data-label="Qty"><input value={line.quantity}
-                  onChange={e => updateLine(line.key, 'quantity', e.target.value)}
-                  style={{ ...inputStyle, fontSize: '12px' }} /></div>
-                <div data-label="Rate"><input value={line.rate}
-                  onChange={e => updateLine(line.key, 'rate', e.target.value)}
-                  style={{ ...inputStyle, fontSize: '12px' }} /></div>
-                <div data-label="Disc"><input value={line.discount_percent}
-                  onChange={e => updateLine(line.key, 'discount_percent', e.target.value)}
-                  style={{ ...inputStyle, fontSize: '12px' }} /></div>
-                <div data-label="GST">
-                  <select value={line.gst_rate} onChange={e => updateLine(line.key, 'gst_rate', e.target.value)}
-                    style={{ ...inputStyle, fontSize: '12px' }}>
-                    {GST_RATES.map(r => <option key={r} value={String(r)}>{r}%</option>)}
-                  </select>
-                </div>
-                <div data-label="Taxable" style={{ fontSize: '12.5px', color: '#334155', textAlign: 'right' }}>
-                  {line.calculated ? formatINR(line.calculated.taxable_value) : '—'}
-                </div>
+            <div className="responsive-table">
+              <div className="table-header sb-th">
+                <div>Description / product</div>
+                <div>HSN / SAC</div>
+                <div>Qty</div>
+                <div>Rate</div>
+                <div>Disc %</div>
+                <div>GST %</div>
+                <div>Taxable</div>
               </div>
-            ))}
 
-            <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-              <button onClick={addLine} style={{
-                padding: '6px 14px', background: '#f1f5f9', color: '#374151', border: '1px solid #e2e8f0',
-                borderRadius: '8px', fontSize: '12.5px', cursor: 'pointer',
-              }}>+ Add line</button>
-              <button onClick={() => setLines(prev => prev.slice(0, -1))} style={{
-                padding: '6px 14px', background: 'white', color: '#b91c1c', border: '1px solid #fecaca',
-                borderRadius: '8px', fontSize: '12.5px', cursor: 'pointer',
-              }}>Remove last</button>
+              {lines.map(line => (
+                <div key={line.key} className="table-row sb-row">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }} data-label="Description">
+                    <input className="tf-input" value={line.item_name} onChange={e => updateLine(line.key, 'item_name', e.target.value)}
+                      style={{ fontSize: 12.5 }} />
+                    {products.length > 0 && (
+                      <select
+                        className="tf-input"
+                        value={line.product_id}
+                        onChange={e => selectProduct(line.key, e.target.value)}
+                        style={{ fontSize: 11, padding: '4px 6px' }}
+                      >
+                        <option value="">link to a product…</option>
+                        {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                    )}
+                  </div>
+                  <div data-label="HSN"><input className="tf-input" value={line.hsn_sac}
+                    onChange={e => updateLine(line.key, 'hsn_sac', e.target.value)}
+                    style={{ fontSize: 12 }} /></div>
+                  <div data-label="Qty"><input className="tf-input" value={line.quantity}
+                    onChange={e => updateLine(line.key, 'quantity', e.target.value)}
+                    style={{ fontSize: 12 }} /></div>
+                  <div data-label="Rate"><input className="tf-input" value={line.rate}
+                    onChange={e => updateLine(line.key, 'rate', e.target.value)}
+                    style={{ fontSize: 12 }} /></div>
+                  <div data-label="Disc"><input className="tf-input" value={line.discount_percent}
+                    onChange={e => updateLine(line.key, 'discount_percent', e.target.value)}
+                    style={{ fontSize: 12 }} /></div>
+                  <div data-label="GST">
+                    <select className="tf-input" value={line.gst_rate} onChange={e => updateLine(line.key, 'gst_rate', e.target.value)}
+                      style={{ fontSize: 12 }}>
+                      {GST_RATES.map(r => <option key={r} value={String(r)}>{r}%</option>)}
+                    </select>
+                  </div>
+                  <div data-label="Taxable" className="sb-right" style={{ fontSize: 12.5, color: 'var(--ink-2)' }}>
+                    {line.calculated ? formatINR(line.calculated.taxable_value) : '—'}
+                  </div>
+                </div>
+              ))}
             </div>
-          </div>
 
-          <div style={sectionStyle}>
-            <div style={{ fontSize: '13px', fontWeight: 700, color: '#374151', marginBottom: '1rem' }}>
-              Printed on the bill vs read
+            <div className="tf-row" style={{ gap: 8, marginTop: 12 }}>
+              <Button size="sm" variant="subtle" icon="plus" onClick={addLine}>Add line</Button>
+              <Button size="sm" variant="danger" onClick={() => setLines(prev => prev.slice(0, -1))}>Remove last</Button>
             </div>
+          </Card>
+
+          <Card style={{ marginBottom: '1rem' }}>
+            <SectionTitle>Printed on the bill vs read</SectionTitle>
             <div className="table-scroll">
-              <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr 1fr 0.9fr', gap: '8px', fontSize: '12px', color: '#94a3b8', fontWeight: 600, borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
-                <div>Figure</div><div style={{ textAlign: 'right' }}>Bill says</div><div style={{ textAlign: 'right' }}>Draft</div><div style={{ textAlign: 'right' }}>Diff</div>
+              <div className="sb-cmp sb-cmp-head">
+                <div>Figure</div><div className="sb-right">Bill says</div><div className="sb-right">Draft</div><div className="sb-right">Diff</div>
               </div>
               {[
                 { label: 'Taxable value', printed: parsed.declared.taxable_amount, draft: totals?.taxable_amount ?? null },
@@ -762,96 +705,137 @@ export default function ScanBillPage() {
               ].map(row => {
                 const diff = row.printed !== null && row.draft !== null ? round2(row.draft - row.printed) : null
                 return (
-                  <div key={row.label} style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr 1fr 0.9fr', gap: '8px', fontSize: '12.5px', padding: '6px 0', borderBottom: '1px solid #f8fafc' }}>
-                    <div style={{ color: '#334155' }}>{row.label}</div>
-                    <div style={{ textAlign: 'right', color: '#64748b' }}>{row.printed !== null ? formatINR(row.printed) : '—'}</div>
-                    <div style={{ textAlign: 'right', color: '#1e293b', fontWeight: 600 }}>{row.draft !== null ? formatINR(row.draft) : '—'}</div>
-                    <div style={{ textAlign: 'right', color: diff === null || Math.abs(diff) < 0.5 ? '#166534' : '#b91c1c' }}>
-                      {diff === null ? '—' : Math.abs(diff) < 0.5 ? '✓' : (diff > 0 ? '+' : '') + formatINR(diff)}
+                  <div key={row.label} className="sb-cmp">
+                    <div style={{ color: 'var(--ink-2)' }}>{row.label}</div>
+                    <div className="sb-right" style={{ color: 'var(--muted)' }}>{row.printed !== null ? formatINR(row.printed) : '—'}</div>
+                    <div className="sb-right" style={{ color: 'var(--ink)', fontWeight: 550 }}>{row.draft !== null ? formatINR(row.draft) : '—'}</div>
+                    <div className="sb-right" style={{ color: diff === null || Math.abs(diff) < 0.5 ? 'var(--green)' : 'var(--red)' }}>
+                      {diff === null ? '—' : Math.abs(diff) < 0.5
+                        ? <Icon name="check" size={13} />
+                        : (diff > 0 ? '+' : '') + formatINR(diff)}
                     </div>
                   </div>
                 )
               })}
             </div>
-          </div>
+          </Card>
 
-          <div style={sectionStyle}>
-            <div style={{ fontSize: '13px', fontWeight: 700, color: '#374151', marginBottom: '1rem' }}>Save as</div>
+          <Card style={{ marginBottom: '1rem' }}>
+            <SectionTitle>Save as</SectionTitle>
 
-            <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '12px' }}>
-              <label style={{ fontSize: '13px', color: '#334155', cursor: 'pointer' }}>
+            <div className="tf-row tf-wrap" style={{ gap: 16, marginBottom: 12 }}>
+              <label className="sb-check">
                 <input type="radio" checked={saveMode === 'bill'} onChange={() => setSaveMode('bill')} /> Purchase bill (GST + ITC)
               </label>
-              <label style={{ fontSize: '13px', color: '#334155', cursor: 'pointer' }}>
+              <label className="sb-check">
                 <input type="radio" checked={saveMode === 'expense'} onChange={() => setSaveMode('expense')} /> Expense (no GST detail)
               </label>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
+            <div className="sb-grid">
               {saveMode === 'expense' && (
                 <div>
-                  <label style={labelStyle}>Category</label>
-                  <select value={expenseCategory} onChange={e => setExpenseCategory(e.target.value)} style={inputStyle}>
+                  <label className="sb-label">Category</label>
+                  <select className="tf-input" value={expenseCategory} onChange={e => setExpenseCategory(e.target.value)}>
                     {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
               )}
               <div>
-                <label style={labelStyle}>Notes</label>
-                <input value={notes} onChange={e => setNotes(e.target.value)} style={inputStyle} />
+                <label className="sb-label">Notes</label>
+                <input className="tf-input" value={notes} onChange={e => setNotes(e.target.value)} />
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '18px', flexWrap: 'wrap', margin: '14px 0' }}>
-              <label style={{ fontSize: '13px', color: '#334155', cursor: 'pointer' }}>
+            <div className="tf-row tf-wrap" style={{ gap: 18, margin: '14px 0' }}>
+              <label className="sb-check">
                 <input type="checkbox" checked={itcEligible} onChange={e => setItcEligible(e.target.checked)} /> ITC eligible
               </label>
-              <label style={{ fontSize: '13px', color: '#334155', cursor: 'pointer' }}>
+              <label className="sb-check">
                 <input type="checkbox" checked={isReverseCharge} onChange={e => setIsReverseCharge(e.target.checked)} /> Reverse charge
               </label>
             </div>
 
             {savedAs ? (
-              <div style={{
-                background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px',
-                padding: '12px 14px', fontSize: '13px', color: '#166534',
-              }}>
+              <div className="sb-saved">
                 Saved {savedAs.kind === 'bill' ? 'purchase bill' : 'expense'} — {savedAs.label}.{' '}
-                <button onClick={() => router.push(savedAs.kind === 'bill' ? '/bills' : '/expenses')} style={{
-                  background: 'none', border: 'none', color: '#2563eb', fontSize: '13px',
-                  cursor: 'pointer', textDecoration: 'underline', padding: 0,
-                }}>
+                <button className="sb-textbtn is-underline" onClick={() => router.push(savedAs.kind === 'bill' ? '/bills' : '/expenses')}>
                   Open {savedAs.kind === 'bill' ? 'bills' : 'expenses'}
                 </button>
               </div>
             ) : (
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }} className="btn-group">
-                <button onClick={handleSave} disabled={saving} style={{
-                  padding: '9px 18px', background: saving ? '#93c5fd' : '#2563eb', color: 'white',
-                  border: 'none', borderRadius: '8px', fontSize: '13px', cursor: saving ? 'default' : 'pointer',
-                }}>
+              <div className="tf-row tf-wrap" style={{ gap: 8 }}>
+                <Button icon="check" onClick={handleSave} disabled={saving}>
                   {saving ? 'Saving…' : saveMode === 'bill' ? 'Save purchase bill' : 'Save expense'}
-                </button>
-                <button onClick={reset} style={{
-                  padding: '9px 18px', background: '#f1f5f9', color: '#374151',
-                  border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '13px', cursor: 'pointer',
-                }}>
-                  Scan another
-                </button>
+                </Button>
+                <Button variant="ghost" onClick={reset}>Scan another</Button>
               </div>
             )}
-          </div>
+          </Card>
 
-          <details style={{ fontSize: '12px', color: '#64748b' }}>
+          <details style={{ fontSize: 12, color: 'var(--muted)' }}>
             <summary style={{ cursor: 'pointer', padding: '6px 0' }}>What was read from the document</summary>
-            <pre style={{
-              background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px',
-              padding: '12px', whiteSpace: 'pre-wrap', fontSize: '11.5px', lineHeight: 1.5, maxHeight: '260px',
-              overflow: 'auto',
-            }}>{sourceText || '(no text)'}</pre>
+            <pre className="sb-raw">{sourceText || '(no text)'}</pre>
           </details>
         </>
       )}
+
+      <style>{`
+        .sb-drop { border: 2px dashed var(--line); border-radius: var(--radius); padding: 2.5rem 1rem;
+          text-align: center; cursor: pointer; background: var(--surface-2);
+          transition: border-color 0.15s ease, background 0.15s ease; }
+        .sb-drop.is-over { border-color: var(--brand); background: var(--brand-soft); }
+        .sb-drop-chip { display: inline-flex; align-items: center; justify-content: center; width: 46px;
+          height: 46px; border-radius: 50%; background: var(--surface); color: var(--brand);
+          margin-bottom: 10px; box-shadow: var(--shadow-xs); }
+        .sb-progress { margin-top: 16px; }
+        .sb-progress .tf-bar-track { max-width: 320px; margin: 0 auto; }
+
+        .sb-label { display: block; font-size: 11px; font-weight: 650; color: var(--muted);
+          text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+        .sb-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+        .sb-check { font-size: 13px; color: var(--ink-2); cursor: pointer; display: inline-flex;
+          align-items: center; gap: 6px; }
+        .sb-check input { accent-color: var(--brand); }
+
+        .sb-th { grid-template-columns: 2.4fr 1fr 0.7fr 1fr 0.8fr 0.8fr 1.1fr; display: grid;
+          gap: 8px; padding: 8px 0; font-size: 11px; font-weight: 650; color: var(--faint);
+          text-transform: uppercase; letter-spacing: 0.05em;
+          border-bottom: 1px solid var(--line-soft); margin-bottom: 4px; }
+        .sb-row { grid-template-columns: 2.4fr 1fr 0.7fr 1fr 0.8fr 0.8fr 1.1fr; display: grid;
+          gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line-soft); }
+        .sb-right { text-align: right; }
+
+        .sb-cmp { display: grid; grid-template-columns: 1.6fr 1fr 1fr 0.9fr; gap: 8px;
+          font-size: 12.5px; padding: 6px 0; border-bottom: 1px solid var(--line-soft); }
+        .sb-cmp:last-child { border-bottom: none; }
+        .sb-cmp-head { font-size: 11px; color: var(--faint); font-weight: 650;
+          text-transform: uppercase; letter-spacing: 0.05em; padding-bottom: 6px; }
+
+        .sb-alert { display: flex; align-items: center; gap: 8px; font-size: 12.5px;
+          border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 1rem; }
+        .sb-alert.is-error { background: var(--red-soft); color: #b91c1c; }
+
+        .sb-warn { background: var(--amber-soft); border: 1px solid #fde68a; border-radius: var(--radius);
+          padding: 14px 18px; margin-bottom: 1rem; }
+        .sb-warn-title { font-size: 13px; font-weight: 700; color: #b45309; margin-bottom: 6px; }
+        .sb-warn-list { margin: 0; padding-left: 18px; font-size: 12.5px; color: #b45309; line-height: 1.7; }
+
+        .sb-saved { background: var(--green-soft); border: 1px solid #bbf7d0; border-radius: var(--radius-sm);
+          padding: 12px 14px; font-size: 13px; color: #15803d; }
+        .sb-textbtn { background: none; border: none; color: var(--brand); font-size: 13px;
+          cursor: pointer; padding: 0; font-family: inherit; }
+        .sb-textbtn.is-underline { text-decoration: underline; }
+
+        .sb-raw { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm);
+          padding: 12px; white-space: pre-wrap; font-size: 11.5px; line-height: 1.5; max-height: 260px;
+          overflow: auto; margin: 0; color: var(--ink-2); }
+
+        @media (max-width: 768px) {
+          .sb-right { text-align: left; }
+          .sb-drop { padding: 1.75rem 0.75rem; }
+        }
+      `}</style>
     </div>
   )
 }
@@ -859,11 +843,8 @@ export default function ScanBillPage() {
 function Chip({ bill, field }: { bill: ParsedBill; field: string }) {
   const badge = confidenceBadge(bill.confidences[field])
   return (
-    <span style={{
-      background: badge.bg, color: badge.color, borderRadius: '999px',
-      padding: '1px 8px', fontSize: '10.5px', fontWeight: 600, marginLeft: '6px',
-    }}>
-      {badge.label}
+    <span style={{ marginLeft: 6, verticalAlign: 'middle' }}>
+      <Badge tone={badge.tone} dot={false}>{badge.label}</Badge>
     </span>
   )
 }

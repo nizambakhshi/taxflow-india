@@ -225,6 +225,9 @@ body {
 
 .tf-btn:active { transform: translateY(1px); }
 
+/* A disabled control must read as disabled — no page should have to say so inline. */
+.tf-btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+
 .tf-btn-primary {
   background: var(--brand);
   color: white;
