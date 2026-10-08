@@ -4,6 +4,8 @@ import React, { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { formatINR, numberToWords } from '@/lib/gst-engine'
+import { Button } from '@/components/ui'
+import Icon from '@/components/Icons'
 import {
   INVOICE_TEMPLATES, InvoiceDocument, loadInvoiceTemplate, saveInvoiceTemplate,
   type InvoiceTemplate,
@@ -159,13 +161,13 @@ export default function InvoiceDetailPage() {
   }
 
   if (loading) return (
-    <div style={{ padding: '2rem', color: '#64748b', fontSize: '14px' }}>
-      Loading invoice...
+    <div className="page-container" style={{ color: 'var(--muted)', fontSize: 13 }}>
+      Loading invoice…
     </div>
   )
 
   if (!invoice) return (
-    <div style={{ padding: '2rem', color: '#64748b', fontSize: '14px' }}>
+    <div className="page-container" style={{ color: 'var(--muted)', fontSize: 13 }}>
       Invoice not found.
     </div>
   )
@@ -238,31 +240,25 @@ export default function InvoiceDetailPage() {
         id="action-bar"
         style={{
           position: 'sticky', top: 0, zIndex: 50,
-          background: 'white', borderBottom: '1px solid #e2e8f0',
+          background: 'var(--surface)', borderBottom: '1px solid var(--line)',
           padding: '12px 2rem',
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         }}
       >
-        <button
-          onClick={() => router.push('/invoices')}
-          style={{
-            background: 'none', border: 'none', color: '#2563eb',
-            fontSize: '13px', cursor: 'pointer', padding: 0,
-          }}
-        >
-          ← Back to Invoices
+        <button className="id-back" onClick={() => router.push('/invoices')}>
+          ← Back to invoices
         </button>
 
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' }}>
           {invoice.status === 'sent' && invoice.payment_status !== 'paid' && (
-            <button onClick={handleMarkPaid} style={{
-              padding: '8px 16px', background: '#f0fdf4',
-              color: '#166534', border: '1px solid #bbf7d0',
-              borderRadius: '8px', fontSize: '13px',
-              fontWeight: '500', cursor: 'pointer',
-            }}>
-              ✓ Mark as Paid
-            </button>
+            <Button
+              variant="ghost"
+              icon="check"
+              onClick={handleMarkPaid}
+              style={{ color: 'var(--green)', borderColor: 'color-mix(in srgb, var(--green) 30%, white)' }}
+            >
+              Mark as paid
+            </Button>
           )}
           <select
             value={template}
@@ -272,60 +268,31 @@ export default function InvoiceDetailPage() {
               if (org?.id) saveInvoiceTemplate(org.id, next)
             }}
             title="Invoice document layout"
-            style={{
-              padding: '8px 10px', background: '#f8fafc', color: '#374151',
-              border: '1px solid #e2e8f0', borderRadius: '8px',
-              fontSize: '13px', cursor: 'pointer',
-            }}
+            className="tf-input id-select"
           >
             {INVOICE_TEMPLATES.map(t => (
               <option key={t.id} value={t.id}>{t.name}</option>
             ))}
           </select>
-          <button
-            onClick={downloadPDF}
-            disabled={downloading}
-            style={{
-              padding: '8px 20px',
-              background: downloading ? '#93c5fd' : '#2563eb',
-              color: 'white', border: 'none', borderRadius: '8px',
-              fontSize: '13px', fontWeight: '600',
-              cursor: downloading ? 'not-allowed' : 'pointer',
-            }}
-          >
-            {downloading ? '⏳ Generating PDF...' : '⬇ Download PDF'}
-          </button>
-          <button
-            onClick={() => window.print()}
-            style={{
-              padding: '8px 14px', background: '#f1f5f9',
-              color: '#374151', border: '1px solid #e2e8f0',
-              borderRadius: '8px', fontSize: '13px', cursor: 'pointer',
-            }}
-          >
-            🖨️ Print
-          </button>
+          <Button icon="download" onClick={downloadPDF} disabled={downloading}>
+            {downloading ? 'Generating PDF…' : 'Download PDF'}
+          </Button>
+          <Button variant="ghost" icon="printer" onClick={() => window.print()}>
+            Print
+          </Button>
           {invoice.status !== 'cancelled' && (
-            <button onClick={handleCancel} style={{
-              padding: '8px 14px', background: '#fef2f2',
-              color: '#dc2626', border: '1px solid #fecaca',
-              borderRadius: '8px', fontSize: '13px', cursor: 'pointer',
-            }}>
+            <Button variant="danger" icon="x" onClick={handleCancel}>
               Cancel
-            </button>
+            </Button>
           )}
         </div>
       </div>
 
       {/* Cancelled banner */}
       {invoice.status === 'cancelled' && (
-        <div id="cancel-banner" style={{
-          margin: '1rem 2rem 0',
-          background: '#fef2f2', border: '1px solid #fecaca',
-          color: '#dc2626', padding: '10px 16px',
-          borderRadius: '8px', fontSize: '13px', fontWeight: '500',
-        }}>
-          ⚠️ This invoice has been cancelled
+        <div id="cancel-banner" className="id-cancelled" role="alert">
+          <Icon name="alert" size={14} strokeWidth={2.2} />
+          This invoice has been cancelled
         </div>
       )}
 
@@ -798,6 +765,34 @@ export default function InvoiceDetailPage() {
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
+        }
+      `}</style>
+
+      {/* ── KIT CHROME STYLES (the document inside #invoice-capture keeps its own palette) ── */}
+      <style>{`
+        .id-back {
+          background: none; border: none; padding: 0;
+          color: var(--brand); font-size: 12.5px; font-weight: 600; cursor: pointer;
+        }
+        .id-back:hover { text-decoration: underline; }
+
+        .id-select {
+          width: auto; padding: 8px 10px; font-size: 12.5px;
+          color: var(--ink-2); cursor: pointer;
+        }
+
+        .id-cancelled {
+          display: flex; align-items: center; gap: 8px;
+          margin: 1rem 2rem 0;
+          background: var(--red-soft); color: var(--red);
+          border-left: 3px solid var(--red);
+          padding: 10px 16px; border-radius: 8px;
+          font-size: 13px; font-weight: 600;
+        }
+        .id-cancelled svg { flex-shrink: 0; }
+
+        @media (max-width: 768px) {
+          .id-cancelled { margin: 10px 1rem 0; }
         }
       `}</style>
 

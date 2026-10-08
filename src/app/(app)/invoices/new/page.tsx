@@ -16,19 +16,8 @@ import { INDIAN_STATES } from '@/lib/constants'
 import { GST_RATES } from '@/lib/gst-rates'
 import { queueOfflineInvoice, isNetworkError } from '@/lib/outbox'
 import { createInvoice } from '@/lib/create-invoice'
-
-const inputStyle = {
-  width: '100%', padding: '8px 10px',
-  border: '1px solid #d1d5db', borderRadius: '6px',
-  fontSize: '13px', outline: 'none',
-  color: '#1e293b', background: 'white',
-}
-
-const labelStyle = {
-  display: 'block' as const,
-  fontSize: '12px', fontWeight: '500' as const,
-  color: '#374151', marginBottom: '4px',
-}
+import { Button, Card, PageHeader, SectionTitle } from '@/components/ui'
+import Icon from '@/components/Icons'
 
 type LineItem = {
   product_id: string
@@ -363,83 +352,64 @@ export default function NewInvoicePage() {
   }
 
   return (
-    <div className="page-container" style={{ maxWidth: '1100px' }}>
-      {/* Header */}
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-        <div>
-          <button onClick={() => router.push('/invoices')} style={{
-            background: 'none', border: 'none', color: '#2563eb',
-            fontSize: '13px', cursor: 'pointer', marginBottom: '4px',
-            padding: 0
-          }}>← Back to Invoices</button>
-          <h1 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b' }}>New Tax Invoice</h1>
-        </div>
-        <div className="btn-group" style={{ display: 'flex', gap: '8px' }}>
-          <button onClick={() => handleSave('draft')} disabled={saving} style={{
-            padding: '9px 18px', background: 'white', color: '#374151',
-            border: '1px solid #e2e8f0', borderRadius: '8px',
-            fontSize: '14px', fontWeight: '500', cursor: 'pointer'
-          }}>
-            Save Draft
-          </button>
-          <button onClick={() => handleSave('sent')} disabled={saving} style={{
-            padding: '9px 18px', background: '#2563eb', color: 'white',
-            border: 'none', borderRadius: '8px',
-            fontSize: '14px', fontWeight: '600', cursor: 'pointer'
-          }}>
-            {saving ? 'Saving...' : 'Save Invoice'}
-          </button>
-        </div>
-      </div>
+    <div className="page-container ni" style={{ maxWidth: 1100 }}>
+      <button className="ni-back" onClick={() => router.push('/invoices')}>
+        ← Back to invoices
+      </button>
+
+      <PageHeader
+        eyebrow="Sales"
+        title="New tax invoice"
+        subtitle="Numbered when you save — drafts stay editable from the list."
+        actions={
+          <>
+            <Button variant="ghost" onClick={() => handleSave('draft')} disabled={saving}>
+              Save draft
+            </Button>
+            <Button onClick={() => handleSave('sent')} disabled={saving}>
+              {saving ? 'Saving…' : 'Save invoice'}
+            </Button>
+          </>
+        }
+      />
 
       {error && (
-        <div style={{
-          background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626',
-          padding: '10px 14px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem'
-        }}>{error}</div>
+        <div className="ni-alert" role="alert">
+          <Icon name="alert" size={14} strokeWidth={2.2} />
+          {error}
+        </div>
       )}
 
       <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
         {/* Seller details */}
-        <div style={{
-          background: 'white', border: '1px solid #e2e8f0',
-          borderRadius: '12px', padding: '1.25rem'
-        }}>
-          <div style={{ fontSize: '11px', fontWeight: '600', color: '#94a3b8', marginBottom: '8px', textTransform: 'uppercase' as const }}>
-            From (Seller)
-          </div>
-          <div style={{ fontWeight: '600', fontSize: '15px', color: '#1e293b' }}>{orgName}</div>
-          {orgGstin && <div style={{ fontSize: '12px', color: '#64748b', fontFamily: 'monospace', marginTop: '2px' }}>GSTIN: {orgGstin}</div>}
-          {orgAddress && <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>{orgAddress}</div>}
-        </div>
+        <Card>
+          <SectionTitle icon="building">From (seller)</SectionTitle>
+          <div className="ni-seller-name">{orgName}</div>
+          {orgGstin && <div className="ni-seller-line ni-mono">GSTIN: {orgGstin}</div>}
+          {orgAddress && <div className="ni-seller-line">{orgAddress}</div>}
+        </Card>
 
         {/* Invoice details */}
-        <div style={{
-          background: 'white', border: '1px solid #e2e8f0',
-          borderRadius: '12px', padding: '1.25rem'
-        }}>
-          <div style={{ fontSize: '11px', fontWeight: '600', color: '#94a3b8', marginBottom: '8px', textTransform: 'uppercase' as const }}>
-            Invoice Details
-          </div>
-          <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-            <div>
-              <label style={labelStyle}>Invoice Number</label>
-              <input style={{ ...inputStyle, background: '#f8fafc', fontWeight: '600' }}
-                value={invoiceNumber} readOnly />
+        <Card>
+          <SectionTitle icon="invoice">Invoice details</SectionTitle>
+          <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div className="ni-field">
+              <span>Invoice number</span>
+              <input className="tf-input ni-lock" value={invoiceNumber} readOnly />
             </div>
-            <div>
-              <label style={labelStyle}>Invoice Date *</label>
-              <input style={inputStyle} type="date" value={invoiceDate}
+            <div className="ni-field">
+              <span>Invoice date *</span>
+              <input className="tf-input" type="date" value={invoiceDate}
                 onChange={e => setInvoiceDate(e.target.value)} required />
             </div>
-            <div>
-              <label style={labelStyle}>Due Date</label>
-              <input style={inputStyle} type="date" value={dueDate}
+            <div className="ni-field">
+              <span>Due date</span>
+              <input className="tf-input" type="date" value={dueDate}
                 onChange={e => setDueDate(e.target.value)} />
             </div>
-            <div>
-              <label style={labelStyle}>Supply Type</label>
-              <select style={{ ...inputStyle, cursor: 'pointer' }} value={supplyType}
+            <div className="ni-field">
+              <span>Supply type</span>
+              <select className="tf-input" style={{ cursor: 'pointer' }} value={supplyType}
                 onChange={e => setSupplyType(e.target.value)}>
                 <option value="b2b">B2B</option>
                 <option value="b2c">B2C</option>
@@ -448,21 +418,16 @@ export default function NewInvoicePage() {
               </select>
             </div>
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* Customer selection */}
-      <div style={{
-        background: 'white', border: '1px solid #e2e8f0',
-        borderRadius: '12px', padding: '1.25rem', marginBottom: '1rem'
-      }}>
-        <div style={{ fontSize: '11px', fontWeight: '600', color: '#94a3b8', marginBottom: '10px', textTransform: 'uppercase' as const }}>
-          Bill To (Customer)
-        </div>
-        <div className="form-grid-3" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '10px' }}>
-          <div>
-            <label style={labelStyle}>Select Customer *</label>
-            <select style={{ ...inputStyle, cursor: 'pointer' }} value={customerId}
+      <Card style={{ marginBottom: '1rem' }}>
+        <SectionTitle icon="users">Bill to (customer)</SectionTitle>
+        <div className="form-grid-3" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 10 }}>
+          <div className="ni-field">
+            <span>Select customer *</span>
+            <select className="tf-input" style={{ cursor: 'pointer' }} value={customerId}
               onChange={e => handleCustomerChange(e.target.value)}>
               <option value="">Select customer...</option>
               {customers.map(c => (
@@ -470,14 +435,14 @@ export default function NewInvoicePage() {
               ))}
             </select>
           </div>
-          <div>
-            <label style={labelStyle}>Customer GSTIN</label>
-            <input style={{ ...inputStyle, fontFamily: 'monospace', background: '#f8fafc' }}
+          <div className="ni-field">
+            <span>Customer GSTIN</span>
+            <input className="tf-input ni-lock ni-mono"
               value={customerGstin} readOnly placeholder="Auto-filled" />
           </div>
-          <div>
-            <label style={labelStyle}>Place of Supply *</label>
-            <select style={{ ...inputStyle, cursor: 'pointer' }} value={placeOfSupply}
+          <div className="ni-field">
+            <span>Place of supply *</span>
+            <select className="tf-input" style={{ cursor: 'pointer' }} value={placeOfSupply}
               onChange={e => {
                 setPlaceOfSupply(e.target.value)
                 const s = INDIAN_STATES.find(x => x.value === e.target.value)
@@ -493,43 +458,32 @@ export default function NewInvoicePage() {
 
         {/* GST type indicator */}
         {placeOfSupply && orgStateCode && (
-          <div style={{
-            marginTop: '10px', padding: '8px 12px', borderRadius: '6px',
-            background: gstType === 'cgst_sgst' ? '#f0fdf4' : '#eff6ff',
-            border: `1px solid ${gstType === 'cgst_sgst' ? '#bbf7d0' : '#bfdbfe'}`,
-            fontSize: '12px',
-            color: gstType === 'cgst_sgst' ? '#166534' : '#1d4ed8',
-          }}>
+          <div className={`ni-note ${gstType === 'cgst_sgst' ? 'is-local' : 'is-inter'}`}>
+            <Icon name="check" size={13} strokeWidth={2.6} />
             {gstType === 'cgst_sgst'
-              ? '✓ Same state — CGST + SGST will be applied'
-              : '✓ Interstate / Export — IGST will be applied'}
+              ? 'Same state — CGST + SGST will be applied'
+              : 'Interstate / Export — IGST will be applied'}
           </div>
         )}
 
-        <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
           <input type="checkbox" id="rc" checked={isReverseCharge}
             onChange={e => setIsReverseCharge(e.target.checked)} />
-          <label htmlFor="rc" style={{ fontSize: '13px', color: '#374151', cursor: 'pointer' }}>
-            Reverse Charge applicable
+          <label htmlFor="rc" style={{ fontSize: 13, color: 'var(--ink-2)', cursor: 'pointer' }}>
+            Reverse charge applicable
           </label>
         </div>
-      </div>
+      </Card>
 
       {/* Line Items */}
-      <div style={{
-        background: 'white', border: '1px solid #e2e8f0',
-        borderRadius: '12px', padding: '1.25rem', marginBottom: '1rem'
-      }}>
-        <div style={{ fontSize: '11px', fontWeight: '600', color: '#94a3b8', marginBottom: '12px', textTransform: 'uppercase' as const }}>
-          Line Items
-        </div>
+      <Card style={{ marginBottom: '1rem' }}>
+        <SectionTitle icon="book">Line items</SectionTitle>
 
         {/* Column headers */}
-        <div className="line-items-head" style={{
+        <div className="line-items-head ni-head" style={{
           display: 'grid',
           gridTemplateColumns: '2fr 1fr 0.8fr 1fr 0.7fr 0.7fr 1fr 36px',
-          gap: '6px', marginBottom: '6px',
-          fontSize: '11px', fontWeight: '600', color: '#94a3b8'
+          gap: 6, marginBottom: 6
         }}>
           <span>Item *</span>
           <span>HSN/SAC</span>
@@ -542,16 +496,17 @@ export default function NewInvoicePage() {
         </div>
 
         {lineItems.map((item, index) => (
-          <div key={index} style={{ marginBottom: '8px' }}>
+          <div key={index} style={{ marginBottom: 8 }}>
             <div className="line-item-row" style={{
               display: 'grid',
               gridTemplateColumns: '2fr 1fr 0.8fr 1fr 0.7fr 0.7fr 1fr 36px',
-              gap: '6px', alignItems: 'center'
+              gap: 6, alignItems: 'center'
             }}>
               {/* Item name / product select */}
               <div className="li-full" data-label="Item *">
                 <select
-                  style={{ ...inputStyle, marginBottom: '4px', cursor: 'pointer' }}
+                  className="tf-input"
+                  style={{ marginBottom: 4, cursor: 'pointer' }}
                   value={item.product_id}
                   onChange={e => handleProductSelect(index, e.target.value)}
                 >
@@ -560,69 +515,63 @@ export default function NewInvoicePage() {
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
                 </select>
-                <input style={inputStyle} value={item.item_name}
+                <input className="tf-input" value={item.item_name}
                   onChange={e => updateLineItem(index, 'item_name', e.target.value)}
                   placeholder="Or type item name" />
               </div>
 
               <div data-label="HSN/SAC">
-                <input style={inputStyle} value={item.hsn_sac}
+                <input className="tf-input" value={item.hsn_sac}
                   onChange={e => updateLineItem(index, 'hsn_sac', e.target.value)}
                   placeholder="HSN/SAC" />
               </div>
 
               <div data-label="Qty *">
-                <input style={inputStyle} type="number" value={item.quantity}
+                <input className="tf-input" type="number" value={item.quantity}
                   onChange={e => updateLineItem(index, 'quantity', e.target.value)}
                   min="0" step="0.001" />
               </div>
 
               <div data-label="Rate (₹) *">
-                <input style={inputStyle} type="number" value={item.rate}
+                <input className="tf-input" type="number" value={item.rate}
                   onChange={e => updateLineItem(index, 'rate', e.target.value)}
                   placeholder="0.00" min="0" step="0.01" />
               </div>
 
               <div data-label="Disc %">
-                <input style={inputStyle} type="number" value={item.discount_percent}
+                <input className="tf-input" type="number" value={item.discount_percent}
                   onChange={e => updateLineItem(index, 'discount_percent', e.target.value)}
                   min="0" max="100" step="0.01" />
               </div>
 
               <div data-label="GST %">
-                <select style={{ ...inputStyle, cursor: 'pointer' }} value={item.gst_rate}
+                <select className="tf-input" style={{ cursor: 'pointer' }} value={item.gst_rate}
                   onChange={e => updateLineItem(index, 'gst_rate', e.target.value)}>
                   {GST_RATES.map(r => <option key={r} value={r}>{r}%</option>)}
                 </select>
               </div>
 
               {/* Calculated total */}
-              <div data-label="Amount" style={{
-                padding: '8px 10px', background: '#f8fafc',
-                border: '1px solid #e2e8f0', borderRadius: '6px',
-                fontSize: '13px', fontWeight: '500', color: '#1e293b',
-                textAlign: 'right' as const
-              }}>
+              <div data-label="Amount" className="ni-amount">
                 {item.calculated ? `₹${formatINR(item.calculated.total_amount)}` : '—'}
               </div>
 
               <div className="li-full" style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <button onClick={() => removeLine(index)} style={{
-                  width: '32px', height: '32px', border: '1px solid #fecaca',
-                  background: '#fef2f2', borderRadius: '6px',
-                  cursor: lineItems.length === 1 ? 'not-allowed' : 'pointer',
-                  color: '#dc2626', fontSize: '16px',
-                  opacity: lineItems.length === 1 ? 0.4 : 1
-                }}>×</button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  icon="x"
+                  disabled={lineItems.length === 1}
+                  onClick={() => removeLine(index)}
+                  style={{ width: 32, height: 32, padding: 0 }}
+                  title="Remove line"
+                >{' '}</Button>
               </div>
             </div>
 
             {/* Tax breakdown for this line */}
             {item.calculated && (
-              <div style={{
-                fontSize: '11px', color: '#64748b', marginTop: '3px',
-                paddingLeft: '4px', display: 'flex', gap: '16px'
-              }}>
+              <div className="ni-break">
                 <span>Taxable: ₹{formatINR(item.calculated.taxable_value)}</span>
                 {item.calculated.cgst_amount > 0 && <span>CGST {item.calculated.cgst_rate}%: ₹{formatINR(item.calculated.cgst_amount)}</span>}
                 {item.calculated.sgst_amount > 0 && <span>SGST {item.calculated.sgst_rate}%: ₹{formatINR(item.calculated.sgst_amount)}</span>}
@@ -633,48 +582,35 @@ export default function NewInvoicePage() {
           </div>
         ))}
 
-        <button onClick={addLine} style={{
-          marginTop: '8px', padding: '8px 16px',
-          background: '#f8fafc', border: '1px dashed #cbd5e1',
-          borderRadius: '6px', fontSize: '13px', cursor: 'pointer',
-          color: '#2563eb', fontWeight: '500'
-        }}>
-          + Add Line Item
-        </button>
-      </div>
+        <div style={{ marginTop: 8 }}>
+          <Button variant="ghost" size="sm" icon="plus" onClick={addLine}>
+            Add line item
+          </Button>
+        </div>
+      </Card>
 
       <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
         {/* Notes & Terms */}
-        <div style={{
-          background: 'white', border: '1px solid #e2e8f0',
-          borderRadius: '12px', padding: '1.25rem'
-        }}>
-          <div style={{ fontSize: '11px', fontWeight: '600', color: '#94a3b8', marginBottom: '10px', textTransform: 'uppercase' as const }}>
-            Notes & Terms
-          </div>
-          <div style={{ marginBottom: '10px' }}>
-            <label style={labelStyle}>Notes (visible on invoice)</label>
-            <textarea style={{ ...inputStyle, height: '70px', resize: 'vertical' as const }}
+        <Card>
+          <SectionTitle icon="chat">Notes &amp; terms</SectionTitle>
+          <div className="ni-field" style={{ marginBottom: 10 }}>
+            <span>Notes (visible on invoice)</span>
+            <textarea className="tf-input ni-area"
               value={notes} onChange={e => setNotes(e.target.value)}
               placeholder="Thank you for your business..." />
           </div>
-          <div>
-            <label style={labelStyle}>Terms & Conditions</label>
-            <textarea style={{ ...inputStyle, height: '70px', resize: 'vertical' as const }}
+          <div className="ni-field">
+            <span>Terms &amp; conditions</span>
+            <textarea className="tf-input ni-area"
               value={terms} onChange={e => setTerms(e.target.value)}
               placeholder="Payment due within 30 days..." />
           </div>
-        </div>
+        </Card>
 
         {/* Totals */}
         {totals && (
-          <div style={{
-            background: 'white', border: '1px solid #e2e8f0',
-            borderRadius: '12px', padding: '1.25rem'
-          }}>
-            <div style={{ fontSize: '11px', fontWeight: '600', color: '#94a3b8', marginBottom: '10px', textTransform: 'uppercase' as const }}>
-              Invoice Summary
-            </div>
+          <Card>
+            <SectionTitle icon="scale">Invoice summary</SectionTitle>
             {[
               { label: 'Subtotal', value: totals.subtotal },
               totals.discount_amount > 0 ? { label: 'Discount', value: -totals.discount_amount } : null,
@@ -685,52 +621,101 @@ export default function NewInvoicePage() {
               totals.cess_amount > 0 ? { label: 'Cess', value: totals.cess_amount } : null,
               totals.round_off !== 0 ? { label: 'Round Off', value: totals.round_off } : null,
             ].filter(Boolean).map((row: any) => (
-              <div key={row.label} style={{
-                display: 'flex', justifyContent: 'space-between',
-                padding: '5px 0', fontSize: '13px',
-                borderBottom: '1px solid #f1f5f9'
-              }}>
-                <span style={{ color: '#64748b' }}>{row.label}</span>
-                <span style={{ color: row.value < 0 ? '#dc2626' : '#1e293b', fontWeight: '500' }}>
+              <div key={row.label} className="ni-tot-row">
+                <span className="is-label">{row.label}</span>
+                <span className={`tf-num ${row.value < 0 ? 'is-neg' : 'is-val'}`}>
                   ₹{formatINR(Math.abs(row.value))}
                 </span>
               </div>
             ))}
-            <div style={{
-              display: 'flex', justifyContent: 'space-between',
-              padding: '10px 0 4px', fontSize: '15px', fontWeight: '700',
-              color: '#1e293b', marginTop: '4px'
-            }}>
+            <div className="ni-tot-grand">
               <span>Grand Total</span>
-              <span style={{ color: '#2563eb' }}>₹{formatINR(totals.grand_total)}</span>
+              <span className="tf-num amt">₹{formatINR(totals.grand_total)}</span>
             </div>
-            <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '6px', fontStyle: 'italic' }}>
+            <div className="ni-words">
               {numberToWords(totals.grand_total)}
             </div>
-          </div>
+          </Card>
         )}
       </div>
 
       {/* Save buttons */}
-      <div className="btn-group" style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-        <button onClick={() => router.push('/invoices')} style={{
-          padding: '10px 20px', background: 'white', color: '#374151',
-          border: '1px solid #e2e8f0', borderRadius: '8px',
-          fontSize: '14px', cursor: 'pointer'
-        }}>Cancel</button>
-        <button onClick={() => handleSave('draft')} disabled={saving} style={{
-          padding: '10px 20px', background: 'white', color: '#374151',
-          border: '1px solid #e2e8f0', borderRadius: '8px',
-          fontSize: '14px', fontWeight: '500', cursor: 'pointer'
-        }}>Save as Draft</button>
-        <button onClick={() => handleSave('sent')} disabled={saving} style={{
-          padding: '10px 24px', background: '#2563eb', color: 'white',
-          border: 'none', borderRadius: '8px',
-          fontSize: '14px', fontWeight: '600', cursor: 'pointer'
-        }}>
-          {saving ? 'Saving...' : '✓ Save Invoice'}
-        </button>
+      <div className="btn-group" style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+        <Button variant="ghost" onClick={() => router.push('/invoices')}>Cancel</Button>
+        <Button variant="ghost" onClick={() => handleSave('draft')} disabled={saving}>Save as draft</Button>
+        <Button icon={saving ? undefined : 'check'} onClick={() => handleSave('sent')} disabled={saving}>
+          {saving ? 'Saving…' : 'Save invoice'}
+        </Button>
       </div>
+
+      <style>{`
+        .ni-back {
+          background: none; border: none; padding: 0; margin-bottom: 10px;
+          color: var(--brand); font-size: 12.5px; font-weight: 600; cursor: pointer;
+        }
+        .ni-back:hover { text-decoration: underline; }
+
+        .ni-alert {
+          display: flex; align-items: center; gap: 8px;
+          font-size: 12.5px; border-radius: 10px; padding: 10px 12px; margin-bottom: 10px;
+          background: var(--red-soft); color: var(--red); border-left: 3px solid var(--red);
+        }
+        .ni-alert svg { flex-shrink: 0; }
+
+        .ni-field { display: flex; flex-direction: column; gap: 4px; }
+        .ni-field > span { font-size: 12px; font-weight: 550; color: var(--ink-2); }
+        .ni-lock { background: var(--surface-2); font-weight: 600; }
+        .ni-mono { font-family: ui-monospace, monospace; }
+        .ni-area { height: 70px; resize: vertical; }
+
+        .ni-seller-name { font-weight: 650; font-size: 15px; color: var(--ink); }
+        .ni-seller-line { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+        .ni-note {
+          margin-top: 10px; padding: 8px 12px; border-radius: 8px; font-size: 12px;
+          display: flex; align-items: center; gap: 6px;
+        }
+        .ni-note.is-local {
+          background: var(--green-soft);
+          border: 1px solid color-mix(in srgb, var(--green) 22%, white);
+          color: var(--green);
+        }
+        .ni-note.is-inter {
+          background: var(--brand-soft);
+          border: 1px solid color-mix(in srgb, var(--brand) 22%, white);
+          color: var(--brand-dark);
+        }
+
+        .ni-head { font-size: 11px; font-weight: 650; color: var(--faint); text-transform: uppercase; letter-spacing: 0.04em; }
+
+        .ni-amount {
+          padding: 8px 10px; background: var(--surface-2);
+          border: 1px solid var(--line); border-radius: var(--radius-sm);
+          font-size: 13px; font-weight: 500; color: var(--ink);
+          text-align: right;
+        }
+
+        .ni-break {
+          font-size: 11px; color: var(--muted); margin-top: 3px;
+          padding-left: 4px; display: flex; gap: 16px; flex-wrap: wrap;
+        }
+
+        .ni-tot-row {
+          display: flex; justify-content: space-between; padding: 5px 0;
+          font-size: 13px; border-bottom: 1px solid var(--line-soft);
+        }
+        .ni-tot-row .is-label { color: var(--muted); }
+        .ni-tot-row .is-val { color: var(--ink); font-weight: 500; }
+        .ni-tot-row .is-neg { color: var(--red); font-weight: 500; }
+
+        .ni-tot-grand {
+          display: flex; justify-content: space-between; padding: 10px 0 4px;
+          font-size: 15px; font-weight: 700; color: var(--ink); margin-top: 4px;
+        }
+        .ni-tot-grand .amt { color: var(--brand); }
+
+        .ni-words { font-size: 11px; color: var(--faint); margin-top: 6px; font-style: italic; }
+      `}</style>
     </div>
   )
 }
