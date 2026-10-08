@@ -3,6 +3,7 @@
 // and the offline outbox replay so every route produces identical rows.
 
 import { getFinancialYear } from '@/lib/gst-engine'
+import { recordSale } from '@/lib/batches'
 
 export type InvoiceFields = Record<string, unknown>
 export type ItemFields = Record<string, unknown>
@@ -91,6 +92,19 @@ export async function createInvoice(
       /* stock drift can be corrected manually */
     }
   }
+
+  // Batch register (localStorage, ADR-013): when a line's product has lots on
+  // record, the sale draws them down FEFO. recordSale is quiet by design — a
+  // register hiccup must never surface as a failed invoice.
+  recordSale(
+    orgId,
+    items.map(item => ({
+      product_id: (item.product_id as string | null) ?? null,
+      quantity: Number(item.quantity) || 0,
+    })),
+    invoiceNumber,
+    (invoiceFields.invoice_date as string | undefined) || new Date().toISOString().slice(0, 10),
+  )
 
   return { invoiceId: invoice.id, invoiceNumber }
 }

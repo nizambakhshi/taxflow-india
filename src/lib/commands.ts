@@ -393,6 +393,16 @@ export function buildActionCommands(): Command[] {
       badge: 'Action',
       keywords: 'create add purchase order supplier vendor po',
     },
+    {
+      id: 'action:new-batch',
+      kind: 'action',
+      label: 'Add batch',
+      sublabel: 'Register a lot with its expiry',
+      href: '/inventory/batches?new=1',
+      icon: 'clock',
+      badge: 'Action',
+      keywords: 'create add batch lot expiry stock receive inventory',
+    },
   ]
 }
 

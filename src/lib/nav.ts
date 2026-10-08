@@ -56,6 +56,7 @@ export const NAV_ITEMS: NavSection[] = [
       { label: 'Products', href: '/products', icon: 'box' },
       { label: 'Inventory', href: '/inventory', icon: 'store' },
       { label: 'Reorder Planner', href: '/inventory/reorder', icon: 'cart' },
+      { label: 'Batches & Expiry', href: '/inventory/batches', icon: 'clock' },
     ]
   },
   {
