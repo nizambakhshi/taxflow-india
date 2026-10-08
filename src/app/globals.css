@@ -28,6 +28,7 @@
   --brand-dark: #1d4ed8;
   --brand-soft: #eff6ff;
   --brand-ring: rgba(37, 99, 235, 0.22);
+  --brand-grad: linear-gradient(135deg, #2563eb 0%, #4f46e5 55%, #7c3aed 100%);
 
   /* Semantic */
   --green: #059669;

@@ -4,6 +4,9 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import Link from 'next/link'
+import AuthShell from '@/components/AuthShell'
+import { Button } from '@/components/ui'
+import Icon from '@/components/Icons'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -33,147 +36,54 @@ export default function LoginPage() {
   }
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: '#f8fafc'
-    }}>
-      <div style={{
-        background: 'white',
-        padding: '2.5rem',
-        borderRadius: '12px',
-        border: '1px solid #e2e8f0',
-        width: '100%',
-        maxWidth: '400px',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-      }}>
-        {/* Logo */}
-        <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          <div style={{
-            fontSize: '24px',
-            fontWeight: '700',
-            color: '#2563eb'
-          }}>
-            TaxFlow India
-          </div>
-          <div style={{ fontSize: '14px', color: '#64748b', marginTop: '4px' }}>
-            GST Billing & Compliance
-          </div>
+    <AuthShell subtitle="GST Billing & Compliance">
+      <h1 className="auth-title">Sign in to your account</h1>
+
+      <form onSubmit={handleLogin} className="auth-form" style={{ marginTop: '1.25rem' }}>
+        <div className="auth-field">
+          <span>Email address</span>
+          <input
+            type="email"
+            className="tf-input"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            placeholder="you@company.com"
+          />
         </div>
 
-        <h1 style={{
-          fontSize: '20px',
-          fontWeight: '600',
-          marginBottom: '1.5rem',
-          color: '#1e293b'
-        }}>
-          Sign in to your account
-        </h1>
+        <div className="auth-field">
+          <span>Password</span>
+          <input
+            type="password"
+            className="tf-input"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            placeholder="••••••••"
+          />
+        </div>
 
-        <form onSubmit={handleLogin}>
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{
-              display: 'block',
-              fontSize: '13px',
-              fontWeight: '500',
-              color: '#374151',
-              marginBottom: '6px'
-            }}>
-              Email address
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              placeholder="you@company.com"
-              style={{
-                width: '100%',
-                padding: '10px 12px',
-                border: '1px solid #d1d5db',
-                borderRadius: '8px',
-                fontSize: '14px',
-                outline: 'none',
-                color: '#1e293b'
-              }}
-            />
+        {error && (
+          <div className="auth-error" role="alert">
+            <Icon name="alert" size={14} strokeWidth={2.2} />
+            <span>{error}</span>
           </div>
+        )}
 
-          <div style={{ marginBottom: '1.5rem' }}>
-            <label style={{
-              display: 'block',
-              fontSize: '13px',
-              fontWeight: '500',
-              color: '#374151',
-              marginBottom: '6px'
-            }}>
-              Password
-            </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              placeholder="••••••••"
-              style={{
-                width: '100%',
-                padding: '10px 12px',
-                border: '1px solid #d1d5db',
-                borderRadius: '8px',
-                fontSize: '14px',
-                outline: 'none',
-                color: '#1e293b'
-              }}
-            />
-          </div>
+        <Button
+          type="submit"
+          disabled={loading}
+          style={{ width: '100%' }}
+        >
+          {loading ? 'Signing in…' : 'Sign in'}
+        </Button>
+      </form>
 
-          {error && (
-            <div style={{
-              background: '#fef2f2',
-              border: '1px solid #fecaca',
-              color: '#dc2626',
-              padding: '10px 12px',
-              borderRadius: '8px',
-              fontSize: '13px',
-              marginBottom: '1rem'
-            }}>
-              {error}
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              width: '100%',
-              padding: '11px',
-              background: loading ? '#93c5fd' : '#2563eb',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '14px',
-              fontWeight: '600',
-              cursor: loading ? 'not-allowed' : 'pointer'
-            }}
-          >
-            {loading ? 'Signing in...' : 'Sign in'}
-          </button>
-        </form>
-
-        <p style={{
-          textAlign: 'center',
-          fontSize: '13px',
-          color: '#64748b',
-          marginTop: '1.5rem'
-        }}>
-          Don't have an account?{' '}
-          <Link href="/signup" style={{ color: '#2563eb', fontWeight: '500' }}>
-            Sign up free
-          </Link>
-        </p>
-      </div>
-    </div>
+      <p className="auth-alt">
+        Don&apos;t have an account?{' '}
+        <Link href="/signup">Sign up free</Link>
+      </p>
+    </AuthShell>
   )
 }

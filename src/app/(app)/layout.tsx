@@ -426,7 +426,7 @@ function BrandMark({ size = 34 }: { size?: number }) {
   return (
     <span style={{
       width: size, height: size, borderRadius: size * 0.28, flexShrink: 0,
-      background: 'linear-gradient(135deg, #2563eb 0%, #4f46e5 55%, #7c3aed 100%)',
+      background: 'var(--brand-grad)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       color: 'white', boxShadow: '0 6px 16px -6px rgba(37,99,235,.7)',
     }}>
