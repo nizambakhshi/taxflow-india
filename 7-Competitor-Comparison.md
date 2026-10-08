@@ -1,6 +1,6 @@
 # 7 — Competitor Comparison
 
-**Built:** 2026-10-08 · **TaxFlow column:** read out of this codebase (52 routes, 36 libraries — not marketing copy) · **Competitor columns:** each vendor's own public pages, fetched 2026-10-08 over plain HTTP.
+**Built:** 2026-10-08 · **TaxFlow column:** read out of this codebase (53 routes, 37 libraries — not marketing copy) · **Competitor columns:** each vendor's own public pages, fetched 2026-10-08 over plain HTTP.
 
 ## Legend — read this before the table
 
@@ -25,7 +25,7 @@ Everything below is "what the vendor advertises", which is exactly the thing Tax
 | Purchase bills + ITC | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | Delivery challan | ✔ (R2-14) | · | ✔ | · | · | · | ✔ | · | ✔ |
 | Purchase order / sales order | ✔ (R2-14) | · | ✔ | · | ✔ | · | ✔ | · | ✔ |
-| Recurring invoices | · | · | ✔ | · | · | · | · | · | ✔ |
+| Recurring invoices | ✔ (R2-18) | · | ✔ | · | · | · | · | · | ✔ |
 | Expense tracking | ✔ | · | ✔ | · | ✔ | · | · | · | · |
 | Invoice templates / branding | ✔ (3 skins) | · | ✔ | ✔ (multi-rate, formats) | ✔ (themes) | · | · | · | · |
 
@@ -103,7 +103,7 @@ Everything below is "what the vendor advertises", which is exactly the thing Tax
 3. **GSTR-4 / CMP-08 composition workpaper** — line-level HSN/SAC slab split, the ten Notification 17/2020 states, the service provider's 10%-and-₹50L goods cap, the 2.5% deemed debit. No competitor page fetched advertises composition depth at all.
 4. **TDS / 194Q workpaper read out of the purchase books** — section table, whole-vs-excess thresholds, deduction on the earlier of credit or payment, 26Q late fee. The billing apps don't do it; the ERP-class tools do it inside a module you pay several times more for.
 5. **Bank matching without a paid bank feed** — any statement layout pasted or dropped in, each line scored against documents with the score explained. Zoho, Tally, Busy, Marg and ClearTax all do reconciliation; none advertise working from an arbitrary pasted statement with no feed.
-6. **Craft-level things nobody advertises**: ⌘K palette over pages *and* live records — now including the local order book (challans, sales and purchase orders search synchronously, in the same groups as everything else) — offline invoices that replay through the real save path with a real sequence number, party ageing, festival-weighted targets judged on a prorated pace, an (s, S) reorder planner, a FEFO batch register whose allocator names the expired lot it would draw — before anything is written, a serial register whose warranty window is recomputed from the latest sale (a resale restarts it; a return never forks the unit's history), and a customer statement link that carries the entire statement inside the URL's fragment itself — nothing stored, nothing to revoke, and the numbers identical to the ledger's by construction.
+6. **Craft-level things nobody advertises**: ⌘K palette over pages *and* live records — now including the local order book (challans, sales and purchase orders search synchronously, in the same groups as everything else) — offline invoices that replay through the real save path with a real sequence number, party ageing, festival-weighted targets judged on a prorated pace, an (s, S) reorder planner, a FEFO batch register whose allocator names the expired lot it would draw — before anything is written, a serial register whose warranty window is recomputed from the latest sale (a resale restarts it; a return never forks the unit's history), and a customer statement link that carries the entire statement inside the URL's fragment itself — nothing stored, nothing to revoke, and the numbers identical to the ledger's by construction. Recurring billing goes the other way from the cloud habit: instead of a server cron that silently posts invoices at midnight, the schedule *accrues* — nothing is stored about what is due, the calendar is recomputed from the rule each time you open the page, and a back-dated catch-up bill lands in the financial year it belonged to, which is the GST-correct thing a monthly auto-invoice usually is not.
 
 ## 8. The gap list, ranked
 
@@ -117,7 +117,7 @@ Everything below is "what the vendor advertises", which is exactly the thing Tax
 | 6 | **Payroll** | Tally (₹750/mo), Zoho (Premium), ClearTax | Large; consider partnering rather than building |
 | 7 | **E-commerce integrations (Amazon/Flipkart/Shopify)** | Marg | Medium per channel; high perceived value for retail |
 | 8 | **Multi-currency** | Zoho (Professional) | Medium — touches every money path |
-| 9 | **Recurring invoices** | Zoho, Refrens | Small — scheduler + template on the existing create path |
+| 9 | **Recurring invoices** | Zoho, Refrens | **Closed** (R2-18 B1, `3fbea60`): a schedule is a bill template + a cadence + an end rule, stored client-side under ADR-013. Due dates are never stored — the occurrence calendar is derived from the rule against today, so a missed March bill is still waiting in April and raising it dates the invoice on the day it belonged to, which files it in the financial year it belonged to. Month arithmetic is anchor-relative and clamped (Jan 31 → Feb 28 → Mar 31, no drift), computed in UTC so a timezone cannot move a bill into another FY. Catch-up runs raise every due period through the real `createInvoice` path — real sequence number, stock movements, FEFO — and the offline queue replays them. Honest v1 boundary: nothing bills while the app is closed (no server worker), which is why the schedule *accrues* and the register shows the worth still unbilled |
 | 10 | **Manufacturing / BOM, cost centres** | Busy, ClearTax, Refrens | Large — different customer segment |
 | 11 | **Native mobile app** | Vyapar, myBillBook, Zoho | The PWA covers install; a native shell is a distribution decision, not a feature |
 | 12 | **Attachments on documents** | Marg | Small-medium — Supabase Storage + a viewer; makes RLS work first |

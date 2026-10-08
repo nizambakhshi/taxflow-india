@@ -35,7 +35,7 @@ the repository as it exists today.
 | API routes | 2 only — `/api/gsp/ewaybill` (mock GSP transport), `/api/pdf-worker` (serves the pdf.js worker asset) |
 | Developer OS | Mac Mini M4 (macOS) |
 | Code editor | Qoder (was Cursor) |
-| History | 84 commits on `main`; MVP landed 2026-09-19, rounds ran 2026-10-05 → 2026-10-08 |
+| History | 86 commits on `main`; MVP landed 2026-09-19, rounds ran 2026-10-05 → 2026-10-08 |
 
 ---
 
@@ -137,6 +137,11 @@ Fetching items for many documents goes through 500-id chunks. A single giant `in
 
 ### ADR-024 — Invoice PDFs Are Rasterised, Not Vectorised — holds (new)
 `html2canvas` at `scale: 2` placed into jsPDF as `image/jpeg` at 0.94 quality. PNG capture produced 36 MB invoices; the JPEG switch is why a 20-line invoice is now a few hundred KB. Captured node is `#invoice-capture`.
+
+### ADR-025 — Recurring Schedules Accrue; Due Dates Are Derived — holds (new)
+**Decision:** a schedule stores its *rule* (template lines, cadence + interval, anchor date, end mode, payment terms) and its billed trail — never the dates it owes. `buildCalendar` expands the rule over a horizon and the page intersects it with today, so "what is due" is a computation, not a row.  
+**Reason:** there is no server worker (ADR-009 — no cron, no background job) and the store is per-browser (ADR-013/014). A stored due date would go stale the moment the app stayed closed; a derived one cannot.  
+**Consequence:** opening `/recurring` *is* the trigger — every missed period is still there, and raising it dates the invoice on the day it belonged to, which — because `createInvoice` reads the FY off `invoice_date` — numbers it in that year's series and files it in that year's return. The UI must warn when that lands in an already-filed period. Occurrences are addressed by **date**, never by click order (`latestOccurrence`, and `recordOccurrence` refuses duplicates, off-cadence dates and dates past the end rule), and all month arithmetic is anchor-relative, clamped (Jan 31 → Feb 28) and UTC-based, so no drift and no timezone can move a bill into another financial year. Do not "simplify" this by caching due dates.
 
 ---
 
@@ -442,7 +447,25 @@ E-invoice threshold, e-way bill requirement, filing profile (monthly/QRMP) and T
 
 **Commit:** `8188d46`.
 
-### Routes — 50 pages
+### Session 39 — 2026-10-08 (R2-18 B1 — recurring invoices: a schedule accrues, opening the app bills it)
+**Built:** `src/lib/recurring.ts` (`3fbea60`) — competitor gap **#9** (Zoho, Refrens), closed client-side under ADR-013 in `taxflow:rec:<orgId>`, and recorded as **ADR-025** because the central decision is architectural: **a schedule stores its rule, never the dates it owes.** A schedule is a bill template (lines reuse `FlowLine`, copied in so editing the product later cannot rewrite history) + a cadence (`daily → yearly`, with an `interval` multiplier 1–365) + an end rule (`never | count | date`) + `due_in_days` payment terms on an `anchor_date` that is occurrence 0. `buildCalendar` expands the whole rule across a 400-day horizon (`HORIZON_DAYS`, `MAX_OCCURRENCES = 500`, `truncated` is reported to the UI) and `dueDates` intersects it with today — so with no server worker available (ADR-009), nothing goes stale: a missed March period is still waiting in April. Because `createInvoice` reads the FY off `invoice_date`, that back-dated catch-up bill is numbered in `INV-<FY>-NNNN` and belongs to the return period it was owed in, which is exactly what a cloud auto-invoice posting on the run date is not. Month arithmetic is anchor-relative and clamped (Jan 31 → Feb 28 → Mar 31, no drift toward the 28th) and every step runs on `Date.UTC` so a timezone cannot slide a bill into another financial year. State is derived, not stored: `stateOf` folds status + calendar + end rule into active / paused / completed. The trail is honest about *which* period billed — `latestOccurrence` reduces on the date rather than taking the last array element, because storage hands rows back in any order and a catch-up run bills December before it bills January; `recordOccurrence` refuses unknown/unreadable schedules, dates already raised, dates off the cadence and dates past the end rule, then appends and re-sorts by date. `validateSchedule` refuses blank names, missing parties/lines, non-positive intervals, and end rules that contradict the anchor. `buildSchedulePayload` produces a header with **only the 29 known `invoices` columns** (frozen in the test as `sort()`-ordered `INVOICE_COLUMNS`) plus a notes line carrying the schedule's own notes and the billed period. `scheduleFromDoc` seeds a template from a real order/challan so a retainer starts from paper, not from blank.
+
+**Wired:** `/recurring` on the kit — five views (`due / upcoming / paused / completed / all`), four stat cards (monthly worth on the register, unbilled rupees, schedules needing a look, billed this year), schedule cards with the cadence line, the next date, the derived due pile **priced in rupees**, and per-card actions (Raise / Edit / Pause-Resume / Delete). The editor is a full bill template whose line items compute through the *same* engine the generated invoice uses — `determineGSTType` + `calculateLineItem` + `calculateInvoiceTotals` in one `useMemo` (`editorCalcs`) — with the customer picker filling GSTIN/address/place of supply and a "Copy from a document" seed. The catch-up run is a sheet listing every due date with its financial year, raising each through the real path (`createInvoice` → sequence number → `record_stock_movement` → FEFO `recordSale`) and falling back to `queueOfflineInvoice` when `navigator.onLine` is false or the network drops mid-save (`isNetworkError`), marking the trail entry `queued`. Two warnings the page is obliged to show: a back-dated bill lands in a *different* FY, and a schedule whose cadence is finer than the horizon is `truncated`. Delete is refused once a schedule has billed — pause is the honest exit, the serial-register precedent. Nav "Recurring Invoices" under Sales, ⌘K "New recurring invoice" → `/recurring?new=1`, new `repeat` / `pause` / `play` glyphs. The page states its own limit rather than hiding it: *"Nothing bills itself while TaxFlow is closed — there is no server posting invoices at midnight. A schedule accrues."*
+
+**Traps recorded:**
+- **Never cache a due date.** The tempting shape — a `next_due` column on the schedule, advanced when a bill is raised — is the part that rots, because with no server worker the advance only happens when someone is looking, and a schedule edited mid-year would need its whole future recomputed. Deriving the calendar from the rule is what makes the accrual story true, and it is why the horizon/truncation pair exists instead of an infinite expansion.
+- **A date is the occurrence's identity, not its index.** Click-order breaks the moment a run bills two periods out of order; `latestOccurrence` and `recordOccurrence`'s duplicate check both key on the ISO date.
+- **`parseISO` must validate the day against the month.** A test fed it `2026-02-30` and the library accepted it — a schedule anchored on a nonexistent date then rolled into March on its own. `daysInMonth` now refuses it (`2026-02-30` is not a date, whatever the string looks like).
+- **Alphabetical order of the `invoices` columns is a test fixture, not a guess.** The header payload is asserted key-by-key against a frozen sorted list; a stray key would be a Supabase insert error at the user's busiest moment.
+- **The page's own totals must not blank out on a half-typed line.** An early version recomputed totals inside every row and a single `12.` in progress zeroed every amount on screen; one memoised calculation per editor, tolerant of unusable lines, is what the invoice form already does.
+
+**Method:** 183 assertions in `/tmp/recurring-test.mjs` (cadence expansion per frequency incl. interval multipliers, month-end clamping across Jan 31 → Feb → Mar, leap February, the UTC day never moving an FY, end modes count/date/never, `dueDates` against several simulated "today"s, `nextDate`, `alreadyRaised`, `latestOccurrence` incl. the empty trail, `stateOf` and `validateSchedule` branches, `scheduleTotals`, the 29-column payload with exact `notes` composition, `recordOccurrence` refusals incl. off-cadence and past-end, storage round-trip + upsert/delete/status, CSV shape, `scheduleFromDoc`, and `sortViews`/`rollup` over views); `commands-test` 49 (7 new: the `action:new-recurring` id/href/icon, `/recurring` and `/recurring?new=1` through `isKnownHref`, the nav page, and "rent" ranking onto the register); `godowns-test` 97 · `serials-test` 84 · `orderflow-test` 111 · `batches-test` 78 · `portal-test` 82 · `registers-test` 21 · `gst-rates` 22 — all green (9 suites); `tsc` 0; `eslint` 0 on every touched file — `recurring.ts`, `recurring/page.tsx`, `nav.ts`, `commands.ts`, `Icons.tsx`; `npm run build` ✓ 53/53 (51 pages + 2 api) with `○ /recurring` and no warnings; dev server `GET /recurring 200 in 467ms`, clean redirect to `/login` at browser load with zero console errors. **The interactive UI is still unverified** — the Supabase dev session is expired (task #84).
+
+**Ledger:** **42 pages on the kit, 4 partial, 0 pre-kit** (+3 auth, + public `portal`). Gap #9 is closed. Of the ranked list, #5 (roles), #6 (payroll — partner), #7 (e-commerce — external APIs), #11 (native app — a distribution decision) and #12 (attachments — Storage + RLS) all need schema, an external contract, or a platform decision; the remaining buildable client-side items are **#8 multi-currency** (touches every money path) and #10 BOM/cost centres (different segment). Browser pass still blocked by the expired dev session.
+
+**Commit:** `3fbea60`.
+
+### Routes — 51 pages
 ```
 src/app/
 ├── layout.tsx, page.tsx (→ /login), manifest.ts, globals.css, favicon.ico
@@ -453,6 +476,7 @@ src/app/
 └── (app)/                           ← shell: layout.tsx + nav.ts data
     ├── dashboard/                   pos/            offline/
     ├── invoices/{page,new,[id]}/    quotations/     customers/  vendors/  products/
+    ├── recurring/                   ← recurring-invoice schedules: derived due piles, catch-up run (R2-18 B1)
     ├── challans/{page,[id]}/        ← delivery challan register + printable document
     ├── sales-orders/{page,[id]}/    purchase-orders/{page,[id]}/  ← order register + document (R2-14 B2)
     ├── bills/  expenses/  credit-notes/  debit-notes/
@@ -467,7 +491,7 @@ src/app/
 public/sw.js  public/offline.html
 ```
 
-### Libraries — 36 modules in `src/lib/` + `src/lib/gsp/`
+### Libraries — 37 modules in `src/lib/` + `src/lib/gsp/`
 ```
 supabase.ts  constants.ts  gst-engine.ts  format.ts  words.ts  reports.ts
 gst-rates.ts                                 ← the one GST rate table every picker imports
@@ -483,6 +507,7 @@ batches.ts                                    ← lots, FEFO drawdown, expiry wa
 serials.ts                                    ← one row per unit, append-only event log, derived warranty (localStorage)
 godowns.ts                                    ← godown registry + transfers as lot splits, per-place stock (localStorage)
 portal.ts                                     ← share-link statements: deflate + base64url in the URL fragment, nothing stored
+recurring.ts                                  ← schedule rules, derived occurrence calendars, catch-up payloads (localStorage)
 pdf-export.ts                                 ← shared html2canvas → jsPDF slice pipeline
 gsp/{index.ts, types.ts, mock.ts}            ← provider adapter, mock transport
 ```
@@ -555,6 +580,7 @@ anything here is either reconstructible from documents or already exported.
 | `taxflow:batches:` · `taxflow:batchmoves:` | batch lots and their signed movements (FEFO drawdown) | `/inventory/batches`, `create-invoice.ts` |
 | `taxflow:serials:` · `taxflow:serialevents:` | serial units and their append-only event log (issue / return / restock / scrap) | `/inventory/serials` |
 | `taxflow:godowns:` | the godown registry (named places stock is kept in; a virtual `Main` seed holds unplaced lots) | `/inventory/godowns` |
+| `taxflow:rec:` | recurring schedules — rule + template lines + the billed trail (never the due dates; ADR-025) | `/recurring`, `createInvoice` / the offline queue |
 | `taxflow:palette-recents:` | recent ⌘K hits | `CommandPalette.tsx` |
 
 ---
@@ -675,7 +701,7 @@ node --version
 
 ## Next Steps (Priority Order)
 
-1. **Gap #3 is closed.** R2-15 B1 (`9b7a4c6`) shipped the batch & expiry register with FEFO consumption wired into `create-invoice.ts`; R2-15 B2 (`e2a94d4`) shipped the serial-number register; R2-17 B1 (`8188d46`) closed the last third — **multi-godown** — with a client-side godown registry where a transfer is a lot split (source identity carried to a new destination lot + one negative `kind:'transfer'` move), a virtual `Main` seed reads every unplaced lot, and `/inventory/godowns` shows per-place stock. All three closed on ADR-013 (owner bookkeeping → localStorage, no tables); the one honest gap left is the `products.current_stock` per-place rollup, which needs a real column and waits for Phase 14. The next item on the ranked list is **gap #5 (multi-user roles / permissions)** — genuinely schema + auth work, paired with the Phase 14 security pass; then #6–#12 by rank. R2-14 is complete (B1 `f982aed`, B2 `b851818`, B3 `94b3c1c` — gap #2 closed end-to-end), R2-16 B1 opened gap #4 with share-link statements (`ccea4d5`), and R2-12's design-system pass is complete — 4 lists (`bills`, `credit-notes`, `debit-notes`, `quotations`) still hand-code their chrome and get migrated when next touched.
+1. **Gaps #2, #3, #4-v1 and #9 are closed.** R2-14 is complete (B1 `f982aed`, B2 `b851818`, B3 `94b3c1c` — gap #2 end-to-end); R2-15 B1 (`9b7a4c6`) shipped batch & expiry with FEFO inside `create-invoice.ts`, B2 (`e2a94d4`) the serial register, and R2-17 B1 (`8188d46`) the last third — **multi-godown** — with a client-side registry where a transfer is a lot split; R2-16 B1 (`ccea4d5`) opened gap #4 with share-link statements; **R2-18 B1 (`3fbea60`) closed gap #9 — recurring invoices — as an accruing schedule whose due dates are derived, never stored (ADR-025).** All of it on ADR-013 (owner bookkeeping → localStorage, no tables); the honest leftovers are the `products.current_stock` per-place rollup and auth'd customer logins, both waiting on schema. Of the remaining ranked gaps, **#5 (roles), #6 (payroll — partner), #7 (e-commerce — per-channel APIs), #11 (native app — a distribution decision) and #12 (attachments — Storage + RLS) need schema, an external contract or a platform call**; the buildable client-side next step is **#8 multi-currency**, which is genuinely cross-cutting — it touches every money path — so it wants its own round, not a bolt-on. R2-12's design-system pass stays complete — 4 lists (`bills`, `credit-notes`, `debit-notes`, `quotations`) still hand-code their chrome and get migrated when next touched.
 2. **The unfinished browser pass** — GST batch 6 (`dd7d449`) and `gst/gstr4` (`da672a2`) were verified statically only; the Supabase dev session is expired, so nothing was measured at 355px or 1440px. Needs the user to sign in at `localhost:3000`.
 3. **Phase 14 — Security**: generated Supabase types, tightened dashboard RLS policies, audit log, multi-account isolation test. Do this before onboarding a real customer.
 4. **Real GSP integration** once a provider is chosen (ADR-016) — plus email invoices and multi-user, which need the pending decisions above.
