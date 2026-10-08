@@ -26,6 +26,9 @@ import {
   EXPIRY_CRITICAL_DAYS, type Batch, type BatchMove, type BatchView,
 } from '@/lib/batches'
 import {
+  godownById, godownOf, isMain, loadGodowns, lotFilter, mainGodown, type Godown,
+} from '@/lib/godowns'
+import {
   Badge, Button, Card, EmptyState, PageHeader, SearchInput, Segmented, StatCard,
 } from '@/components/ui'
 import Icon from '@/components/Icons'
@@ -69,7 +72,7 @@ const inr = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 })
 const money = (n: number) => `₹${inr.format(Math.round(Number(n) || 0))}`
 
 interface EditorState { batch: Batch; isNew: boolean }
-interface AllocState { productId: string; qty: string; date: string; ref: string }
+interface AllocState { productId: string; qty: string; date: string; ref: string; godownId: string }
 interface AdjustState { batchId: string; dir: 'out' | 'in'; qty: string; date: string; note: string }
 
 function BatchesPageInner() {
@@ -84,9 +87,11 @@ function BatchesPageInner() {
 
   const [batches, setBatches] = useState<Batch[]>([])
   const [moves, setMoves] = useState<BatchMove[]>([])
+  const [godowns, setGodowns] = useState<Godown[]>([mainGodown()])
 
   const [search, setSearch] = useSearchDeepLink()
   const [view, setView] = useState<ViewFilter>('live')
+  const [place, setPlace] = useState('')
   const [notice, setNotice] = useState('')
 
   const [editor, setEditor] = useState<EditorState | null>(null)
@@ -123,12 +128,17 @@ function BatchesPageInner() {
 
       setBatches(loadBatches(oid))
       setMoves(loadMoves(oid))
+      setGodowns(loadGodowns(oid))
+
+      // ?godown= — arriving from a godown card, the register opens on that place.
+      const fromGodown = searchParams.get('godown') || ''
+      if (fromGodown) setPlace(godownById(loadGodowns(oid), fromGodown).id)
 
       // ?new=1 — the palette's "Add batch" action lands here with the editor
       // open. State is set inline rather than via openEditor(): a function
       // defined later in the component cannot be called from the load effect.
       if (searchParams.get('new') === '1') {
-        setEditor({ batch: newBatch(), isNew: true })
+        setEditor({ batch: { ...newBatch(), godown_id: fromGodown }, isNew: true })
         setEditorError('')
       }
       setLoading(false)
@@ -144,8 +154,9 @@ function BatchesPageInner() {
   const visible = useMemo(() => {
     return views.filter(v =>
       matchesView(v, view) &&
-      matchesAny(search, [v.product_name, v.sku, v.batch_no, v.vendor, v.bill_ref]))
-  }, [views, view, search])
+      (!place || godownOf(v, godowns).id === place) &&
+      matchesAny(search, [v.product_name, v.sku, v.batch_no, v.vendor, v.bill_ref, godownOf(v, godowns).name]))
+  }, [views, view, search, place, godowns])
 
   /** Items that actually have live lots — the only ones FEFO can draw from. */
   const liveProducts = useMemo(() => {
@@ -209,8 +220,8 @@ function BatchesPageInner() {
     flash(`Lot ${v.batch_no} deleted.`)
   }
 
-  function openAlloc(productId = '') {
-    setAlloc({ productId, qty: '', date: todayISO(), ref: '' })
+  function openAlloc(productId = '', godownId = '') {
+    setAlloc({ productId, qty: '', date: todayISO(), ref: '', godownId })
     setAllocError('')
   }
 
@@ -219,13 +230,20 @@ function BatchesPageInner() {
     const qty = Number(alloc.qty)
     if (!alloc.productId) { setAllocError('Pick the item that left the shelf'); return }
     if (!Number.isFinite(qty) || qty <= 0) { setAllocError('Quantity must be more than zero'); return }
-    const preview = allocateFefo(batches, moves, alloc.productId, qty)
-    if (preview.picks.length === 0) { setAllocError('No registered lots of this item have stock left'); return }
+    const preview = allocateFefo(batches, moves, alloc.productId, qty,
+      alloc.godownId ? lotFilter(godowns, alloc.godownId) : undefined)
+    if (preview.picks.length === 0) {
+      setAllocError(alloc.godownId
+        ? `No lot of this item has stock left in ${godownById(godowns, alloc.godownId).name}`
+        : 'No registered lots of this item have stock left')
+      return
+    }
     const fresh = preview.picks.map(p =>
       newMove(p.batch.id, -p.take, alloc.date || todayISO(), 'sale', alloc.ref.trim()))
     setMoves(appendMoves(orgId, fresh))
     const label = liveProducts.find(p => p.id === alloc.productId)?.name || 'item'
-    flash(`Drew ${qty - preview.shortfall} × ${label} from ${preview.picks.length} lot${preview.picks.length === 1 ? '' : 's'}${preview.shortfall > 0 ? ` — ${preview.shortfall} had no batch recorded` : ''}.`)
+    const where = alloc.godownId ? ` in ${godownById(godowns, alloc.godownId).name}` : ''
+    flash(`Drew ${qty - preview.shortfall} × ${label}${where} from ${preview.picks.length} lot${preview.picks.length === 1 ? '' : 's'}${preview.shortfall > 0 ? ` — ${preview.shortfall} had no batch recorded` : ''}.`)
     setAlloc(null)
   }
 
@@ -251,13 +269,17 @@ function BatchesPageInner() {
   }
 
   function exportCsv() {
-    download(`taxflow-batches-${today}.csv`, toCsv(BATCH_CSV_HEADERS, batchCsvRows(visible)))
+    download(`taxflow-batches-${today}.csv`,
+      toCsv(BATCH_CSV_HEADERS, batchCsvRows(visible, v => godownOf(v, godowns).name)))
   }
 
   // ── modal derivations ──────────────────────────────────────────────────────
   const allocPreview = useMemo(() => (
-    alloc && alloc.productId ? allocateFefo(batches, moves, alloc.productId, Number(alloc.qty) || 0) : null
-  ), [alloc, batches, moves])
+    alloc && alloc.productId
+      ? allocateFefo(batches, moves, alloc.productId, Number(alloc.qty) || 0,
+          alloc.godownId ? lotFilter(godowns, alloc.godownId) : undefined)
+      : null
+  ), [alloc, batches, moves, godowns])
   const allocExpiredTakes = allocPreview
     ? allocPreview.picks.reduce((s, p) => s + (p.batch.expiry_date && p.batch.expiry_date < today ? p.take : 0), 0)
     : 0
@@ -312,10 +334,17 @@ function BatchesPageInner() {
 
       <div className="bt-toolbar">
         <Segmented options={VIEWS} value={view} onChange={v => setView(v as ViewFilter)} />
+        <select className="tf-input" style={{ cursor: 'pointer', maxWidth: 200 }} value={place}
+          aria-label="Filter by godown" onChange={e => setPlace(e.target.value)}>
+          <option value="">Every godown</option>
+          {godowns.map(g => (
+            <option key={g.id} value={g.id}>{g.name}{g.archived ? ' (archived)' : ''}</option>
+          ))}
+        </select>
         <SearchInput
           value={search}
           onChange={setSearch}
-          placeholder="Item, batch no. or vendor…"
+          placeholder="Item, batch no., vendor or godown…"
           ariaLabel="Search batches"
           style={{ flex: '1 1 240px', maxWidth: 340, marginLeft: 'auto' }}
         />
@@ -352,6 +381,7 @@ function BatchesPageInner() {
             <div className="table-header bt-row bt-head">
               <span data-label="Item">Item</span>
               <span data-label="Batch">Batch</span>
+              <span data-label="Godown">Godown</span>
               <span data-label="Expiry">Expiry</span>
               <span data-label="Received">In</span>
               <span data-label="Out">Out</span>
@@ -370,6 +400,11 @@ function BatchesPageInner() {
                   <div className="bt-sub">
                     recv {v.received_date ? formatDateIN(v.received_date) : '—'}{v.vendor ? ` · ${v.vendor}` : ''}
                   </div>
+                </span>
+                <span data-label="Godown" className="bt-place">
+                  <Icon name="warehouse" size={12} />
+                  {godownOf(v, godowns).name}
+                  {!v.godown_id && <span className="bt-sub">never placed</span>}
                 </span>
                 <span data-label="Expiry">
                   <Badge tone={BATCH_STATUS_TONE[v.status]} dot={false}>{BATCH_STATUS_LABEL[v.status]}</Badge>
@@ -409,6 +444,7 @@ function BatchesPageInner() {
       <div className="bt-foot">
         <span>Shown: {visible.length} of {summary.lots} lots · {summary.consumed} sold out{summary.noExpiry.count ? ` · ${summary.noExpiry.count} without an expiry` : ''}</span>
         <span className="bt-foot-links">
+          <Link href="/inventory/godowns">Godowns →</Link>
           <Link href="/products">Products →</Link>
           <Link href="/inventory/reorder">Reorder planner →</Link>
           <Link href="/inventory">Shelf counts →</Link>
@@ -506,6 +542,24 @@ function BatchesPageInner() {
             </div>
 
             <label className="bt-field">
+              <span>Godown</span>
+              <select className="tf-input" style={{ cursor: 'pointer' }} value={godownOf(editor.batch, godowns).id}
+                onChange={e => patchEditor({ godown_id: e.target.value })}>
+                {godowns.filter(g => !g.archived || g.id === editor.batch.godown_id).map(g => (
+                  <option key={g.id} value={g.id}>{g.name}{g.archived ? ' (archived)' : ''}</option>
+                ))}
+              </select>
+              <span className="bt-hintline">
+                {isMain(godownOf(editor.batch, godowns).id) && !editor.batch.godown_id
+                  ? 'Standing in the Main godown — the place every unplaced lot reads as.'
+                  : 'Which place these units physically stand in. Moving them later is a transfer on the '}
+                {!isMain(godownOf(editor.batch, godowns).id) || editor.batch.godown_id
+                  ? <Link href="/inventory/godowns">godown register →</Link>
+                  : null}
+              </span>
+            </label>
+
+            <label className="bt-field">
               <span>Notes</span>
               <input className="tf-input" value={editor.batch.notes}
                 onChange={e => patchEditor({ notes: e.target.value })} placeholder="Cold chain, damage on arrival…" />
@@ -567,6 +621,19 @@ function BatchesPageInner() {
                   onChange={e => setAlloc(a => (a ? { ...a, date: e.target.value } : a))} />
               </label>
               <label className="bt-field">
+                <span>Draw from</span>
+                <select className="tf-input" style={{ cursor: 'pointer' }} value={alloc.godownId}
+                  onChange={e => { setAlloc(a => (a ? { ...a, godownId: e.target.value } : a)); setAllocError('') }}>
+                  <option value="">Every godown</option>
+                  {godowns.filter(g => !g.archived).map(g => (
+                    <option key={g.id} value={g.id}>{g.name}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="bt-grid">
+              <label className="bt-field">
                 <span>Reference</span>
                 <input className="tf-input" value={alloc.ref}
                   onChange={e => setAlloc(a => (a ? { ...a, ref: e.target.value } : a))} placeholder="Invoice no. or person, optional" />
@@ -582,7 +649,11 @@ function BatchesPageInner() {
                   </span>
                 </div>
                 {allocPreview.picks.length === 0 ? (
-                  <p className="bt-preview-empty">No lots of this item have stock left.</p>
+                  <p className="bt-preview-empty">
+                    {alloc.godownId
+                      ? `No lot of this item has stock left in ${godownById(godowns, alloc.godownId).name}.`
+                      : 'No lots of this item have stock left.'}
+                  </p>
                 ) : (
                   <ul className="bt-preview-list">
                     {allocPreview.picks.map(p => {
@@ -591,6 +662,7 @@ function BatchesPageInner() {
                         <li key={p.batch.id} className={expired ? 'is-bad' : ''}>
                           <span className="bt-mono">{p.batch.batch_no}</span>
                           <span className="bt-sub-inline">{p.batch.expiry_date ? `exp ${formatDateIN(p.batch.expiry_date)}` : 'no expiry'}{expired ? ' · expired' : ''}</span>
+                          {alloc.godownId === '' && <span className="bt-sub-inline">{godownOf(p.batch, godowns).name}</span>}
                           <span className="bt-preview-take">{fmtQty(p.take, p.batch.unit)}</span>
                         </li>
                       )
@@ -691,7 +763,7 @@ function BatchesPageInner() {
         .bt-notice-x { margin-left: auto; background: none; border: none; color: inherit; cursor: pointer; padding: 2px; border-radius: 6px; min-height: 0; }
         .bt-notice-x:hover { background: rgba(0,0,0,0.05); }
 
-        .bt-row { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, 0.8fr) minmax(0, 0.8fr) minmax(0, 0.75fr) minmax(0, 0.85fr) 168px;
+        .bt-row { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 0.9fr) minmax(0, 1.25fr) minmax(0, 0.8fr) minmax(0, 0.8fr) minmax(0, 0.75fr) minmax(0, 0.85fr) 168px;
           gap: 12px; align-items: center; padding: 11px 14px; font-size: 12.5px; }
         .bt-head { background: var(--surface-2); border-bottom: 1px solid var(--line-soft); font-size: 11px;
           font-weight: 650; color: var(--faint); text-transform: uppercase; letter-spacing: 0.05em; }
@@ -702,6 +774,9 @@ function BatchesPageInner() {
         .bt-sub-red { color: var(--red); }
         .bt-sub-inline { font-size: 11px; color: var(--faint); }
         .bt-mono { font-family: ui-monospace, Menlo, monospace; }
+        .bt-place { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; color: var(--ink-2); }
+        .bt-place > svg { color: var(--faint); flex-shrink: 0; }
+        .bt-place > .bt-sub { margin-left: 2px; }
         .bt-num { font-variant-numeric: tabular-nums; color: var(--ink-2); }
         .bt-left { color: var(--ink); font-weight: 650; }
         .bt-dim { opacity: 0.72; }

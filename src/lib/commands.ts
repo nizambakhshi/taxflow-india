@@ -404,6 +404,16 @@ export function buildActionCommands(): Command[] {
       keywords: 'create add batch lot expiry stock receive inventory',
     },
     {
+      id: 'action:new-godown',
+      kind: 'action',
+      label: 'Add godown',
+      sublabel: 'Register a place stock is kept in',
+      href: '/inventory/godowns?new=1',
+      icon: 'warehouse',
+      badge: 'Action',
+      keywords: 'create add godown warehouse place location stock inventory transfer move',
+    },
+    {
       id: 'action:new-serial',
       kind: 'action',
       label: 'Add serial numbers',

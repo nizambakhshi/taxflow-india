@@ -42,16 +42,23 @@ export interface Batch {
   received_date: string
   notes: string
   created_at: string
+  /**
+   * Which godown the lot stands in — owner bookkeeping, so it lives here and not
+   * on the product row. '' means never placed, which reads as the Main godown
+   * (see godowns.ts); no lot is ever left without a home.
+   */
+  godown_id: string
 }
 
-/** Signed: negative leaves the lot (sale, damage), positive returns to it. */
+/** Signed: negative leaves the lot (sale, transfer, damage), positive returns to it. */
 export interface BatchMove {
   id: string
   batch_id: string
   date: string
   qty: number
-  kind: 'sale' | 'adjust'
-  /** Invoice number for 'sale' moves; free text for manual adjustments. */
+  /** `transfer` is a lot-to-lot move between godowns, never a plain adjustment. */
+  kind: 'sale' | 'adjust' | 'transfer'
+  /** Invoice number for 'sale' moves; the transfer ref for 'transfer'; free text otherwise. */
   doc_ref: string
   note: string
   created_at: string
@@ -93,7 +100,8 @@ export function todayISO(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-function newId(): string {
+/** Shared with godowns.ts — a transferred-in lot is a new row, same generator. */
+export function newId(): string {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -159,6 +167,9 @@ export function loadBatches(orgId: string): Batch[] {
         received_date: String(raw.received_date ?? ''),
         notes: String(raw.notes ?? ''),
         created_at: String(raw.created_at ?? ''),
+        // Lots booked before multi-godown existed carry nothing here, which the
+        // godown registry reads as "standing in the Main godown".
+        godown_id: String(raw.godown_id ?? ''),
       }
     })
   } catch {
@@ -185,7 +196,7 @@ export function loadMoves(orgId: string): BatchMove[] {
         batch_id: String(raw.batch_id ?? ''),
         date: String(raw.date ?? ''),
         qty: num(raw.qty),
-        kind: raw.kind === 'sale' ? 'sale' : 'adjust',
+        kind: raw.kind === 'sale' ? 'sale' : raw.kind === 'transfer' ? 'transfer' : 'adjust',
         doc_ref: String(raw.doc_ref ?? ''),
         note: String(raw.note ?? ''),
         created_at: String(raw.created_at ?? ''),
@@ -220,6 +231,7 @@ export function newBatch(receivedDate = todayISO()): Batch {
     vendor: '',
     bill_ref: '',
     received_date: receivedDate,
+    godown_id: '',
     notes: '',
     created_at: new Date().toISOString(),
   }
@@ -331,18 +343,23 @@ export interface Allocation {
  * Deliberately draws from expired lots too when they come first: if the units
  * physically left the shelf, that is the lot they left from — the register's
  * job is to record it, and the page flags that it happened.
+ *
+ * `where` narrows the lots to draw from — godowns.ts hands over a predicate for
+ * one place, so this module stays godown-ignorant and the automatic invoice
+ * hook (no predicate) keeps drawing from every lot in the books.
  */
 export function allocateFefo(
   batches: Batch[],
   moves: BatchMove[],
   productId: string,
   qty: number,
+  where?: (b: Batch) => boolean,
 ): Allocation {
   const wanted = Number(qty)
   if (!productId || !Number.isFinite(wanted) || wanted <= 0) return { picks: [], covered: 0, shortfall: 0 }
   const net = netByBatch(moves)
   const candidates = batches
-    .filter(b => b.product_id === productId)
+    .filter(b => b.product_id === productId && (where ? where(b) : true))
     .map(b => {
       const entry = net.get(b.id) || { out: 0, back: 0 }
       return { batch: b, left: Math.round((b.qty + entry.back - entry.out) * 1000) / 1000 }
@@ -495,14 +512,19 @@ export function summarise(views: BatchView[]): BatchSummary {
 }
 
 export const BATCH_CSV_HEADERS = [
-  'Item', 'SKU', 'Batch no.', 'Mfg date', 'Expiry', 'Days left', 'Status',
+  'Item', 'SKU', 'Godown', 'Batch no.', 'Mfg date', 'Expiry', 'Days left', 'Status',
   'Received', 'Qty in', 'Qty out', 'Qty back', 'Left', 'Unit', 'Unit cost', 'Value left',
   'Vendor', 'Bill ref', 'Notes',
 ]
 
-export function batchCsvRows(views: BatchView[]): (string | number)[][] {
+/**
+ * `placeOf` turns a lot's `godown_id` into the name written in the CSV. It is a
+ * parameter rather than an import: godowns.ts owns the registry and depends on
+ * this module, so the dependency may only run one way.
+ */
+export function batchCsvRows(views: BatchView[], placeOf?: (v: BatchView) => string): (string | number)[][] {
   return views.map(v => [
-    v.product_name, v.sku, v.batch_no, v.mfg_date, v.expiry_date,
+    v.product_name, v.sku, placeOf ? placeOf(v) : '', v.batch_no, v.mfg_date, v.expiry_date,
     v.daysLeft ?? '', BATCH_STATUS_LABEL[v.status],
     v.received_date, v.qty, v.out, v.back, v.left, v.unit, v.cost, v.value,
     v.vendor, v.bill_ref, v.notes,
