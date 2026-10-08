@@ -881,6 +881,16 @@ function CostCentresPageInner() {
             Amend a bill tomorrow and this centre’s contribution changes with it, because nothing here was ever entered.
           </span>
         </div>
+        <div className="cc-note">
+          <Icon name="briefcase" size={13} strokeWidth={2.2} />
+          <span>
+            <strong>A centre splits a document; a project collects them.</strong> A cost centre — even one whose kind reads “Project / job” — answers
+            “which part of the business is this rupee in?” by holding a percentage of one invoice or bill, and it knows nothing about hours.
+            If what you are tracking is a job — the time it took, the documents it earned, the month of
+            delivered work that still has no invoice — that belongs at <Link href="/projects">Projects &amp; time</Link>.
+            The two read the same books and never write to them.
+          </span>
+        </div>
       </div>
 
       <div className="cc-foot">
@@ -891,6 +901,7 @@ function CostCentresPageInner() {
         <span className="cc-foot-links">
           <Link href="/accounting">Financial statements →</Link>
           <Link href="/reports">Reports →</Link>
+          <Link href="/projects">Projects &amp; time →</Link>
           <Link href="/gst/gstr9">GSTR-9 workpaper →</Link>
           <Link href="/inventory/godowns">Godowns →</Link>
         </span>

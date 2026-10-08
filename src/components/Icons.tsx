@@ -297,6 +297,13 @@ const P: Record<string, React.ReactNode> = {
     <line x1="3" y1="12" x2="21" y2="12" />
     <path d="M12 3c2.6 2.6 3.9 5.7 3.9 9S14.6 18.4 12 21c-2.6-2.6-3.9-5.7-3.9-9S9.4 5.6 12 3z" />
   </>),
+  // A piece of work carried to site: the case itself, with the latch where the hours are kept.
+  briefcase: (<>
+    <rect x="2.5" y="7" width="19" height="13" rx="2" />
+    <path d="M8.5 7V5.6A1.6 1.6 0 0 1 10.1 4h3.8a1.6 1.6 0 0 1 1.6 1.6V7" />
+    <line x1="2.5" y1="12.5" x2="21.5" y2="12.5" />
+    <line x1="12" y1="15" x2="12" y2="17" />
+  </>),
 }
 
 export type IconName = keyof typeof P
