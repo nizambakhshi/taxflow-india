@@ -16,10 +16,12 @@
 import { validateGSTIN } from '@/lib/constants'
 import { formatCompactINR, formatDateIN } from '@/lib/format'
 import { NAV_ITEMS } from '@/lib/nav'
+import { docValue, loadStore } from '@/lib/orderflow'
 
 export type CommandKind = 'recent' | 'action' | 'page' | 'record'
 
-export type EntityKind =
+/** Entities backed by Supabase tables (async search) — everything else is local. */
+export type RecordEntity =
   | 'invoice'
   | 'purchase_bill'
   | 'credit_note'
@@ -28,6 +30,11 @@ export type EntityKind =
   | 'customer'
   | 'vendor'
   | 'product'
+
+/** Order-flow documents live in localStorage (ADR-013) — searched synchronously. */
+export type OrderEntity = 'challan' | 'sales_order' | 'purchase_order'
+
+export type EntityKind = RecordEntity | OrderEntity
 
 export interface Command {
   id: string
@@ -67,7 +74,7 @@ const GROUP_TITLES: Record<CommandKind, string> = {
 }
 
 /** Records are grouped per entity, most business-used first. */
-export const RECORD_ORDER: EntityKind[] = [
+export const SUPABASE_RECORD_ORDER: RecordEntity[] = [
   'invoice',
   'customer',
   'vendor',
@@ -77,6 +84,11 @@ export const RECORD_ORDER: EntityKind[] = [
   'debit_note',
   'quotation',
 ]
+
+export const ORDER_ENTITIES: OrderEntity[] = ['challan', 'sales_order', 'purchase_order']
+
+/** Display order for record groups — local order documents sit after the rest. */
+export const RECORD_ORDER: EntityKind[] = [...SUPABASE_RECORD_ORDER, ...ORDER_ENTITIES]
 
 interface EntitySpec {
   table: string
@@ -94,7 +106,7 @@ interface EntitySpec {
   refField?: string
 }
 
-export const ENTITY_SPECS: Record<EntityKind, EntitySpec> = {
+export const ENTITY_SPECS: Record<RecordEntity, EntitySpec> = {
   invoice: {
     table: 'invoices',
     columns: 'id, invoice_number, customer_name, invoice_date, grand_total, status',
@@ -185,6 +197,9 @@ export const ENTITY_META: Record<EntityKind, { group: string; badge: string; ico
   credit_note: { group: 'Credit notes', badge: 'Credit note', icon: 'credit-note', home: '/credit-notes' },
   debit_note: { group: 'Debit notes', badge: 'Debit note', icon: 'debit-note', home: '/debit-notes' },
   quotation: { group: 'Quotations', badge: 'Quotation', icon: 'clipboard', home: '/quotations' },
+  challan: { group: 'Challans', badge: 'Challan', icon: 'truck', home: '/challans' },
+  sales_order: { group: 'Sales orders', badge: 'Sales order', icon: 'bag', home: '/sales-orders' },
+  purchase_order: { group: 'Purchase orders', badge: 'Purchase order', icon: 'clipboard-check', home: '/purchase-orders' },
 }
 
 export const ENTITY_GROUPS = RECORD_ORDER.map(e => ENTITY_META[e].group)
@@ -201,9 +216,10 @@ export function normalizeQuery(q: string): string {
   return String(q ?? '').trim().toLowerCase().replace(/\s+/g, ' ')
 }
 
-/** A user pastes a GSTIN with spaces and case; matching should not care. */
+/** A user pastes a GSTIN with spaces and case; matching should not care. Splitting
+ *  on every non-alphanumeric also lets "INV-2024-001" match the label's words. */
 function queryTokens(q: string): string[] {
-  return q.split(' ').map(t => t.replace(/[^a-z0-9]/g, '')).filter(Boolean)
+  return q.split(/[^a-z0-9]+/).filter(Boolean)
 }
 
 export function looksLikeGSTIN(q: string): boolean {
@@ -219,7 +235,7 @@ export function sanitizeForOr(q: string): string {
   return normalizeQuery(q).replace(/[,%*():]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40)
 }
 
-export function orFilter(entity: EntityKind, q: string): string | null {
+export function orFilter(entity: RecordEntity, q: string): string | null {
   const clean = sanitizeForOr(q)
   if (!clean) return null
   const like = `%${clean}%`
@@ -292,12 +308,11 @@ export function rankCommands(query: string, cmds: Command[]): Command[] {
 const PAGE_HREFS: string[] = NAV_ITEMS.flatMap(s => s.items.map(i => i.href))
 
 /**
- * Invoices are the only entity with a detail route, so they are the only prefix
- * whose children count as known. Matching every parent loosely would let a stale
- * '/gst/annual' recent — a route that 404s — look valid, which is the whole thing
- * this check exists to prevent.
+ * Prefixes whose children are known routes — only entities with a detail page.
+ * Matching every parent loosely would let a stale '/gst/annual' recent — a route
+ * that 404s — look valid, which is the whole thing this check exists to prevent.
  */
-const DYNAMIC_CHILD_PREFIXES = ['/invoices/']
+const DYNAMIC_CHILD_PREFIXES = ['/invoices/', '/challans/', '/sales-orders/', '/purchase-orders/']
 
 /**
  * A destination must still exist: recents are replayed from localStorage, and an
@@ -348,23 +363,53 @@ export function buildActionCommands(): Command[] {
       badge: 'Action',
       keywords: 'create new pos shop counter retail sale',
     },
+    {
+      id: 'action:new-challan',
+      kind: 'action',
+      label: 'New challan',
+      sublabel: 'Dispatch goods before invoicing',
+      href: '/challans?new=1',
+      icon: 'truck',
+      badge: 'Action',
+      keywords: 'create add challan delivery dispatch goods movement',
+    },
+    {
+      id: 'action:new-sales-order',
+      kind: 'action',
+      label: 'New sales order',
+      sublabel: 'Book a customer order',
+      href: '/sales-orders?new=1',
+      icon: 'bag',
+      badge: 'Action',
+      keywords: 'create add sales order customer booking so',
+    },
+    {
+      id: 'action:new-purchase-order',
+      kind: 'action',
+      label: 'New purchase order',
+      sublabel: 'Commit a supplier order',
+      href: '/purchase-orders?new=1',
+      icon: 'clipboard-check',
+      badge: 'Action',
+      keywords: 'create add purchase order supplier vendor po',
+    },
   ]
 }
 
-export function handleFor(entity: EntityKind, row: EntityRow): string {
+export function handleFor(entity: RecordEntity, row: EntityRow): string {
   const spec = ENTITY_SPECS[entity]
   return entity === 'invoice' || spec.numberField
     ? text(row[spec.numberField ?? ''])
     : text(row.name)
 }
 
-export function recordHref(entity: EntityKind, row: EntityRow): string {
+export function recordHref(entity: RecordEntity, row: EntityRow): string {
   const home = ENTITY_META[entity].home
   if (entity === 'invoice') return `${home}/${text(row.id)}`
   return `${home}?q=${encodeURIComponent(handleFor(entity, row))}`
 }
 
-export function toCommand(entity: EntityKind, row: EntityRow): Command | null {
+export function toCommand(entity: RecordEntity, row: EntityRow): Command | null {
   const spec = ENTITY_SPECS[entity]
   const id = text(row.id)
   if (!id) return null
@@ -427,6 +472,39 @@ export function toCommand(entity: EntityKind, row: EntityRow): Command | null {
     badge: meta.badge,
     keywords: [name, biz, gstin, phone, city].filter(Boolean).join(' ').toLowerCase(),
   }
+}
+
+/**
+ * Order-flow documents live in localStorage (ADR-013), so their live search is
+ * synchronous — no round-trip, no debounce, no loader row. Returned as plain
+ * record commands so the same ranker and grouping apply as everywhere else.
+ * Every kind has a detail route, so the href opens the document itself.
+ */
+export function orderRecordCommands(orgId: string, query: string): Command[] {
+  const q = normalizeQuery(query)
+  if (!q || !orgId || typeof window === 'undefined') return []
+  const out: Command[] = []
+  for (const kind of ORDER_ENTITIES) {
+    const meta = ENTITY_META[kind]
+    for (const doc of loadStore(kind, orgId).docs) {
+      if (doc.status === 'cancelled') continue
+      const value = docValue(doc)
+      out.push({
+        id: `record:${kind}:${doc.id}`,
+        kind: 'record',
+        entity: kind,
+        label: doc.number,
+        sublabel: [doc.party_name, formatDateIN(doc.doc_date), formatCompactINR(value)].filter(Boolean).join(' · '),
+        href: `${meta.home}/${doc.id}`,
+        icon: meta.icon,
+        badge: meta.badge,
+        keywords: [doc.number, doc.party_name, doc.party_gstin, doc.status,
+          doc.converted_to_number ?? '', inrDigits(value), String(value)]
+          .filter(Boolean).join(' ').toLowerCase(),
+      })
+    }
+  }
+  return out
 }
 
 /**

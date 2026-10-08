@@ -7,17 +7,18 @@ import { useRouter } from 'next/navigation'
 import { formatINR, getFinancialYear } from '@/lib/gst-engine'
 import { formatCompactINR, formatDateIN } from '@/lib/format'
 import {
-  b2bRegister, daysUntil, hsnSummary, loadEwbLog, partyWiseSales, removeEwbEntry,
+  b2bRegister, daysUntil, hsnSummary, loadEwbLog, orderFlowRows, partyWiseSales, removeEwbEntry,
   stateWiseSales, toCsv, totalsOf, upsertEwbEntry,
   type EwbEntry, type RegInvoice, type RegItem,
 } from '@/lib/registers'
+import { loadAllDocs, type FlowDoc } from '@/lib/orderflow'
 import { download } from '@/lib/party-ledger'
 import { Badge, Button, Card, EmptyState, PageHeader, Segmented, StatCard } from '@/components/ui'
 import Icon from '@/components/Icons'
 
 const DAY = 86400000
 
-type Tab = 'party' | 'hsn' | 'b2b' | 'state' | 'ewb'
+type Tab = 'party' | 'hsn' | 'b2b' | 'state' | 'ewb' | 'orders'
 
 const TABS: { value: Tab; label: string; icon: string }[] = [
   { value: 'party', label: 'Party-wise sales', icon: 'users' },
@@ -25,7 +26,16 @@ const TABS: { value: Tab; label: string; icon: string }[] = [
   { value: 'b2b', label: 'B2B register', icon: 'file-check' },
   { value: 'state', label: 'State-wise', icon: 'landmark' },
   { value: 'ewb', label: 'E-way bill register', icon: 'cart' },
+  { value: 'orders', label: 'Order flow', icon: 'truck' },
 ]
+
+// Order-flow documents live in localStorage (orderflow.ts); their badge palettes sit here.
+const ORDER_KIND_TONE: Record<string, 'blue' | 'violet' | 'cyan'> = {
+  challan: 'cyan', sales_order: 'blue', purchase_order: 'violet',
+}
+const ORDER_STATUS_TONE: Record<string, 'grey' | 'blue' | 'amber' | 'green' | 'red'> = {
+  draft: 'grey', active: 'blue', closed: 'amber', converted: 'green', cancelled: 'red',
+}
 
 function iso(d: Date) { return d.toISOString().slice(0, 10) }
 
@@ -87,6 +97,7 @@ export default function RegistersPage() {
   const [docs, setDocs] = useState<RegInvoice[]>([])
   const [items, setItems] = useState<RegItem[]>([])
   const [ewbLog, setEwbLog] = useState<EwbEntry[]>([])
+  const [orderDocs, setOrderDocs] = useState<FlowDoc[]>([])
   const [ewbForm, setEwbForm] = useState({ invoiceId: '', ewbNo: '', validityEnd: '', vehicleNumber: '', transportMode: 'Road', distanceKm: '' })
 
   useEffect(() => {
@@ -102,6 +113,7 @@ export default function RegistersPage() {
       setOrgId(oid)
       setOrgName((membership.organizations as any)?.name || '')
       setEwbLog(loadEwbLog(oid))
+      setOrderDocs(loadAllDocs(oid))
       await loadRange(oid, presetRange('fy'))
       setLoading(false)
     }
@@ -188,6 +200,19 @@ export default function RegistersPage() {
     )
   }, [ewbLog, search])
 
+  // Order-flow docs are local, so period and filter both apply here in memory.
+  const filteredOrders = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return orderFlowRows(orderDocs).filter(r => {
+      if (range.from && r.date < range.from) return false
+      if (range.to && r.date > range.to) return false
+      if (!q) return true
+      return r.number.toLowerCase().includes(q) || r.party.toLowerCase().includes(q) ||
+        r.partyGstin.toLowerCase().includes(q) || r.kindLabel.toLowerCase().includes(q) ||
+        r.statusLabel.toLowerCase().includes(q)
+    })
+  }, [orderDocs, search, range])
+
   const grand = totalsOf(partyRows)
   const creditNoteValue = docs.filter(d => d.document_type === 'credit_note')
     .reduce((s, d) => s + Number(d.taxable_amount || 0), 0)
@@ -204,6 +229,7 @@ export default function RegistersPage() {
     : tab === 'hsn' ? hsnRows
     : tab === 'b2b' ? b2bRows
     : tab === 'state' ? stateRows
+    : tab === 'orders' ? filteredOrders
     : filteredEwb
 
   const sortedRows = useMemo(() => {
@@ -219,7 +245,9 @@ export default function RegistersPage() {
 
   const totals = tab === 'party' || tab === 'b2b' || tab === 'state' || tab === 'hsn'
     ? totalsOf(sortedRows.map(r => ({ ...r, cess: r.cess ?? 0, total: r.total ?? r.taxable + r.tax })))
-    : null
+    : tab === 'orders'
+      ? { value: sortedRows.reduce((s, r) => s + (Number(r.value) || 0), 0) }
+      : null
 
   function exportCsv() {
     const name = `taxflow-${tab}-register-${range.from || 'all'}-${range.to || 'all'}.csv`
@@ -337,11 +365,13 @@ export default function RegistersPage() {
 
         {sortedRows.length === 0 ? (
           <EmptyState
-            icon={tab === 'ewb' ? 'cart' : 'chart'}
-            title={tab === 'ewb' ? 'No e-way bills logged' : 'Nothing in this period'}
+            icon={tab === 'ewb' ? 'cart' : tab === 'orders' ? 'truck' : 'chart'}
+            title={tab === 'ewb' ? 'No e-way bills logged' : tab === 'orders' ? 'No order flow in this period' : 'Nothing in this period'}
             message={tab === 'ewb'
               ? 'Record the EWB number from the GST portal against each dispatch — lapsed validity is the most common reason goods get detained at a check post.'
-              : 'Widen the date range, or clear the filter above.'}
+              : tab === 'orders'
+                ? 'Delivery challans, sales orders and purchase orders appear here while they are open — create one from the sidebar and it joins this view alongside the statutory registers.'
+                : 'Widen the date range, or clear the filter above.'}
           />
         ) : (
           <div className="table-scroll">
@@ -552,6 +582,42 @@ function buildColumns(tab: Tab, findDoc: (id: string) => RegInvoice | undefined,
     { key: 'total', label: 'Total', width: '1.1fr', align: 'right', sort: r => r.total, csv: r => r.total, render: (r: any) => <span className="tf-num" style={{ fontWeight: 700 }}>{money(r.total)}</span> },
   ]
 
+  if (tab === 'orders') return [
+    {
+      key: 'number', label: 'Document', width: '1.1fr', sort: r => r.number, csv: r => r.number,
+      render: (r: any) => (
+        <span className="tf-col" style={{ gap: 2, alignItems: 'flex-start' }}>
+          <Link href={r.href} style={{ color: 'var(--brand)', fontWeight: 620, textDecoration: 'none' }}>{r.number}</Link>
+          <span style={{ fontSize: 11, color: 'var(--faint)' }}>{formatDateIN(r.date)}</span>
+        </span>
+      ),
+    },
+    {
+      key: 'kindLabel', label: 'Kind', width: '.8fr', sort: r => r.kindLabel, csv: r => r.kindLabel,
+      render: (r: any) => <Badge tone={ORDER_KIND_TONE[r.kind] || 'grey'} dot={false}>{r.kindLabel}</Badge>,
+    },
+    {
+      key: 'party', label: 'Party', width: '1.5fr', sort: r => r.party.toLowerCase(), csv: r => r.party,
+      render: (r: any) => (
+        <span className="tf-col" style={{ gap: 2, alignItems: 'flex-start' }}>
+          <span style={{ fontWeight: 600, color: 'var(--ink)' }}>{r.party}</span>
+          {r.partyGstin && <span className="tf-num" style={{ fontSize: 11, color: 'var(--faint)' }}>{r.partyGstin}</span>}
+        </span>
+      ),
+    },
+    {
+      key: 'statusLabel', label: 'Status', width: '.9fr', sort: r => r.statusLabel, csv: r => r.statusLabel,
+      render: (r: any) => <Badge tone={ORDER_STATUS_TONE[r.status] || 'grey'}>{r.statusLabel}</Badge>,
+    },
+    {
+      key: 'convertedTo', label: 'Converts to', width: '1fr', sort: r => r.convertedTo, csv: r => r.convertedTo,
+      render: (r: any) => r.convertedTo
+        ? <span className="tf-num" style={{ color: 'var(--ink-2)' }}>{r.convertedTo}</span>
+        : <span style={{ color: 'var(--faint)' }}>—</span>,
+    },
+    { key: 'value', label: 'Value', width: '.9fr', align: 'right', sort: r => r.value, csv: r => r.value, render: (r: any) => <span className="tf-num" style={{ fontWeight: 700 }}>{money(r.value)}</span> },
+  ]
+
   return [
     {
       key: 'invoiceNumber', label: 'Invoice', width: '1fr', sort: r => r.invoiceNumber, csv: r => r.invoiceNumber,
@@ -590,6 +656,7 @@ function buildColumns(tab: Tab, findDoc: (id: string) => RegInvoice | undefined,
 }
 
 function footCell(key: string, totals: any, tab: Tab) {
+  if (tab === 'orders') return key === 'number' ? 'Register total' : key === 'value' ? money(totals.value) : ''
   if (['party', 'state', 'invoiceNumber', 'hsn', 'descriptions'].includes(key)) return 'Register total'
   const map: Record<string, number> = {
     taxable: totals.taxable, cgst: totals.cgst, sgst: totals.sgst,

@@ -5,10 +5,10 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import Icon from '@/components/Icons'
 import {
-  ENTITY_SPECS, RECORDS_PER_GROUP, RECORD_ORDER,
+  ENTITY_SPECS, RECORDS_PER_GROUP, SUPABASE_RECORD_ORDER,
   buildActionCommands, buildPageCommands, clampIndex, flattenVisible, groupBySection,
-  isActiveHref, loadRecents, nextIndex, normalizeQuery, orFilter, pushRecent, rankCommands,
-  toCommand,
+  isActiveHref, loadRecents, nextIndex, normalizeQuery, orFilter, orderRecordCommands,
+  pushRecent, rankCommands, toCommand,
   type Command, type EntityKind, type EntityRow,
 } from '@/lib/commands'
 
@@ -113,12 +113,12 @@ export default function CommandPalette({ orgId, pathname, open, setOpen }: Props
     }
 
     const id = ++batch.current
-    setPending(new Set(RECORD_ORDER))
+    setPending(new Set(SUPABASE_RECORD_ORDER))
 
     const timer = window.setTimeout(async () => {
       const settled: Command[] = []
       const done = new Set<EntityKind>()
-      await Promise.all(RECORD_ORDER.map(async entity => {
+      await Promise.all(SUPABASE_RECORD_ORDER.map(async entity => {
         const spec = ENTITY_SPECS[entity]
         const or = orFilter(entity, q)
         if (!or) return
@@ -149,10 +149,17 @@ export default function CommandPalette({ orgId, pathname, open, setOpen }: Props
     return () => window.clearTimeout(timer)
   }, [query, open, orgId, supabase])
 
+  // Order-flow documents (challans, sales/purchase orders) live in localStorage,
+  // so they match synchronously — no debounce, no spinner, same ranker as the rest.
+  const localRecords = useMemo(
+    () => (open && normalizeQuery(query).length >= MIN_QUERY ? orderRecordCommands(orgId, query) : []),
+    [open, query, orgId]
+  )
+
   const ranked = useMemo(() => {
-    const pool = [...recents, ...actions, ...pages, ...records]
+    const pool = [...recents, ...actions, ...pages, ...localRecords, ...records]
     return normalizeQuery(query) ? rankCommands(query, pool) : pool
-  }, [query, recents, actions, pages, records])
+  }, [query, recents, actions, pages, localRecords, records])
 
   const groups = useMemo(() => groupBySection(ranked), [ranked])
   const visible = useMemo(() => flattenVisible(groups), [groups])
@@ -303,7 +310,7 @@ export default function CommandPalette({ orgId, pathname, open, setOpen }: Props
           <span><kbd className="tf-cmd-kbd">↑</kbd><kbd className="tf-cmd-kbd">↓</kbd> move</span>
           <span><kbd className="tf-cmd-kbd">⏎</kbd> open</span>
           <span><kbd className="tf-cmd-kbd">esc</kbd> close</span>
-          <span className="tf-cmd-foot-hint">Invoices open the document; anything else opens its list, filtered.</span>
+          <span className="tf-cmd-foot-hint">Documents open themselves; parties, products and other names open their list, filtered.</span>
         </div>
 
         <span className="tf-cmd-live" aria-live="polite">

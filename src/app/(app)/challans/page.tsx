@@ -190,6 +190,16 @@ function ChallansPageInner() {
           setIsNewDoc(false)
         }
       }
+
+      // ?new=1 — the palette's "New challan" action lands here with the editor open.
+      // State is set inline rather than via openCreate(): a function defined later
+      // in the component cannot be called from the load effect (React compiler).
+      if (searchParams.get('new') === '1') {
+        setModalDoc(newDoc(KIND, peekNumber(store, KIND, fy), todayISO()))
+        setModalLines([emptyDraftLine()])
+        setIsNewDoc(true)
+        setModalError('')
+      }
       setLoading(false)
     }
     load()

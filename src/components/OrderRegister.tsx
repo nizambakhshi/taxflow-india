@@ -259,6 +259,16 @@ function OrderRegisterInner({ kind }: { kind: OrderKind }) {
           setIsNewDoc(false)
         }
       }
+
+      // ?new=1 — the palette's "New sales/purchase order" action lands here with the
+      // editor open. State is set inline rather than via openCreate(): a function
+      // defined later in the component cannot be called from the load effect.
+      if (searchParams.get('new') === '1') {
+        setModalDoc(newDoc(kind, peekNumber(store, kind, fy), todayISO()))
+        setModalLines([emptyDraftLine()])
+        setIsNewDoc(true)
+        setModalError('')
+      }
       setLoading(false)
     }
     load()

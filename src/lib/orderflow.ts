@@ -77,12 +77,14 @@ export const KIND_META: Record<FlowKind, {
   prefix: string
   label: string
   plural: string
+  listHref: string
   statusLabels: Record<FlowStatus, string>
 }> = {
   challan: {
     prefix: 'DC',
     label: 'Delivery challan',
     plural: 'Delivery challans',
+    listHref: '/challans',
     statusLabels: {
       draft: 'Draft', active: 'In transit', closed: 'Delivered',
       converted: 'Invoiced', cancelled: 'Cancelled',
@@ -92,6 +94,7 @@ export const KIND_META: Record<FlowKind, {
     prefix: 'SO',
     label: 'Sales order',
     plural: 'Sales orders',
+    listHref: '/sales-orders',
     statusLabels: {
       draft: 'Draft', active: 'Confirmed', closed: 'Fulfilled',
       converted: 'Invoiced', cancelled: 'Cancelled',
@@ -101,12 +104,15 @@ export const KIND_META: Record<FlowKind, {
     prefix: 'PO',
     label: 'Purchase order',
     plural: 'Purchase orders',
+    listHref: '/purchase-orders',
     statusLabels: {
       draft: 'Draft', active: 'Placed', closed: 'Received',
       converted: 'Billed', cancelled: 'Cancelled',
     },
   },
 }
+
+export const ORDER_KINDS: FlowKind[] = ['challan', 'sales_order', 'purchase_order']
 
 export const CHALLAN_REASONS: { value: string; label: string; note?: string }[] = [
   { value: 'approval', label: 'Supply on approval (sale or return)', note: 'Rule 55(4): sent to an agent on approval — treated as a supply if not returned within 6 months of delivery.' },
@@ -159,6 +165,11 @@ export function loadStore(kind: FlowKind, orgId: string): FlowStore {
 export function saveStore(kind: FlowKind, orgId: string, store: FlowStore): void {
   if (typeof window === 'undefined') return
   window.localStorage.setItem(storeKey(kind, orgId), JSON.stringify(store))
+}
+
+/** Every kind's documents together, newest first — for registers and search. */
+export function loadAllDocs(orgId: string): FlowDoc[] {
+  return sortDocs(ORDER_KINDS.flatMap(k => loadStore(k, orgId).docs))
 }
 
 // ── Numbering ────────────────────────────────────────────────────────────────

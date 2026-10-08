@@ -5,6 +5,7 @@
  */
 
 import { stateNameFor } from '@/lib/einvoice'
+import { KIND_META, docValue, sortDocs, type FlowDoc, type FlowKind } from '@/lib/orderflow'
 
 export interface RegInvoice {
   id: string
@@ -346,6 +347,52 @@ export function daysUntil(iso: string): number {
   const t = new Date(iso).getTime()
   if (Number.isNaN(t)) return 0
   return Math.ceil((t - Date.now()) / 86400000)
+}
+
+/* ── order-flow register ─────────────────────────────────────────────
+   Challans, sales orders and purchase orders live in localStorage (ADR-013 —
+   no tables). The register maps their FlowDocs into the same row shape the
+   other tabs render, so sorting, CSV and the foot row all just work. */
+
+export interface OrderFlowRow {
+  key: string
+  kind: FlowKind
+  kindLabel: string
+  number: string
+  date: string
+  party: string
+  partyGstin: string
+  status: string
+  statusLabel: string
+  value: number
+  convertedTo: string
+  href: string
+}
+
+/**
+ * Cancelled documents are excluded, the same rule the statutory tabs apply to
+ * cancelled invoices — a cancelled order has no value and no conversion.
+ */
+export function orderFlowRows(docs: FlowDoc[]): OrderFlowRow[] {
+  return sortDocs(docs)
+    .filter(d => d.status !== 'cancelled')
+    .map(d => {
+      const meta = KIND_META[d.kind]
+      return {
+        key: d.id,
+        kind: d.kind,
+        kindLabel: meta.label,
+        number: d.number,
+        date: d.doc_date,
+        party: d.party_name || '—',
+        partyGstin: d.party_gstin || '',
+        status: d.status,
+        statusLabel: meta.statusLabels[d.status] ?? d.status,
+        value: docValue(d),
+        convertedTo: d.converted_to_number || '',
+        href: `${meta.listHref}/${d.id}`,
+      }
+    })
 }
 
 function norm(s: string | null | undefined) {
