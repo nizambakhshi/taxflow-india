@@ -2,7 +2,7 @@
 
 **Version:** 2.0  
 **Date:** October 2026  
-**Last Updated:** 2026-10-07  
+**Last Updated:** 2026-10-08  
 **Purpose:** Track everything built, every decision made, every issue fixed.  
 Update this file at the end of every development session.
 
@@ -35,7 +35,7 @@ the repository as it exists today.
 | API routes | 2 only — `/api/gsp/ewaybill` (mock GSP transport), `/api/pdf-worker` (serves the pdf.js worker asset) |
 | Developer OS | Mac Mini M4 (macOS) |
 | Code editor | Qoder (was Cursor) |
-| History | 39 commits on `main`; MVP landed 2026-09-19, rounds ran 2026-10-05 → 2026-10-07 |
+| History | 70 commits on `main`; MVP landed 2026-09-19, rounds ran 2026-10-05 → 2026-10-08 |
 
 ---
 
@@ -84,7 +84,7 @@ April → March. `getFinancialYear()` lives in `gst-engine.ts:175`.
 `proxy.ts` was deleted (the cookie session was rewritten server-side and broke inserts). Auth is read client-side through `@supabase/ssr`.
 
 ### ADR-010 — URL-Based ID Resolution — holds
-`src/app/(app)/invoices/[id]/page.tsx:26` still reads `window.location.pathname.split('/')`.  
+`src/app/(app)/invoices/[id]/page.tsx:28` still reads `window.location.pathname.split('/')`.  
 **Amended:** the same file now also needs the `XPageInner` + `<Suspense>` split whenever it uses `useSearchParams`, otherwise prerendering fails.
 
 ### ADR-011 — Draft Invoice Cannot Be Marked Paid — holds.
@@ -122,9 +122,9 @@ The app produces NIC v1.10 JSON (`src/lib/einvoice.ts`) for the user to upload a
 **Traps:** a new page not in `nav.ts` is invisible; a `?q=` column list that diverges from what that page actually filters on produces a hit that lands on an empty list; icon keys must exist in `Icons.tsx` or the item renders the fallback glyph.
 
 ### ADR-020 — One Styling Kit — holds (new)
-New pages use `:root` tokens + `.tf-*` utilities (`globals.css`) and the primitives in `src/components/ui.tsx` / `Icons.tsx`. Counted honestly (R2-12): **30** pages inside the shell plus the three auth pages (`login`, `signup`, `setup`, on the shared `src/components/AuthShell.tsx`) are on the kit, **4** import only `SearchInput` and still hand-code their header/buttons/badges, **2** in the shell are pre-kit. `4-Design-System.md` §16 is the ledger and the migration order; the pre-R2-12 "~16 pages on the kit" claim counted a `SearchInput` import as a migration.
+New pages use `:root` tokens + `.tf-*` utilities (`globals.css`) and the primitives in `src/components/ui.tsx` / `Icons.tsx`. Counted honestly (R2-12, complete): **32** pages inside the shell plus the three auth pages (`login`, `signup`, `setup`, on the shared `src/components/AuthShell.tsx`) are on the kit, and **4** (`bills`, `credit-notes`, `debit-notes`, `quotations`) import only `SearchInput` and still hand-code their header/buttons/badges. No shell page is pre-kit anymore: the pass closed with the two document pages. `4-Design-System.md` §16 is the ledger and the migration order; the pre-R2-12 "~16 pages on the kit" claim counted a `SearchInput` import as a migration.
 
-"Fully on the kit" is about the chrome, not about a clean hex audit — `ledger` (7), `reports/targets` (9), `reports/registers` (6), `pos` (6), `ai/scan-bill` (6), `gst/calendar` (4), `gst/gstr9` (3), `inventory/reorder` (3) and `dashboard` (2) all still hold one-off tints (row hover, skeleton gradient, border next to a `--*-soft` fill, the document-type colour map). A pre-kit page carries the whole palette instead: `invoices/[id]` 84, `invoices/new` 58. `reports` and `settings` migrated to absolute zero hex — the first pages with no strays at all — and the auth trio (three pages plus `AuthShell`) joined them; the brand gradient those pages needed now lives in one `--brand-grad` token, shared with the sidebar mark.
+"Fully on the kit" is about the chrome, not about a clean hex audit — `ledger` (7), `reports/targets` (9), `reports/registers` (6), `pos` (6), `ai/scan-bill` (6), `gst/calendar` (4), `gst/gstr9` (3), `inventory/reorder` (3) and `dashboard` (2) all still hold one-off tints (row hover, skeleton gradient, border next to a `--*-soft` fill, the document-type colour map). `reports`, `settings`, the auth trio (three pages plus `AuthShell`) and `invoices/new` migrated to absolute zero hex; the brand gradient those pages needed now lives in one `--brand-grad` token, shared with the sidebar mark. **The one deliberate exception is the printable document inside `invoices/[id]`:** its chrome is at zero but the classic document keeps 63 hex literals (cell tints, `#dbeafe` fills, zebra rows, red/green summary text) because that markup is a legal artefact and changing its palette is changing the artefact — do not "fix" it without a reason that survives a print test.
 
 ### ADR-021 — Documents Are Signed Rows — holds (new)
 Credit notes carry a negative taxable value and negative tax; they are summed, never `Math.abs()`-ed. This single decision is why a credit note dated in a month correctly reduces that month in GSTR-1, the registers, targets and the annual workpaper at once.
@@ -312,7 +312,16 @@ E-invoice threshold, e-way bill requirement, filing profile (monthly/QRMP) and T
 
 ---
 
-## Files Created (Complete List)
+### Session 31 — 2026-10-08 (R2-12, batch 10 — the documents, and the pass closes)
+**Built:** `invoices/new` and `invoices/[id]` onto the kit (`b933bea`) — the last two pre-kit pages, migrated chrome-only, which is the whole design of this batch. Everything a person touches before the paper moved: action bar, buttons, alerts, fields, the line-item editor, the summary; everything that *is* the paper stayed byte for byte: the classic `#invoice-document` layout, the `#invoice-capture` wrapper with its 24px baked-in print margin, the `@media print` stylesheet and the jsPDF slice pipeline. A printed document is a legal artefact — a styling change to it is a change to the artefact. `invoices/new` went 58 hex literals to 0 (PageHeader, Cards, `.ni-field`/`tf-input` fields, the `.ni-note is-local/is-inter` GST indicator via color-mix, the `line-items-head`/`line-item-row` mobile recipe kept, summary as `.ni-tot-*`); `invoices/[id]` has zero hex in its chrome — buttons are kit `Button`s (ghost/primary/danger with `check`/`download`/`printer`/`x` icons), the bar and cancelled banner run on tokens, and the `✓` `⬇` `🖨️` `⏳` `⚠️` glyphs are gone.
+
+**Also:** the shell's one remaining chrome emoji followed — the offline strip's `📶` became the kit `alert` icon (`a9c9e45`).
+
+**Method:** `tsc` 0; `eslint` parity on both pages (10 and 9 problems, identical rule sets vs HEAD — the anys, the set-state-in-effect error and the document `<img>` warning are the verbatim originals); hex audit: `invoices/new` 0, `invoices/[id]` 63 with every literal inside the document/PDF/print zones; `npm run build` 45/45, routes unchanged. The B10 commit message was amended once to correct its own hex arithmetic (58/84 → 0/63) before it ever left the machine.
+
+**Ledger:** **32 pages on the kit, 4 partial, 0 pre-kit** (+3 auth). R2-12 is complete — ten batches, closed with the documents as planned. Browser pass still blocked by the expired Supabase dev session.
+
+**Commits:** `b933bea`, `a9c9e45`.
 
 ### Routes — 40 pages
 ```
@@ -530,7 +539,7 @@ node --version
 
 ## Next Steps (Priority Order)
 
-1. **R2-12 — Design-system migration pass** (next up) — only the 2 document pages in the shell (`invoices/new`, `invoices/[id]`) carry inline styles anymore; the auth trio closed in B9 on the shared `AuthShell`. §16 of `4-Design-System.md` fixes the order: documents last, because a printed document is a legal artefact. When the pass ends, the next round comes out of `7-Competitor-Comparison.md` §8 — delivery challan and order flow first (build-only), then batch/serial/multi-godown (the one gap that needs a schema decision).
+1. **R2-12 — the design-system migration pass — COMPLETE** (ten batches, closed with the documents in B10). Every page inside the shell is on the kit; 4 lists (`bills`, `credit-notes`, `debit-notes`, `quotations`) still hand-code their chrome and get migrated when next touched, and the printable document inside `invoices/[id]` stays pre-kit by design. The next round comes out of `7-Competitor-Comparison.md` §8 — delivery challan and order flow first (build-only), then batch/serial/multi-godown (the one gap that needs a schema decision).
 2. **The unfinished browser pass** — GST batch 6 (`dd7d449`) and `gst/gstr4` (`da672a2`) were verified statically only; the Supabase dev session is expired, so nothing was measured at 355px or 1440px. Needs the user to sign in at `localhost:3000`.
 3. **Phase 14 — Security**: generated Supabase types, tightened dashboard RLS policies, audit log, multi-account isolation test. Do this before onboarding a real customer.
 4. **Real GSP integration** once a provider is chosen (ADR-016) — plus email invoices and multi-user, which need the pending decisions above.

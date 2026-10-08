@@ -383,7 +383,7 @@ Build from `src/components/ui.tsx` primitives and `.tf-*` classes, and reference
 
 Numbers in a column get `.tf-num`. Mobile is not an afterthought: CSS-grid tables switch to labelled cards at 768px, and because rupee amounts have no break opportunity, **one figure per line** on mobile — verify with `scrollWidth − clientWidth === 0` on every scroll container. Watch selector specificity: a desktop `.cols > .is-right` rule outranks a mobile `.cols > span` rule.
 
-Icons come from `Icons.tsx`. Emoji are not the interface language, whatever the pre-kit pages still do.
+Icons come from `Icons.tsx`. Emoji are not the interface language — the partly-migrated lists (`bills`, `credit-notes`, `debit-notes`, `quotations`) and a few content strings still carry some (`✓` empty states, the document's `🏢` logo placeholder); do not add more.
 
 ---
 
