@@ -4,7 +4,7 @@ GST billing, invoicing and compliance for Indian businesses (₹2–20 crore) �
 
 **Stack:** Next.js 16 (App Router, Turbopack) · React 19 · TypeScript · Supabase (Postgres + Auth, browser client) · Tailwind v4 tokens + a small custom design system in `src/app/globals.css`.
 
-**Status:** Round 1 (7 competitive features) and Round 2 through R2-20 are shipped — 53 pages and 39 pure domain libraries. See `5-Project-Tasks.md` for the backlog, `1-PRD.md` for scope and `7-Competitor-Comparison.md` for where the product stands against Tally, Zoho Books, Vyapar, myBillBook, Busy, Marg, ClearTax and Refrens.
+**Status:** Round 1 (7 competitive features) and Round 2 through R2-21 are shipped — 54 pages and 40 pure domain libraries. See `5-Project-Tasks.md` for the backlog, `1-PRD.md` for scope and `7-Competitor-Comparison.md` for where the product stands against Tally, Zoho Books, Vyapar, myBillBook, Busy, Marg, ClearTax and Refrens.
 
 ---
 
@@ -56,7 +56,7 @@ node --experimental-strip-types --no-warnings --loader /tmp/ts-loader.mjs /tmp/<
 
 **GST:** dashboard, GSTR-1 and GSTR-3B workpapers, GSTR-2B ↔ books reconciliation, e-invoice (IRN) + e-way bill payloads, GSTR-9/9C annual workpaper, GSTR-4/CMP-08 composition workpaper, job-work register with the section 143 return clock and the four ITC-04 grids, compliance calendar with late-fee estimates, statutory registers (party-wise, HSN/SAC, B2B, state-wise, e-way bill, order flow).
 
-**Money:** party ledger & statements of account, P&L and balance sheet derived from documents, receivables/payables ageing, bank statement matching (any bank's layout, scored against open documents with the reasons shown), TDS & 194Q withholding workpaper read out of the purchase bills with deposit calendar and interest, UPI payment links and WhatsApp reminders, a dated FX rate ledger with realised and unrealised exposure beside the rupee books, targets with festival-weighted pacing, demand-driven reorder suggestions.
+**Money:** party ledger & statements of account, P&L and balance sheet derived from documents, cost centres and departments that split an invoice, bill or expense by share — the percentage is what is stored, the rupees are re-read from the documents on every load, so amending a bill re-splits every centre by itself, receivables/payables ageing, bank statement matching (any bank's layout, scored against open documents with the reasons shown), TDS & 194Q withholding workpaper read out of the purchase bills with deposit calendar and interest, UPI payment links and WhatsApp reminders, a dated FX rate ledger with realised and unrealised exposure beside the rupee books, targets with festival-weighted pacing, demand-driven reorder suggestions.
 
 **At the counter and on the move:** POS screen with camera barcode scanning, installable PWA shell with an offline invoice outbox that replays through the normal save path, ⌘K command palette over pages, actions and live records, and customer statements that travel inside their own share link — the whole statement is encoded in the URL fragment, so nothing is stored server-side and there is nothing to revoke.
 
