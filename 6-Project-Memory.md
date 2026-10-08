@@ -122,9 +122,9 @@ The app produces NIC v1.10 JSON (`src/lib/einvoice.ts`) for the user to upload a
 **Traps:** a new page not in `nav.ts` is invisible; a `?q=` column list that diverges from what that page actually filters on produces a hit that lands on an empty list; icon keys must exist in `Icons.tsx` or the item renders the fallback glyph.
 
 ### ADR-020 — One Styling Kit — holds (new)
-New pages use `:root` tokens + `.tf-*` utilities (`globals.css`) and the primitives in `src/components/ui.tsx` / `Icons.tsx`. Counted honestly (R2-12): **28** pages are fully on the kit, **4** import only `SearchInput` and still hand-code their header/buttons/badges, **4** in the shell plus `login`/`signup`/`setup` are pre-kit. `4-Design-System.md` §16 is the ledger and the migration order; the pre-R2-12 "~16 pages on the kit" claim counted a `SearchInput` import as a migration.
+New pages use `:root` tokens + `.tf-*` utilities (`globals.css`) and the primitives in `src/components/ui.tsx` / `Icons.tsx`. Counted honestly (R2-12): **30** pages are fully on the kit, **4** import only `SearchInput` and still hand-code their header/buttons/badges, **2** in the shell plus `login`/`signup`/`setup` are pre-kit. `4-Design-System.md` §16 is the ledger and the migration order; the pre-R2-12 "~16 pages on the kit" claim counted a `SearchInput` import as a migration.
 
-"Fully on the kit" is about the chrome, not about a clean hex audit — `ledger` (7), `reports/targets` (9), `reports/registers` (6), `pos` (6), `ai/scan-bill` (6), `gst/calendar` (4), `gst/gstr9` (3), `inventory/reorder` (3) and `dashboard` (2) all still hold one-off tints (row hover, skeleton gradient, border next to a `--*-soft` fill, the document-type colour map). A pre-kit page carries the whole palette instead: `invoices/[id]` 84, `reports` 82, `settings` 54.
+"Fully on the kit" is about the chrome, not about a clean hex audit — `ledger` (7), `reports/targets` (9), `reports/registers` (6), `pos` (6), `ai/scan-bill` (6), `gst/calendar` (4), `gst/gstr9` (3), `inventory/reorder` (3) and `dashboard` (2) all still hold one-off tints (row hover, skeleton gradient, border next to a `--*-soft` fill, the document-type colour map). A pre-kit page carries the whole palette instead: `invoices/[id]` 84, `invoices/new` 58. `reports` and `settings` migrated to absolute zero hex — the first pages with no strays at all.
 
 ### ADR-021 — Documents Are Signed Rows — holds (new)
 Credit notes carry a negative taxable value and negative tax; they are summed, never `Math.abs()`-ed. This single decision is why a credit note dated in a month correctly reduces that month in GSTR-1, the registers, targets and the annual workpaper at once.
@@ -285,6 +285,17 @@ E-invoice threshold, e-way bill requirement, filing profile (monthly/QRMP) and T
 **Method:** `tsc` 0; `eslint` on all four files identical to their per-file HEAD baselines (pos/inventory: same pre-existing anys, ref-during-render and unused-symbol entries; AI pages: 12 errors + 1 warning before and after — the `setState`-in-effect at the draft-recalc effect is verbatim original code); `npm run build` 0 with the route table unchanged. Browser pass still blocked by the expired Supabase dev session (since session 25).
 
 **Commits:** `adb8f83`.
+
+---
+
+### Session 29 — 2026-10-08 (R2-12, batch 8 — reports and settings)
+**Built:** `reports` and `settings` on the kit (`1d5b521`) — the last two non-document pages inside the shell, 484+/650−. Logic preserved verbatim: the four report builders with their exact aggregations (by customer/product/state, vendor ITC, GST output-vs-ITC, P&L derivation), the period switch, the CSV export; and in settings the `organizations(*)` load, logo upload/remove against the storage bucket, and the save round-trip with its saved-flag timeout. Both pages land at **absolute zero hex** — reports went 82 → 0, settings 54 → 0, the first pages in the pass with no strays at all.
+
+**Method:** `tsc` 0; `eslint` current 33 problems vs HEAD baseline 36 — the delta is exactly the deliberate cleanups (the `(card as any).isPercent` cast died with the profit cards block, and the unused `start, end` destructure in the CSV export went; reports anys 25, settings anys 3). The pre-existing declaration-order error and the `img` warning are the verbatim originals. `npm run build` 45/45 with routes unchanged.
+
+**Ledger:** **30 pages on the kit, 4 partial, 2 pre-kit** (+3 auth). Every tier except the two document pages is closed; the remaining order is auth first, then `invoices/new` and `invoices/[id]` last, because a printed document is a legal artefact. Browser pass still blocked by the expired Supabase dev session.
+
+**Commits:** `1d5b521`.
 
 ---
 
@@ -506,7 +517,7 @@ node --version
 
 ## Next Steps (Priority Order)
 
-1. **R2-12 — Design-system migration pass** (next up) — 4 pages in the shell (`reports`, `settings`, `invoices/new`, `invoices/[id]`) plus the 3 auth pages still carry inline styles; §16 of `4-Design-System.md` fixes the order. The GST tier and the counter/AI block are closed, so the next step is reports/settings, then auth, then the document pages last. When the pass ends, the next round comes out of `7-Competitor-Comparison.md` §8 — delivery challan and order flow first (build-only), then batch/serial/multi-godown (the one gap that needs a schema decision).
+1. **R2-12 — Design-system migration pass** (next up) — 2 pages in the shell (`invoices/new`, `invoices/[id]`) plus the 3 auth pages still carry inline styles; §16 of `4-Design-System.md` fixes the order. The GST tier, the counter/AI block and now `reports`/`settings` are closed, so the next step is auth, then the document pages last. When the pass ends, the next round comes out of `7-Competitor-Comparison.md` §8 — delivery challan and order flow first (build-only), then batch/serial/multi-godown (the one gap that needs a schema decision).
 2. **The unfinished browser pass** — GST batch 6 (`dd7d449`) and `gst/gstr4` (`da672a2`) were verified statically only; the Supabase dev session is expired, so nothing was measured at 355px or 1440px. Needs the user to sign in at `localhost:3000`.
 3. **Phase 14 — Security**: generated Supabase types, tightened dashboard RLS policies, audit log, multi-account isolation test. Do this before onboarding a real customer.
 4. **Real GSP integration** once a provider is chosen (ADR-016) — plus email invoices and multi-user, which need the pending decisions above.
