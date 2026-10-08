@@ -98,7 +98,7 @@ Body stack: `'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, san
 | `.tf-stat-value` `.tf-stat-label` `.tf-stat-sub` | the three lines of a KPI tile |
 | `.tf-chip` | icon bubble in a KPI tile, tinted by `--chip-bg` / `--chip-fg` |
 | `.tf-badge` + `.tf-badge-{tone}` | pill with a leading dot; `.tf-badge-plain` drops the dot |
-| `.tf-btn` + `-primary` `-ghost` `-subtle` `-danger` `-sm` | 8px radius, 1px press translate, focus ring from `--brand-ring` |
+| `.tf-btn` + `-primary` `-ghost` `-subtle` `-danger` `-sm` | 8px radius, 1px press translate, focus ring from `--brand-ring`, and a global `:disabled` state — 55% opacity, `not-allowed` cursor, no press translate |
 | `.tf-input` (+ `.tf-input-wrap`, `.tf-input-icon`, `.tf-input-clear`) | full-width field, focus border `--brand`, icon and clear affordances |
 | `.tf-pagehead` | page banner with title, subtitle slot and actions |
 | `.tf-th` `.tf-td` `.tf-tr` | hairline rows, hover `#f9fbfe`, no bottom border on the last row |
@@ -120,15 +120,15 @@ Body stack: `'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, san
 | `StatCard` | `label`, `value`, `sub`, `icon`, `tone`, `delta`, `deltaSuffix`, `href`, `delay` | KPI tile; numbers compact automatically, `href` makes the tile a link, `delay` staggers the entrance |
 | `DeltaPill` | `delta` | ±% chip (dead-band at ±0.05 so noise reads flat) |
 | `Badge` | `tone`, `dot` | status |
-| `Button` | `variant`, `size`, `icon`, `loading`, `href` | actions; `href` renders a `Link` |
-| `PageHeader` | `title`, `subtitle`, `actions`, `backHref` | top of every page |
-| `SearchInput` | `value`, `onChange`, `placeholder` | list filtering — the shared box every palette-landable list uses |
-| `EmptyState` | `icon`, `title`, `body`, `action` | zero data, with a way out |
+| `Button` | `variant`, `size`, `icon`, `iconRight`, `href`, `type`, `disabled` | actions; `href` renders a `Link`, `type="submit"` inside forms, `disabled` renders the dimmed state |
+| `PageHeader` | `title`, `subtitle`, `eyebrow`, `actions`, `right` | top of every page |
+| `SearchInput` | `value`, `onChange`, `placeholder`, `ariaLabel` | list filtering — the shared box every palette-landable list uses |
+| `EmptyState` | `icon`, `title`, `message`, `action` | zero data, with a way out |
 | `Segmented` | `options`, `value`, `onChange` | 2–4 way switch (tabs, template choice); every kit control renders `type="button"`, because a bare `<button>` inside a form submits it — the goods/service switch in the product modal used to save the product |
 | `StatRow` | `label`, `value`, `strong`, `tone` | two-column figure rows inside a card |
-| `ProgressBar` | `pct`, `tone`, `label` | achievement, completion |
-| `BarChart` | `data: {label, value}[]` | monthly series |
-| `StackedBar` | `segments` | GST split, mix-over-time |
+| `ProgressBar` | `value`, `max`, `color`, `height` | progress fill — the OCR read bar, the Ask series bars |
+| `BarChart` | `data: ({label, value, sublabel?})[]`, `height`, `color`, `format` | monthly series |
+| `StackedBar` | `segments: ({label, value, color})[]`, `height` | GST split, mix-over-time |
 
 Inside the kit: props are typed inline, CSS custom properties go through a small `vars()` helper so TypeScript stops fighting, and tone→colour is looked up in one `TONE_COLORS` map. Nothing in `ui.tsx` fetches data or knows what an invoice is.
 
@@ -254,14 +254,14 @@ A document is a document: no card shadows, no rounded corners, print-safe colour
 
 Counted from the code, not from intention: a page is only "on the kit" when its header, buttons, badges and empty state are the primitives — importing `SearchInput` alone does not count.
 
-**Fully on the kit — 24 pages.** `dashboard`, `invoices`, `expenses`, `vendors`, `customers`, `products`, `payments`, `payments/links`, `ledger`, `accounting`, `offline`, `gst` hub, `gst/gstr1`, `gst/gstr3b`, `gst/calendar`, `gst/gstr9`, `gst/gstr4`, `gst/reconciliation`, `gst/einvoice`, `inventory/reorder`, `reports/registers`, `reports/targets`, `bank`, `tds`. The whole GST tier is on the kit — the last page added to it, `gst/gstr4`, was written on the kit rather than migrated, which is how the ledger is meant to move from here.
+**Fully on the kit — 28 pages.** `dashboard`, `invoices`, `expenses`, `vendors`, `customers`, `products`, `payments`, `payments/links`, `ledger`, `accounting`, `offline`, `gst` hub, `gst/gstr1`, `gst/gstr3b`, `gst/calendar`, `gst/gstr9`, `gst/gstr4`, `gst/reconciliation`, `gst/einvoice`, `inventory/reorder`, `reports/registers`, `reports/targets`, `bank`, `tds`, and the counter and AI block: `pos`, `inventory`, `ai/ask`, `ai/scan-bill`. The whole GST tier and the counter/AI block are on the kit — `gst/gstr4` was written on the kit rather than migrated, which is how the ledger is meant to move from here.
 
-"On the kit" means the chrome — header, buttons, badges, empty states, tables. It does not mean literally zero hex: a hex audit still finds 2–9 strays on most of these pages (`reports/targets` 9, `ledger` 7, `reports/registers` 6, `gst/einvoice` 5, `gst/calendar` 4, `gst/gstr9` 3, `gst/gstr4` 3, `inventory/reorder` 3, `dashboard` 2, `gst/reconciliation` 2). They are all the same kind of thing — a row-hover tint, the skeleton shimmer gradient, a border tint next to a `--*-soft` fill, the document-type colour map in `ledger`, and the four readable *text* shades an alert needs on top of a `--*-soft` fill (`#0e7490 #b45309 #b91c1c #15803d`) — i.e. one-off shades with no token equivalent, not the old palette. The pre-kit pages below use hex for *everything* (`inventory` 124, `invoices/[id]` 84, `reports` 82, `pos` 64), which is the difference that matters.
+"On the kit" means the chrome — header, buttons, badges, empty states, tables. It does not mean literally zero hex: a hex audit still finds 2–9 strays on most of these pages (`reports/targets` 9, `ledger` 7, `pos` 6, `reports/registers` 6, `ai/scan-bill` 6, `gst/einvoice` 5, `inventory` 4, `gst/calendar` 4, `gst/gstr9` 3, `gst/gstr4` 3, `inventory/reorder` 3, `ai/ask` 3, `dashboard` 2, `gst/reconciliation` 2). They are all the same kind of thing — a row-hover tint, the skeleton shimmer gradient, a border tint next to a `--*-soft` fill, the document-type colour map in `ledger`, and the four readable *text* shades an alert needs on top of a `--*-soft` fill (`#0e7490 #b45309 #b91c1c #15803d`) — i.e. one-off shades with no token equivalent, not the old palette. The pre-kit pages below use hex for *everything* (`invoices/[id]` 84, `reports` 82, `invoices/new` 58, `settings` 54), which is the difference that matters.
 
 **Partly on the kit — 4 pages.** `bills`, `credit-notes`, `debit-notes`, `quotations`. They use `SearchInput` and the shared table classes, but still hand-code the page header, buttons, badges and modal chrome with Tailwind-slate hex.
 
-**Pre-kit — 8 pages inside the shell.** `pos`, `inventory`, `reports`, `settings`, `ai/ask`, `ai/scan-bill`, plus `invoices/new` and `invoices/[id]`. Three more outside it: `login`, `signup`, `setup`. The document pages sit at the end of the order for the reason below; the four partly-migrated lists are counted in the previous paragraph, not here — so the arithmetic is 24 + 4 + 8 = 36 pages inside the shell.
+**Pre-kit — 4 pages inside the shell.** `reports`, `settings`, `invoices/new` and `invoices/[id]`. Three more outside the shell: `login`, `signup`, `setup` (also pre-kit, but they sit outside the shell count). The document pages sit at the end of the order for the reason below; the four partly-migrated lists are counted in the previous paragraph, not here — so the arithmetic is 28 + 4 + 4 = 36 pages inside the shell.
 
-Migration order for the rest of R2-12: ~~masters~~ (done — one recipe, three pages) → ~~money~~ (`payments`, `payments/links`, `accounting`, `offline` — the whole tier) → ~~GST returns~~ (`gst` hub, `gstr1`, `gstr3b`) → ~~the rest of GST~~ (`reconciliation`, `einvoice` — the whole tier) → counter and AI (`pos`, `inventory`, `ai/*`) → reports and settings → auth pages → documents last (`invoices/new`, `invoices/[id]`), because a printed document is the one surface where a styling change is a change to a legal artefact.
+Migration order for the rest of R2-12: ~~masters~~ (done — one recipe, three pages) → ~~money~~ (`payments`, `payments/links`, `accounting`, `offline` — the whole tier) → ~~GST returns~~ (`gst` hub, `gstr1`, `gstr3b`) → ~~the rest of GST~~ (`reconciliation`, `einvoice` — the whole tier) → ~~counter and AI~~ (`pos`, `inventory`, `ai/*` — done) → reports and settings → auth pages → documents last (`invoices/new`, `invoices/[id]`), because a printed document is the one surface where a styling change is a change to a legal artefact.
 
 **Migrate a page when you touch it**; do not introduce new hex literals into a page that is still on the old markup — use tokens even inside it.
