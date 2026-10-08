@@ -4,7 +4,7 @@ GST billing, invoicing and compliance for Indian businesses (₹2–20 crore) �
 
 **Stack:** Next.js 16 (App Router, Turbopack) · React 19 · TypeScript · Supabase (Postgres + Auth, browser client) · Tailwind v4 tokens + a small custom design system in `src/app/globals.css`.
 
-**Status:** Round 1 (7 competitive features) and Round 2 items R2-1 … R2-9 are shipped. See `5-Project-Tasks.md` for the backlog and `1-PRD.md` for scope.
+**Status:** Round 1 (7 competitive features) and Round 2 through R2-20 are shipped — 53 pages and 39 pure domain libraries. See `5-Project-Tasks.md` for the backlog, `1-PRD.md` for scope and `7-Competitor-Comparison.md` for where the product stands against Tally, Zoho Books, Vyapar, myBillBook, Busy, Marg, ClearTax and Refrens.
 
 ---
 
@@ -48,16 +48,17 @@ node --experimental-strip-types --no-warnings --loader /tmp/ts-loader.mjs /tmp/<
 | `4-Design-System.md` | Theme tokens, `.tf-*` utilities, `ui.tsx` primitives, icon set, responsive rules |
 | `5-Project-Tasks.md` | Phase-by-phase build history and current backlog |
 | `6-Project-Memory.md` | Decision records (ADRs / GCDs) and session log |
+| `7-Competitor-Comparison.md` | Feature matrix against eight vendors, source-linked, plus the ranked gap list |
 
 ## What the app does
 
-**Day-to-day:** business setup, customers, vendors, products, sales invoices (B2B/B2C/Export/SEZ), purchase bills, expenses, payments, quotations, credit/debit notes, inventory with stock movements, settings.
+**Day-to-day:** business setup, customers, vendors, products, sales invoices (B2B/B2C/Export/SEZ), purchase bills, expenses, payments, quotations, credit/debit notes, delivery challans with the Rule 55 reason handling, sales and purchase orders that convert into a real invoice or a real bill, inventory with stock movements, batch/expiry lots drawn FEFO by the invoice itself, one-row-per-unit serial numbers with warranty derived from the latest sale, a godown register where a transfer is a lot split, recurring invoice schedules that bill into the financial year they belonged to, foreign-currency deals kept beside the rupee books, settings.
 
-**GST:** dashboard, GSTR-1 and GSTR-3B workpapers, GSTR-2B ↔ books reconciliation, e-invoice (IRN) + e-way bill payloads, GSTR-9/9C annual workpaper, compliance calendar with late-fee estimates, statutory registers (party-wise, HSN/SAC, B2B, state-wise, e-way bill).
+**GST:** dashboard, GSTR-1 and GSTR-3B workpapers, GSTR-2B ↔ books reconciliation, e-invoice (IRN) + e-way bill payloads, GSTR-9/9C annual workpaper, GSTR-4/CMP-08 composition workpaper, job-work register with the section 143 return clock and the four ITC-04 grids, compliance calendar with late-fee estimates, statutory registers (party-wise, HSN/SAC, B2B, state-wise, e-way bill, order flow).
 
-**Money:** party ledger & statements of account, P&L and balance sheet derived from documents, receivables/payables ageing, bank statement matching (any bank's layout, scored against open documents with the reasons shown), TDS & 194Q withholding workpaper read out of the purchase bills with deposit calendar and interest, UPI payment links and WhatsApp reminders, targets with festival-weighted pacing, demand-driven reorder suggestions.
+**Money:** party ledger & statements of account, P&L and balance sheet derived from documents, receivables/payables ageing, bank statement matching (any bank's layout, scored against open documents with the reasons shown), TDS & 194Q withholding workpaper read out of the purchase bills with deposit calendar and interest, UPI payment links and WhatsApp reminders, a dated FX rate ledger with realised and unrealised exposure beside the rupee books, targets with festival-weighted pacing, demand-driven reorder suggestions.
 
-**At the counter and on the move:** POS screen with camera barcode scanning, installable PWA shell with an offline invoice outbox that replays through the normal save path, ⌘K command palette over pages, actions and live records.
+**At the counter and on the move:** POS screen with camera barcode scanning, installable PWA shell with an offline invoice outbox that replays through the normal save path, ⌘K command palette over pages, actions and live records, and customer statements that travel inside their own share link — the whole statement is encoded in the URL fragment, so nothing is stored server-side and there is nothing to revoke.
 
 **AI-ish, deliberately offline:** supplier bill scan (OCR/PDF → structured line items, cross-checked against GST arithmetic) and natural-language reporting over the user's own books. Both run entirely in the browser — no bill is uploaded anywhere, and every figure traces back to the rows it came from.
 
