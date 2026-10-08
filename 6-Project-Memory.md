@@ -353,6 +353,23 @@ E-invoice threshold, e-way bill requirement, filing profile (monthly/QRMP) and T
 
 **Commit:** `b851818`.
 
+### Session 34 — 2026-10-08 (R2-14 B3 — order flow in the registers + palette)
+**Built:** the order book joined both discovery surfaces (`94b3c1c`). `/reports/registers` gained a sixth tab, **Order flow** — `orderFlowRows` (new in `registers.ts`) maps every non-cancelled document from `loadAllDocs(orgId)` (new in `orderflow.ts`: the three stores merged through `sortDocs`) into one row shape: number, kind label, party + GSTIN, status label, converted-to number, value and the document's own href. The tab reuses the whole register machinery unchanged — period presets and the filter box apply locally (the docs are localStorage), column sort and CSV run through the same `Col` list, the foot carries a Register total on value, and mobile cards label themselves from `data-label`. The ⌘K palette now searches the three local stores **synchronously** — `orderRecordCommands(orgId, query)` returns plain record commands under Challans / Sales orders / Purchase orders groups with no round-trip, no debounce and no loader row — which forced the entity split in `commands.ts`: `RecordEntity` (the eight Supabase-backed kinds; the async loop and its pending set stay on `SUPABASE_RECORD_ORDER`) vs `OrderEntity` (the three locals), with `EntityKind = RecordEntity | OrderEntity` for display grouping only. Three palette actions ("New challan / New sales order / New purchase order") deep-link `?new=1`, and both editors learned that param with state set inline inside the async load; `isKnownHref` gained the three `/<entity>/` detail prefixes so a palette-opened order survives the recents replay.
+
+**Fixed in passing:** the ranker could not match a hyphenated query typed as one token — `INV-2024-001` scored zero while `INV 2024` matched, because `queryTokens` stripped separators from the query but compared them against the raw label. It now splits on every non-alphanumeric, so each word must still hit a field (`INV-2024-001`, `DC-2026-27`, `SO-0001` all match) while GSTIN fragments like `27aabcv` are unchanged.
+
+**Traps recorded:**
+- `orderRecordCommands` is a **candidate generator**, not a filtered result set — it mirrors the Supabase pre-fetch contract (server filters candidates, `rankCommands` decides) and leaves query filtering to the ranker, because phrase-matching would break token queries like `dc 0002` against `DC-2026-27-0002` (hyphens are not spaces). The first test draft asserted filtered semantics and failed; the contract is now tested as it is.
+- The palette's async effect and its pending set must both switch on `SUPABASE_RECORD_ORDER` — pointing them at `RECORD_ORDER` would leave the spinner waiting on three entities that never resolve a fetch.
+- `?new=1` handling goes inside the load effect with inlined `setModalDoc(...)` sets; calling `openCreate()` from there trips the repo's React-compiler lint ("Cannot access variable before it is declared").
+- `orFilter` was narrowed to `RecordEntity` — it indexes `ENTITY_SPECS`, which has no order entries; widening at the palette call site is what the split exists to prevent.
+
+**Method:** the two `/tmp` suites wiped by the OS were recreated — `/tmp/commands-test.mjs` (34 assertions: entity-registry order, `isKnownHref` prefixes, the candidate contract, party / GSTIN / converted-to / amount search through the ranker, recents round-trip via `pushRecent` + `loadRecents`) and `/tmp/registers-test.mjs` (21 assertions: `loadAllDocs` merge, ordering and the SSR guard, cancellation, label maps, href building, value = `docValue`). `orderflow-test` 111 and `gst-rates` 22 still green. `tsc` 0; eslint clean on every touched core file — `registers/page.tsx` (52 `no-explicit-any`) and `CommandPalette.tsx` (3 `set-state-in-effect`) carry only pre-existing findings, checked against HEAD. `npm run build` clean, 48/48 static.
+
+**Ledger:** R2-14 is **complete** — B1 `f982aed`, B2 `b851818`, B3 `94b3c1c` — competitor gap #2 closed end-to-end, and the order book is now as searchable as the statutory registers. Browser pass still blocked by the expired Supabase dev session.
+
+**Commit:** `94b3c1c`.
+
 ### Routes — 46 pages
 ```
 src/app/
@@ -576,7 +593,7 @@ node --version
 
 ## Next Steps (Priority Order)
 
-1. **R2-14 — the order-flow round from `7-Competitor-Comparison.md` §8 — is nearly closed.** B1 (delivery challans + the `orderflow.ts` engine) shipped in `f982aed`; B2 (sales and purchase orders on the same engine, converting through `createInvoice` / `createPurchaseBill`) shipped in `b851818`. Gap #2 is closed. Remaining: B3 — feed the three registers into the statutory-registers/ledgers surfaces and the ⌘K palette, then batch/serial/multi-godown (the one gap that needs a schema decision). The design-system pass (R2-12) is complete — 4 lists (`bills`, `credit-notes`, `debit-notes`, `quotations`) still hand-code their chrome and get migrated when next touched.
+1. **R2-14 — the order-flow round from `7-Competitor-Comparison.md` §8 — is complete.** B1 (delivery challans + the `orderflow.ts` engine) shipped in `f982aed`; B2 (sales and purchase orders converting through `createInvoice` / `createPurchaseBill`) in `b851818`; B3 (the Order flow tab in `/reports/registers` + synchronous palette search over the three stores + `?new=1` editor deep links, plus the hyphenated-query ranker fix) in `94b3c1c`. Gap #2 is closed end-to-end. Next by rank: **gap #3 batch/expiry + serial tracking, multi-godown** — the one gap whose cost line says the no-migration default (ADR-013) has to be revisited, so it starts with a schema decision, not a page. Then #4–#12 in order. The design-system pass (R2-12) is complete — 4 lists (`bills`, `credit-notes`, `debit-notes`, `quotations`) still hand-code their chrome and get migrated when next touched.
 2. **The unfinished browser pass** — GST batch 6 (`dd7d449`) and `gst/gstr4` (`da672a2`) were verified statically only; the Supabase dev session is expired, so nothing was measured at 355px or 1440px. Needs the user to sign in at `localhost:3000`.
 3. **Phase 14 — Security**: generated Supabase types, tightened dashboard RLS policies, audit log, multi-account isolation test. Do this before onboarding a real customer.
 4. **Real GSP integration** once a provider is chosen (ADR-016) — plus email invoices and multi-user, which need the pending decisions above.

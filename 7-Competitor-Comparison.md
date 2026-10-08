@@ -103,14 +103,14 @@ Everything below is "what the vendor advertises", which is exactly the thing Tax
 3. **GSTR-4 / CMP-08 composition workpaper** — line-level HSN/SAC slab split, the ten Notification 17/2020 states, the service provider's 10%-and-₹50L goods cap, the 2.5% deemed debit. No competitor page fetched advertises composition depth at all.
 4. **TDS / 194Q workpaper read out of the purchase books** — section table, whole-vs-excess thresholds, deduction on the earlier of credit or payment, 26Q late fee. The billing apps don't do it; the ERP-class tools do it inside a module you pay several times more for.
 5. **Bank matching without a paid bank feed** — any statement layout pasted or dropped in, each line scored against documents with the score explained. Zoho, Tally, Busy, Marg and ClearTax all do reconciliation; none advertise working from an arbitrary pasted statement with no feed.
-6. **Craft-level things nobody advertises**: ⌘K palette over pages *and* live records, offline invoices that replay through the real save path with a real sequence number, party ageing, festival-weighted targets judged on a prorated pace, an (s, S) reorder planner.
+6. **Craft-level things nobody advertises**: ⌘K palette over pages *and* live records — now including the local order book (challans, sales and purchase orders search synchronously, in the same groups as everything else) — offline invoices that replay through the real save path with a real sequence number, party ageing, festival-weighted targets judged on a prorated pace, an (s, S) reorder planner.
 
 ## 8. The gap list, ranked
 
 | # | Gap | Who has it | Cost to close |
 | --- | --- | --- | --- |
 | 1 | **Actual return filing / GSP submission** — we stop at workpaper + JSON | everyone | Blocked: needs a contracted GSP (see ADR-016) |
-| 2 | **Delivery challan + purchase/sales orders + order-to-invoice flow** — **closed** (R2-14): `/challans` register and printable document (B1, `f982aed`), then sales and purchase orders on the same engine (B2, `b851818`) — confirm → close → convert to invoice, place → receive → convert to bill through the real write paths | Zoho, Marg, Refrens, myBillBook, Busy | Done — the PO-to-bill conversion asks for the vendor's own bill number (GSTR-2B matches it) instead of inventing one |
+| 2 | **Delivery challan + purchase/sales orders + order-to-invoice flow** — **closed** (R2-14): `/challans` register and printable document (B1, `f982aed`), then sales and purchase orders on the same engine (B2, `b851818`) — confirm → close → convert to invoice, place → receive → convert to bill through the real write paths; then the book joins the discovery surfaces (B3, `94b3c1c`): an Order flow tab in `/reports/registers` and synchronous ⌘K search over the three stores | Zoho, Marg, Refrens, myBillBook, Busy | Done — the PO-to-bill conversion asks for the vendor's own bill number (GSTR-2B matches it) instead of inventing one |
 | 3 | **Batch/expiry + serial tracking, multi-godown** | Marg, Zoho (Elite), Vyapar, Refrens | Needs real schema work — the no-migration default has to be revisited for this one |
 | 4 | **Customer portal** | Zoho (free), Busy, Marg, ClearTax | Medium — share links first, auth'd portal later |
 | 5 | **Multi-user roles / permissions** | Zoho (Professional), Busy, Marg | Auth + schema; belongs with Phase 14 security |
