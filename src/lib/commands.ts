@@ -443,6 +443,16 @@ export function buildActionCommands(): Command[] {
       badge: 'Action',
       keywords: 'create add foreign currency multi currency usd dollar euro pound dirham riyal exchange rate conversion firc realisation export',
     },
+    {
+      id: 'action:new-job-work',
+      kind: 'action',
+      label: 'Record job-work movement',
+      sublabel: 'Goods sent out for job work',
+      href: '/gst/job-work?new=1',
+      icon: 'factory',
+      badge: 'Action',
+      keywords: 'create add job work itc04 itc-04 sent to job worker processing inputs capital goods moulds dies tools rule 45 section 143 bring back deemed supply challan',
+    },
   ]
 }
 

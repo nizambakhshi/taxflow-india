@@ -503,6 +503,9 @@ export default function GSTDashboardPage() {
         <Button variant="ghost" size="sm" href="/gst/einvoice" icon="zap">
           e-Invoice &amp; e-Way bill
         </Button>
+        <Button variant="ghost" size="sm" href="/gst/job-work" icon="factory">
+          Job work &amp; ITC-04
+        </Button>
         <Button variant="ghost" size="sm" href="/gst/calendar" icon="calendar">
           Compliance calendar
         </Button>

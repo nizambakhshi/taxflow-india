@@ -9,6 +9,7 @@ import {
   loadStatuses, saveStatuses, toIcs, type ComplianceEvent, type Profile, type StatusMap,
 } from '@/lib/compliance'
 import { download } from '@/lib/party-ledger'
+import { itc04Cadence, itc04Periods, loadJob } from '@/lib/jobwork'
 import { formatINR } from '@/lib/gst-engine'
 import { formatCompactINR, formatDateIN } from '@/lib/format'
 import { Badge, Button, Card, EmptyState, PageHeader, Segmented, StatRow } from '@/components/ui'
@@ -27,6 +28,30 @@ const CATEGORY_META: Record<string, { label: string; tone: 'blue' | 'violet' | '
 
 function currentFyStart(d = new Date()) {
   return d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1
+}
+
+/**
+ * ITC-04 belongs on the calendar only for a business that actually sends goods out for job
+ * work, and here the honest signal is the register itself: movements recorded ⇒ statements owed.
+ * The register is localStorage (ADR-013) and the half-yearly/annual pair comes from the declared
+ * turnover, so these dates are the same maths the workpaper prints rather than a tick-box.
+ */
+function jobWorkEvents(orgId: string, fy: number): ComplianceEvent[] {
+  if (!orgId) return []
+  const job = loadJob(orgId)
+  if (job.lots.length === 0) return []
+  const cadence = itc04Cadence(job.settings.turnover_cr)
+  return itc04Periods(fy, job.settings.turnover_cr).map(p => ({
+    id: `${fy}-itc04-${p.label}`,
+    title: `Job-work statement — ${p.label}`,
+    form: 'ITC-04',
+    category: 'gst' as const,
+    due: p.due,
+    period: `for ${p.label}`,
+    description: `${cadence.label} statement of goods sent to job workers and what came back. ${cadence.basis}`,
+    href: '/gst/job-work',
+    penalty: { interestPct: 18, note: 'No late fee on the statement itself — the exposure is the deemed supply under rule 45, on which 18% interest runs with the tax.' },
+  }))
 }
 
 export default function ComplianceCalendarPage() {
@@ -52,7 +77,7 @@ export default function ComplianceCalendarPage() {
 
       const oid = membership.organization_id
       setOrgId(oid)
-      setOrgName((membership.organizations as any)?.name || '')
+      setOrgName((membership.organizations as { name?: string } | null)?.name || '')
       setStatuses(loadStatuses(oid))
       try {
         const saved = localStorage.getItem(PROFILE_KEY + oid)
@@ -72,7 +97,10 @@ export default function ComplianceCalendarPage() {
     }
   }
 
-  const events = useMemo(() => generateEvents(fy, profile), [fy, profile])
+  const events = useMemo(
+    () => [...generateEvents(fy, profile), ...jobWorkEvents(orgId, fy)].sort((a, b) => a.due.localeCompare(b.due)),
+    [fy, profile, orgId],
+  )
 
   const today = new Date()
   const withStatus = events.map(e => ({
