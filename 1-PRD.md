@@ -98,10 +98,10 @@ Round 2, R2-1 … R2-11:
 - TDS & 194Q withholding workpaper with deposit calendar and interest (`/tds`)
 
 Still to come:
-- GSTR-4 (Composition scheme) return workpaper
 - Real GSP submission for e-invoice / e-way bill (blocked on paid GSP provider — see `6-Project-Memory.md`)
 - Email invoices directly from the app
 - Multi-user with roles (invite accountant/staff)
+- Manufacturing / BOM, payroll, e-commerce channel integrations, document attachments, an API — the rest of `7-Competitor-Comparison.md` §8, each needing a contract, a schema change or a platform decision
 
 ### Enterprise / Future
 - Multi-company management
@@ -380,6 +380,63 @@ Still to come:
 - PAN read from the vendor record, else from the GSTIN, else the no-PAN rate with the gap stated
 - Deductee sheet and month-by-month deposit sheet export to CSV; tags, challans and payer type live in `taxflow:tds:<orgId>`
 
+### 3.32 GSTR-4 / CMP-08 Composition Workpaper (R2-13)
+- Turnover split by the HSN/SAC each line carries and tested against the slab, with the ten Notification 17/2020 special-category states named rather than folded into one rate
+- CMP-08 quarters judged against the deposits the owner declares; the 2.5% deemed debit is shown as a line the owner must confirm
+- The documents that bar the scheme are listed as disqualifiers rather than priced
+- Declared figures live in `taxflow:gstr4:<orgId>`; the calendar stopped generating GSTR-4 a year late and stopped linking CMP-08 to GSTR-3B
+
+### 3.33 Order Flow — Challans, Sales Orders, Purchase Orders (R2-14)
+- `/challans` keeps the rule 55 delivery challan register with a printable, token-drawn document; `DC-<FY>-NNNN` numbers are never reused, per kind and per financial year
+- `/sales-orders` and `/purchase-orders` share one register and one document behind a per-kind copy table — confirm → close, place → receive
+- Conversion writes through the real paths: an order becomes an invoice with a real `INV-<FY>-NNNN`, and a purchase order becomes a bill whose number is **the vendor's own**, because that is the figure GSTR-2B matches
+- The three stores join the statutory registers (an Order flow tab in `/reports/registers`) and synchronous ⌘K search; the documents live in `taxflow:challan|sorder|porder:<orgId>`
+
+### 3.34 Batch, Expiry, Serial and Godown Registers (R2-15, R2-17)
+- Lots in `taxflow:batches:<orgId>` with signed movements; expiry is judged against the day printed on the pack and `daysLeft: 0` means "expires today"
+- FEFO allocation previews a draw expired-first and warns without blocking, and `recordSale` is called from `create-invoice.ts` — the invoice form, the counter and the offline replay all consume lots
+- A serial is an identity, not a quantity: one row per physical unit, an append-only event log, status read from the latest event, and the warranty window recomputed from the **latest** sale — a resale restarts the clock, a return restocks without forking the unit's history
+- A godown is a named place: a virtual `Main` holds every unplaced lot, and a transfer is a **split** — a destination lot that keeps the source identity plus one negative move on the source — so `left = qty + back − out` and FEFO sorting never move
+- Boundary printed on the page: per-place figures cover registered lots only; `products.current_stock` has no per-godown column
+
+### 3.35 Customer Portal — the Statement Travels Inside Its Own Link (R2-16)
+- `/portal` needs no server route: the statement is JSON → deflate → base64url in the URL **fragment**, which never reaches a server, so nothing is stored and nothing has to be revoked
+- The payload is the ledger's own `buildStatement()` output, so a shared figure cannot disagree with the books; a 120-document cap folds the dropped rows' net into the opening balance instead of losing it
+- Every open invoice carries a UPI deep link with its own due amount, the VPA baked at share time; a settled row or a missing VPA yields a note, never a dead pay chip
+- `decodePortal()` answers with typed refusals (not a link / damaged / wrong version) rather than throwing
+
+### 3.36 Recurring Invoices — a Schedule Accrues (R2-18)
+- A schedule is a bill template + cadence + end rule, and **due dates are never stored**: the occurrence calendar is derived from the rule against today, so a missed March bill is still waiting in April
+- Raising it dates the invoice on the day it belonged to — and because `createInvoice` reads the financial year off `invoice_date`, it lands in the return period it belonged to, with a warning if that period is already filed
+- Month arithmetic is anchor-relative and clamped (Jan 31 → Feb 28 → Mar 31) and computed in UTC, so a timezone cannot move a bill into another year
+- Catch-up runs go through the real write path (sequence number, stock movements, FEFO) and the offline queue; nothing bills itself while the app is closed, and the page says so
+
+### 3.37 Foreign-Currency Deals (R2-19)
+- `invoices` keeps its rupees; the currency, the booked rate and the remittances live in `taxflow:fx:<orgId>` and join **by invoice number** — the statutory record a return reads is never converted
+- Rule 45 makes a rate a dated fact with a source stamp, so the storage is a rate ledger, and `rateFor()` returns null rather than inventing a number
+- Three rupee numbers are kept apart and never averaged — the rate used, the rate the books imply, today's rate — and the disagreement between them is the finding
+- Realised gain comes from remittances, unrealised exposure from the outstanding, and a currency with no recorded rate yields no revalued figure rather than a zero one; AED/SAR/KWD/QAR/OMR are reported missing, never guessed. Recording a remittance here does not receipt the invoice
+
+### 3.38 Job Work and ITC-04 (R2-20)
+- Goods sent for processing carry the section 143 clock — 12 months for inputs, 36 for capital goods, **none for moulds, dies, tools and templates**; a lot may stipulate a period but `periodMonths()` takes the **shorter** of stipulated and statutory
+- Rule 45 deems a supply on the day the goods **went out**, so the exposure reaches backwards across periods and a late return is counted as well as reported; there is deliberately no "written off" state, because leaving units outstanding is that statement
+- ITC-04 grids A/B/C/D and the HSN summary are drawn from the movements inside the chosen period, with outstanding as at period close — half-yearly above ₹5 crore, annual at or below
+- The compliance calendar derives its ITC-04 rows from the register rather than a tick-box, and `indicative_tax` is labelled indicative wherever it renders
+
+### 3.39 Cost Centres (R2-21)
+- Which part of the business a bill or an invoice belongs to — depot, department, project, branch — answered in contribution, never in tax
+- An allocation stores a **share**, not a rupee, and the money is re-read from the books on every load, so amending a bill re-splits itself
+- Σ parts + the unassigned remainder = the document to the paisa; the remainder is computed by subtraction and printed, because a division that loses rupees is worse than none at all
+- A centre is not a legal person: a branch in another state with no GSTIN of its own becomes a rule 41A question with a link to the GSTR-9 workpaper, worded from the registered home state, and a tag whose document was deleted survives as an orphan that says so
+
+### 3.40 Tally Bridge (R2-22)
+- `/tally` reads a Tally export **in the browser** and returns a plan before it writes anything: one row per ledger, stock item and voucher saying what it becomes here, the rupees it would write, its status (`ready / blocked / skipped / already`), and for anything it cannot do, the reason
+- A file is evidence, not instruction — a figure that had to be computed is labelled as arithmetic, and where the file disagrees with itself the disagreement is reported and the file's own lines win, because the lines are what the shop billed
+- Our numbering survives the trip: `invoice_number` comes from `invoice_sequences` and the Tally voucher travels in `notes`, while a bill keeps the vendor's own reference. An import never writes money (`/payments` is the only writer) and never reaches a return
+- A document whose party or product cannot be resolved is **blocked rather than guessed** — no customer invented, no product created implicitly by a line
+- The bridge runs backwards as well: chosen invoices and bills become the XML TallyPrime imports, with the tax ledgers a voucher names written beside it and the rupees counted and printed before the file downloads
+- v1 reads sales and purchase vouchers; credit/debit notes, receipts, payments, journals and challans inside a file are listed as skipped, because their write paths live on other pages
+
 ---
 
 ## 4. Non-Functional Requirements
@@ -417,10 +474,11 @@ Still to come:
 ## 5. Out of Scope (Current Version)
 - Direct GST portal filing (requires GSP authorization) — the app prepares and exports workpapers only
 - Live IRP/GSP submission (e-invoice and e-way bill ship as build → download → paste-back)
-- Bank feeds / account aggregation (statement import is the next step, not a live connection)
+- Bank feeds / account aggregation — statement *import* shipped in R2-10 (`/bank` reads any pasted or uploaded layout), but there is still no live connection to a bank
 - Payroll
 - TDS / TCS return filing — `/tds` builds the withholding workpaper and deposit calendar, but no Form 26Q or 24Q is filed, and TCS under 206C is not covered
-- Multi-currency
+- Revaluing a statutory invoice in a foreign currency — `/fx` (R2-19) keeps a dated rate ledger *beside* the rupee books; the invoice a return reads stays in rupees
+- Authenticated customer logins — the portal (R2-16) is a share link that carries its own statement, not an account per party (Phase 14)
 - Native mobile app (the web app is an installable PWA)
 - Server-side LLM features — by design, so a business's bills never leave the device
 - New database tables or migrations; feature work rides on the existing schema plus per-organisation local storage

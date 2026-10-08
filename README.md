@@ -4,7 +4,7 @@ GST billing, invoicing and compliance for Indian businesses (₹2–20 crore) �
 
 **Stack:** Next.js 16 (App Router, Turbopack) · React 19 · TypeScript · Supabase (Postgres + Auth, browser client) · Tailwind v4 tokens + a small custom design system in `src/app/globals.css`.
 
-**Status:** Round 1 (7 competitive features) and Round 2 through R2-21 are shipped — 54 pages and 40 pure domain libraries. See `5-Project-Tasks.md` for the backlog, `1-PRD.md` for scope and `7-Competitor-Comparison.md` for where the product stands against Tally, Zoho Books, Vyapar, myBillBook, Busy, Marg, ClearTax and Refrens.
+**Status:** Round 1 (7 competitive features) and Round 2 through R2-22 are shipped — 55 pages and 41 pure domain libraries. See `5-Project-Tasks.md` for the backlog, `1-PRD.md` for scope and `7-Competitor-Comparison.md` for where the product stands against Tally, Zoho Books, Vyapar, myBillBook, Busy, Marg, ClearTax and Refrens.
 
 ---
 
@@ -59,6 +59,8 @@ node --experimental-strip-types --no-warnings --loader /tmp/ts-loader.mjs /tmp/<
 **Money:** party ledger & statements of account, P&L and balance sheet derived from documents, cost centres and departments that split an invoice, bill or expense by share — the percentage is what is stored, the rupees are re-read from the documents on every load, so amending a bill re-splits every centre by itself, receivables/payables ageing, bank statement matching (any bank's layout, scored against open documents with the reasons shown), TDS & 194Q withholding workpaper read out of the purchase bills with deposit calendar and interest, UPI payment links and WhatsApp reminders, a dated FX rate ledger with realised and unrealised exposure beside the rupee books, targets with festival-weighted pacing, demand-driven reorder suggestions.
 
 **At the counter and on the move:** POS screen with camera barcode scanning, installable PWA shell with an offline invoice outbox that replays through the normal save path, ⌘K command palette over pages, actions and live records, and customer statements that travel inside their own share link — the whole statement is encoded in the URL fragment, so nothing is stored server-side and there is nothing to revoke.
+
+**Moving between books:** `/tally` reads a Tally .xml export in the browser and shows a plan — every voucher mapped to an invoice or bill, each line matched to a product and party, with blocked documents named and reasons printed before a single row is written. Export goes the other way: a proper Tally XML envelope built from real invoices, labelled with what it contains and what it doesn't. Nothing leaves the device; the import log tells you exactly what ran and when.
 
 **AI-ish, deliberately offline:** supplier bill scan (OCR/PDF → structured line items, cross-checked against GST arithmetic) and natural-language reporting over the user's own books. Both run entirely in the browser — no bill is uploaded anywhere, and every figure traces back to the rows it came from.
 
