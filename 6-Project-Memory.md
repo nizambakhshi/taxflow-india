@@ -2,7 +2,7 @@
 
 **Version:** 2.0  
 **Date:** October 2026  
-**Last Updated:** 2026-10-08  
+**Last Updated:** 2026-10-09  
 **Purpose:** Track everything built, every decision made, every issue fixed.  
 Update this file at the end of every development session.
 
@@ -35,7 +35,7 @@ the repository as it exists today.
 | API routes | 2 only — `/api/gsp/ewaybill` (mock GSP transport), `/api/pdf-worker` (serves the pdf.js worker asset) |
 | Developer OS | Mac Mini M4 (macOS) |
 | Code editor | Qoder (was Cursor) |
-| History | 86 commits on `main`; MVP landed 2026-09-19, rounds ran 2026-10-05 → 2026-10-08 |
+| History | 88 commits on `main`; MVP landed 2026-09-19, rounds ran 2026-10-05 → 2026-10-09 |
 
 ---
 
@@ -142,6 +142,11 @@ Fetching items for many documents goes through 500-id chunks. A single giant `in
 **Decision:** a schedule stores its *rule* (template lines, cadence + interval, anchor date, end mode, payment terms) and its billed trail — never the dates it owes. `buildCalendar` expands the rule over a horizon and the page intersects it with today, so "what is due" is a computation, not a row.  
 **Reason:** there is no server worker (ADR-009 — no cron, no background job) and the store is per-browser (ADR-013/014). A stored due date would go stale the moment the app stayed closed; a derived one cannot.  
 **Consequence:** opening `/recurring` *is* the trigger — every missed period is still there, and raising it dates the invoice on the day it belonged to, which — because `createInvoice` reads the FY off `invoice_date` — numbers it in that year's series and files it in that year's return. The UI must warn when that lands in an already-filed period. Occurrences are addressed by **date**, never by click order (`latestOccurrence`, and `recordOccurrence` refuses duplicates, off-cadence dates and dates past the end rule), and all month arithmetic is anchor-relative, clamped (Jan 31 → Feb 28) and UTC-based, so no drift and no timezone can move a bill into another financial year. Do not "simplify" this by caching due dates.
+
+### ADR-026 — Multi-Currency Is a Ledger Beside the Books, Not a Column in Them — holds (new)
+**Decision:** `invoices` keeps its rupees. Currency, booked rate, the foreign value and the remittances against a foreign bill live in `taxflow:fx:<orgId>` (ADR-013) and join to the books **by invoice number**. A rate is a dated row with a source stamp (`manual` | `feed`); `rateFor()` returns `null` when nothing has been recorded for that currency on or before that date.  
+**Reason:** there is no currency column and the 29 statutory `invoices` columns are frozen (ADR-013 — no migrations, the schema is hand-managed). Rule 45 of the CGST Rules asks for the value in INR at the rate notified for the day, which is a *dated* fact about a bill, not a live conversion factor — so the honest storage is a rate ledger, not a multiplier.  
+**Consequence:** three rupee numbers must stay separate and are never averaged: the rate used, the rate the books imply (`grand_total ÷ foreign_value`) and today's rate. The disagreement between them is the finding the page shows, not a rounding error to hide. Revaluation is `null` for a currency with no recorded rate — reporting ₹0 would read as settled. Recording a remittance on `/fx` does **not** receipt the invoice; money still arrives through `/payments`, the single writer (the `/bank` precedent). Two guards are load-bearing and should not be relaxed: `validateRate` refuses an **inverted quote** by the `max/min > 2` ratio against the previous row (a swing check cannot see it — 0.012 against ₹83 is 99.98% below, not "more than a doubling"), and the ECB reference feed is fetched **one currency per request** because inverting its 5-significant-figure INR-base quote loses precision (0.01038 USD/INR → ₹96.34 against the published ₹96.78), with AED/SAR/KWD/QAR/OMR reported `missing` rather than invented.
 
 ---
 
@@ -465,7 +470,25 @@ E-invoice threshold, e-way bill requirement, filing profile (monthly/QRMP) and T
 
 **Commit:** `3fbea60`.
 
-### Routes — 51 pages
+### Session 40 — 2026-10-08 (R2-19 B1 — foreign currency: the bill stays rupees, the currency lives beside it)
+**Built:** `src/lib/fx.ts` (`a7fd1b1`) — competitor gap **#8** (Zoho Books Professional), closed client-side under ADR-013 in `taxflow:fx:<orgId>` and recorded as **ADR-026**, because the constraint that decides the whole design is a schema one: `invoices` has **no currency column**, and the 29 statutory columns are frozen. So the rupee record the GST return reads is never touched — the FX layer declares the currency, the booked rate, the foreign value and the remittances, and joins to the books **by invoice number**. Rule 45 (CGST Rules) fixes what a rate has to be: value in INR at the rate notified for that day (RBI reference rate on the invoice date, FEDI for exports) — a *dated* fact with a provenance, which is why `FxRate` carries `as_of` + `source: 'manual' | 'feed'` and why `rateFor()` returns `null` instead of inventing a number when nothing is recorded. `dedupeRates` keeps one rate per currency per day with the later write winning, so a corrected manual row beats a bad feed row. Three rupee numbers are kept apart and never averaged: `booked_rate`, the rate the books imply (`grand_total ÷ foreign_value`), and today's rate — `fxView` computes all three plus `rate_gap`, `revalued_outstanding_inr`, `unrealised` and a `problems[]` list, and the page shows that list verbatim rather than resolving the disagreement. Settlement is derived from the remittance trail (`open / partial / settled / overpaid`) against `fxView`'s own foreign outstanding; realised gain is Σ(`inr − foreign × booked_rate`) — a settled deal at a worse rate is honestly a loss, and the card prints it. `fxSummary` rolls exposure by currency and **nulls** `revalued_inr`/`unrealised` for any currency with no recorded rate — the test that caught this expected ₹0 and ₹0 is a number that reads as settled. `validateRate` refuses an inverted quote by `max/min > 2` against the previous row (a swing check is blind to it: 0.012 against ₹83 is 99.98% *below*, never "more than a doubling") and an impossible date; `validateEntry` refuses a missing invoice number, a non-positive value/rate, and a booked-INR that is nowhere near `foreign × rate`; `deleteEntry` refuses once remittances exist against the deal. The feed is Frankfurter (ECB daily reference rates; no key, CORS `*`) fetched **one currency per request** because inverting a 5-s.f. INR-base quote loses precision (₹96.34 against the published ₹96.78/USD), and AED/SAR/KWD/QAR/OMR — which that feed does not publish — come back `missing`, never zero. 22 currencies in the registry carry their own symbol and decimal count; both ledgers export CSV (`FX_CSV_HEADERS` 17 columns, `RATE_CSV_HEADERS` 5).
+
+**Wired:** `/fx` on the kit (0 hex) — four stat cards (exposure today, unrealised movement, realised, deals needing a look), a `Segmented` view filter (needs a look / outstanding / received / all) with deep-linked `?q=`, deal cards showing the invoice number linked to its record, a currency chip, the settlement badge, the **three-rate strip**, six stat rows, remittance progress, the realised/unrealised line, the problem flags and an expandable remittance trail. The rate ledger is a `Card` of dated rows with the applies-to day, the age, a source badge, per-currency history and an inline add form; the feed button reports every code it pulled, `missing` and `failed` separately. Two boundary strips are obligatory on the page: what Rule 45 wants (and that no currency column exists), and **"this page does not receive money"** pointing at `/payments`. Editor numeric fields are string drafts — a half-typed `83.` is not 83 — folded into the stored shape only on save, the `/recurring` precedent. Nav "Foreign Currency" under Money, ⌘K "New foreign-currency deal" → `/fx?new=1`, new `globe` glyph.
+
+**Traps recorded:**
+- **A currency has no rate, and that is not ₹0.** Every rollup, stat card and CSV column must distinguish "no revalued figure" (`null`) from "revalued to nothing". The first `fxSummary` zeroed it and the test caught the lie.
+- **Inverted quotes pass a swing check.** Percentages are the wrong test for a rate typed the wrong way round; compare the *ratio between the two numbers* and it fires whichever side the error sits on.
+- **One feed call per currency.** Batching on a base-inverted endpoint looks cheaper and returns a rounded reciprocal; the loss is a few rupees per dollar, which is exactly the size of the discrepancy a FIRC reconciliation is built to catch.
+- **Joining by invoice number means the books can disagree.** `fxView` surfaces it verbatim instead of clamping: *"No invoice in the books carries this number — the rupee side here is unreconciled"*, *"₹X recorded here vs ₹Y on the invoice"*, *"Realisation looks complete but the books still show ₹Z due — record the receipt on /payments"*, *"Received more than invoiced — check the remittance advice"*, plus the two rate-age flags (`Revalued on a … rate from … — N days old`, `No … rate recorded up to …, so the exposure cannot be revalued`). A deal whose invoice has vanished stays on the register as the anomaly it is.
+- **The page cannot be the writer of money.** Recording a remittance here would need `payments` — a table with no party id, whose receipt path the ledger and `/bank` already own — so `/fx` stays advisory, same stance as `/bank`'s match-not-post rule.
+
+**Method:** 153 assertions in `/tmp/fx-test.mjs` (registry + symbol/digits lookup, money formatting and `rateLabel`, storage round-trip/dedupe/version refusal, `rateFor` carry-forward + aging + null-when-unknown, `validateRate` incl. the reciprocal catch and date checks, rate writes/deletes, `emptyEntry`/`entryFromInvoice`/`validateEntry` branches, upsert-by-number, receipts incl. overpayment and the realised math, derived exposure incl. the unvalued-currency rule, the exact advice strings the page prints, `sortViews`/`fxSummary` rollup order, the feed URL/parser with unpublished codes, and both CSV shapes); `godowns-test` 97 · `serials-test` 84 · `orderflow-test` 111 · `recurring-test` 183 · `batches-test` 78 · `portal-test` 82 · `commands-test` 49 · `registers-test` 21 · `gst-rates` 22 — all green (10 suites); `tsc` 0; `eslint` 0 on every touched file — `fx.ts`, `fx/page.tsx`, `nav.ts`, `commands.ts`, `Icons.tsx`; `npm run build` ✓ 54/54 (52 pages + 2 api) with `○ /fx` and no warnings; dev server `GET /fx` 200. **The interactive UI is still unverified** — the Supabase dev session is expired and `/fx` redirects to `/login` (task #84).
+
+**Ledger:** **43 pages on the kit, 4 partial, 0 pre-kit** (+3 auth, + public `portal`). Gap **#8 is closed**. What is left on the ranked list all needs something outside the browser: #1 (GSP contract), #5 (roles — schema + auth, and cosmetic while one user owns the account), #6 (payroll — partner), #7 (e-commerce — per-channel APIs), #10 (BOM — different segment), #11 (native app — a distribution decision), #12 (attachments — Storage + RLS), plus the authenticated half of gap #4 (customer logins). Browser pass still blocked by the expired dev session.
+
+**Commit:** `a7fd1b1`.
+
+### Routes — 52 pages
 ```
 src/app/
 ├── layout.tsx, page.tsx (→ /login), manifest.ts, globals.css, favicon.ico
@@ -477,6 +500,7 @@ src/app/
     ├── dashboard/                   pos/            offline/
     ├── invoices/{page,new,[id]}/    quotations/     customers/  vendors/  products/
     ├── recurring/                   ← recurring-invoice schedules: derived due piles, catch-up run (R2-18 B1)
+    ├── fx/                          ← foreign-currency register: rate ledger + deals joined to invoices by number (R2-19 B1)
     ├── challans/{page,[id]}/        ← delivery challan register + printable document
     ├── sales-orders/{page,[id]}/    purchase-orders/{page,[id]}/  ← order register + document (R2-14 B2)
     ├── bills/  expenses/  credit-notes/  debit-notes/
@@ -491,7 +515,7 @@ src/app/
 public/sw.js  public/offline.html
 ```
 
-### Libraries — 37 modules in `src/lib/` + `src/lib/gsp/`
+### Libraries — 38 modules in `src/lib/` + `src/lib/gsp/`
 ```
 supabase.ts  constants.ts  gst-engine.ts  format.ts  words.ts  reports.ts
 gst-rates.ts                                 ← the one GST rate table every picker imports
@@ -508,6 +532,7 @@ serials.ts                                    ← one row per unit, append-only 
 godowns.ts                                    ← godown registry + transfers as lot splits, per-place stock (localStorage)
 portal.ts                                     ← share-link statements: deflate + base64url in the URL fragment, nothing stored
 recurring.ts                                  ← schedule rules, derived occurrence calendars, catch-up payloads (localStorage)
+fx.ts                                         ← dated rate ledger + foreign-currency deals joined to invoices by number (localStorage)
 pdf-export.ts                                 ← shared html2canvas → jsPDF slice pipeline
 gsp/{index.ts, types.ts, mock.ts}            ← provider adapter, mock transport
 ```
@@ -551,7 +576,10 @@ Schema constraints the code has to live with: `payments` has no party id (the le
 links payments to documents first, then normalises party names, and drops receipts
 pointing at cancelled or missing documents); `invoices.customer_id` nullability is
 unknown, so a POS cash sale auto-creates a cash customer; `warehouses` exists but is
-unused; `current_stock` is seeded from `opening_stock` on insert only.
+unused; `current_stock` is seeded from `opening_stock` on insert only; **`invoices`
+has no currency column** — every rupee figure in it is the statutory one, which is
+why multi-currency is a separate dated ledger joined by invoice number (ADR-026)
+rather than a rate stored on the bill.
 
 ---
 
@@ -581,6 +609,7 @@ anything here is either reconstructible from documents or already exported.
 | `taxflow:serials:` · `taxflow:serialevents:` | serial units and their append-only event log (issue / return / restock / scrap) | `/inventory/serials` |
 | `taxflow:godowns:` | the godown registry (named places stock is kept in; a virtual `Main` seed holds unplaced lots) | `/inventory/godowns` |
 | `taxflow:rec:` | recurring schedules — rule + template lines + the billed trail (never the due dates; ADR-025) | `/recurring`, `createInvoice` / the offline queue |
+| `taxflow:fx:` | foreign-currency deals — rate ledger (dated + source-stamped), per-invoice currency entries and remittances; the rupee books are untouched and joined by invoice number (ADR-026) | `/fx`, read-only against `invoices` |
 | `taxflow:palette-recents:` | recent ⌘K hits | `CommandPalette.tsx` |
 
 ---
@@ -701,7 +730,7 @@ node --version
 
 ## Next Steps (Priority Order)
 
-1. **Gaps #2, #3, #4-v1 and #9 are closed.** R2-14 is complete (B1 `f982aed`, B2 `b851818`, B3 `94b3c1c` — gap #2 end-to-end); R2-15 B1 (`9b7a4c6`) shipped batch & expiry with FEFO inside `create-invoice.ts`, B2 (`e2a94d4`) the serial register, and R2-17 B1 (`8188d46`) the last third — **multi-godown** — with a client-side registry where a transfer is a lot split; R2-16 B1 (`ccea4d5`) opened gap #4 with share-link statements; **R2-18 B1 (`3fbea60`) closed gap #9 — recurring invoices — as an accruing schedule whose due dates are derived, never stored (ADR-025).** All of it on ADR-013 (owner bookkeeping → localStorage, no tables); the honest leftovers are the `products.current_stock` per-place rollup and auth'd customer logins, both waiting on schema. Of the remaining ranked gaps, **#5 (roles), #6 (payroll — partner), #7 (e-commerce — per-channel APIs), #11 (native app — a distribution decision) and #12 (attachments — Storage + RLS) need schema, an external contract or a platform call**; the buildable client-side next step is **#8 multi-currency**, which is genuinely cross-cutting — it touches every money path — so it wants its own round, not a bolt-on. R2-12's design-system pass stays complete — 4 lists (`bills`, `credit-notes`, `debit-notes`, `quotations`) still hand-code their chrome and get migrated when next touched.
+1. **Gaps #2, #3, #4-v1, #8 and #9 are closed.** R2-14 is complete (B1 `f982aed`, B2 `b851818`, B3 `94b3c1c` — gap #2 end-to-end); R2-15 B1 (`9b7a4c6`) shipped batch & expiry with FEFO inside `create-invoice.ts`, B2 (`e2a94d4`) the serial register, and R2-17 B1 (`8188d46`) the last third — **multi-godown** — with a client-side registry where a transfer is a lot split; R2-16 B1 (`ccea4d5`) opened gap #4 with share-link statements; R2-18 B1 (`3fbea60`) closed gap #9 — recurring invoices — as an accruing schedule whose due dates are derived, never stored (ADR-025); **R2-19 B1 (`a7fd1b1`) closed gap #8 — multi-currency — as a dated rate ledger plus per-invoice currency deals that join to the books by invoice number, leaving the statutory rupee columns untouched (ADR-026).** All of it on ADR-013 (owner bookkeeping → localStorage, no tables); the honest leftovers are the `products.current_stock` per-place rollup and auth'd customer logins, both waiting on schema. **Every gap that can be closed client-side now is** — the remaining ranked list (#1 GSP filing, #5 roles, #6 payroll, #7 e-commerce, #10 BOM, #11 native app, #12 attachments) each needs an external contract, a schema/auth change, or a platform decision; the unfinished buildable work is the **authenticated half of gap #4** (customer logins, invoices and payments visible per party — it needs a real `party_users` link, so it is Phase 14 work) and deepening the v1s (portal refresh/revocation, FX auto-receipting once `/payments` grows a currency column). R2-12's design-system pass stays complete — 4 lists (`bills`, `credit-notes`, `debit-notes`, `quotations`) still hand-code their chrome and get migrated when next touched.
 2. **The unfinished browser pass** — GST batch 6 (`dd7d449`) and `gst/gstr4` (`da672a2`) were verified statically only; the Supabase dev session is expired, so nothing was measured at 355px or 1440px. Needs the user to sign in at `localhost:3000`.
 3. **Phase 14 — Security**: generated Supabase types, tightened dashboard RLS policies, audit log, multi-account isolation test. Do this before onboarding a real customer.
 4. **Real GSP integration** once a provider is chosen (ADR-016) — plus email invoices and multi-user, which need the pending decisions above.
