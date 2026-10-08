@@ -433,6 +433,16 @@ export function buildActionCommands(): Command[] {
       badge: 'Action',
       keywords: 'create add serial number imei unit register inventory warranty',
     },
+    {
+      id: 'action:new-fx-deal',
+      kind: 'action',
+      label: 'New foreign-currency deal',
+      sublabel: 'Value an invoice in its own currency',
+      href: '/fx?new=1',
+      icon: 'globe',
+      badge: 'Action',
+      keywords: 'create add foreign currency multi currency usd dollar euro pound dirham riyal exchange rate conversion firc realisation export',
+    },
   ]
 }
 

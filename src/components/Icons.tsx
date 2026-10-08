@@ -272,6 +272,11 @@ const P: Record<string, React.ReactNode> = {
     <rect x="14" y="4" width="4" height="16" rx="1.2" />
   </>),
   play: <polygon points="6 3 20 12 6 21" />,
+  globe: (<>
+    <circle cx="12" cy="12" r="9" />
+    <line x1="3" y1="12" x2="21" y2="12" />
+    <path d="M12 3c2.6 2.6 3.9 5.7 3.9 9S14.6 18.4 12 21c-2.6-2.6-3.9-5.7-3.9-9S9.4 5.6 12 3z" />
+  </>),
 }
 
 export type IconName = keyof typeof P

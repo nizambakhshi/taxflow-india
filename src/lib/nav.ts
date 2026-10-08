@@ -47,6 +47,7 @@ export const NAV_ITEMS: NavSection[] = [
       { label: 'Receivables & Payables', href: '/payments', icon: 'swap' },
       { label: 'Payment Links', href: '/payments/links', icon: 'link' },
       { label: 'Bank Matching', href: '/bank', icon: 'landmark' },
+      { label: 'Foreign Currency', href: '/fx', icon: 'globe' },
     ]
   },
   {
