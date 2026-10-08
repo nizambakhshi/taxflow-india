@@ -282,6 +282,16 @@ const P: Record<string, React.ReactNode> = {
     <rect x="14" y="4" width="4" height="16" rx="1.2" />
   </>),
   play: <polygon points="6 3 20 12 6 21" />,
+  // Two ledgers facing each other with arrows between them: the Tally bridge reads a file
+  // in and writes one out.
+  tally: (<>
+    <rect x="2.5" y="5.5" width="6.5" height="13" rx="1.5" />
+    <rect x="15" y="5.5" width="6.5" height="13" rx="1.5" />
+    <line x1="10" y1="10" x2="14" y2="10" />
+    <polyline points="12.5 8.6 14 10 12.5 11.4" />
+    <line x1="14" y1="14" x2="10" y2="14" />
+    <polyline points="11.5 12.6 10 14 11.5 15.4" />
+  </>),
   globe: (<>
     <circle cx="12" cy="12" r="9" />
     <line x1="3" y1="12" x2="21" y2="12" />

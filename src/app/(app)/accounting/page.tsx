@@ -348,6 +348,12 @@ export default function FinancialStatementsPage() {
         centre changes a figure on this page.
       </p>
 
+      <p className="ac-foot-note">
+        If the same books also live in Tally, <Link href="/tally">the Tally bridge</Link> carries them across in
+        either direction: a Tally export becomes a plan of rows you pick before anything is written, and chosen
+        invoices and bills become the XML TallyPrime imports — with these numbers, not in place of them.
+      </p>
+
       {showOpening && (
         <div className="ac-scrim" role="dialog" aria-modal="true" aria-label="Opening balances"
           onClick={() => setShowOpening(false)}>

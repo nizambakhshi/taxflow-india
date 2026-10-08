@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { Button, Card, PageHeader, SectionTitle, Segmented } from '@/components/ui'
@@ -210,6 +211,7 @@ export default function SettingsPage() {
 
       {/* COMPANY TAB */}
       {activeTab === 'company' && (
+        <>
         <Card>
           <SectionTitle icon="building">Company information</SectionTitle>
           <p className="st-sub">This appears on all your invoices and documents</p>
@@ -302,6 +304,22 @@ export default function SettingsPage() {
             </label>
           </div>
         </Card>
+
+        <Card style={{ marginTop: 12 }}>
+          <SectionTitle icon="tally">Your books and Tally</SectionTitle>
+          <p className="st-sub">
+            The <Link href="/tally">Tally bridge</Link> works in both directions. A Tally export is read into a plan —
+            one row per ledger, stock item and voucher, each saying what it becomes here and which name it is missing —
+            and only the rows you pick are written. Chosen invoices and bills go the other way as the XML TallyPrime
+            imports, keeping these invoice numbers so the two books tie back.
+          </p>
+          <p className="st-sub">
+            An import never writes money: a receipt inside a voucher is reported and the document lands unpaid, because
+            <Link href="/payments" style={{ color: 'var(--brand)', textDecoration: 'none', margin: '0 3px' }}>/payments</Link>
+            stays the only writer of money here.
+          </p>
+        </Card>
+        </>
       )}
 
       {/* LOGO TAB */}

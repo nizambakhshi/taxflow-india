@@ -94,6 +94,7 @@ export const NAV_ITEMS: NavSection[] = [
   {
     section: 'Account',
     items: [
+      { label: 'Tally Bridge', href: '/tally', icon: 'tally' },
       { label: 'Settings', href: '/settings', icon: 'settings' },
     ]
   },

@@ -463,6 +463,36 @@ export function buildActionCommands(): Command[] {
       badge: 'Action',
       keywords: 'create add cost centre department project branch allocation split revenue expense contribution management account margin tag document part of business',
     },
+    {
+      id: 'action:tally-import',
+      kind: 'action',
+      label: 'Read a Tally export',
+      sublabel: 'Turn a .xml file into a plan of rows',
+      href: '/tally',
+      icon: 'tally',
+      badge: 'Action',
+      keywords: 'tally tallyprime tally.erp import xml data file migrate migration ledger voucher sundry debtors creditors stock item company books another software erp bring in log history already imported',
+    },
+    {
+      id: 'action:tally-export',
+      kind: 'action',
+      label: 'Send my books to Tally',
+      sublabel: 'Write chosen invoices and bills as Tally XML',
+      href: '/tally?view=export',
+      icon: 'tally',
+      badge: 'Action',
+      keywords: 'tally tallyprime export xml data file send handover migrate migration erp masters ledgers stock items vouchers create alter download',
+    },
+    {
+      id: 'action:tally-sample',
+      kind: 'action',
+      label: 'Try the Tally bridge on a sample',
+      sublabel: 'A ready-made file, planned but not written',
+      href: '/tally?sample=1',
+      icon: 'zap',
+      badge: 'Action',
+      keywords: 'tally sample demo example try test bridge import xml plan practice learn what it does',
+    },
   ]
 }
 
