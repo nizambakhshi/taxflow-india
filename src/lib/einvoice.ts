@@ -57,7 +57,7 @@ export interface EiInvoiceInput {
   dueDate?: string | null
   referenceNumber?: string | null
   referenceDate?: string | null
-  documentType?: 'INV' | 'CRN' | 'DBN'
+  documentType?: 'INV' | 'CRN' | 'DBN' | 'BIL'
   reverseCharge?: boolean
   isExport?: boolean
   placeOfSupply: string
@@ -133,7 +133,9 @@ export function validateEInvoice(seller: EiSeller, input: EiInvoiceInput): strin
     issues.push(`Buyer GSTIN "${buyerGstin}" is not valid — fix it on the customer master or clear it for unregistered sales.`)
   }
 
-  const domestic = input.placeOfSupply !== '99' && input.placeOfSupply !== '01'
+  // Only 99 ("Other Countries") is outside India. 01 is Jammu & Kashmir — a normal
+  // state since the 2019 reorganisation, so it must not be treated as an export.
+  const domestic = input.placeOfSupply !== '99'
   const buyerState = buyerGstin ? buyerGstin.slice(0, 2) : normalize(input.buyer.stateCode)
   if (domestic && !buyerState) issues.push('Buyer state code is missing (needed for the address on the e-invoice).')
   if (domestic && !input.buyer.pincode?.trim()) issues.push('Buyer pincode is missing — add it on the customer master.')
@@ -142,7 +144,8 @@ export function validateEInvoice(seller: EiSeller, input: EiInvoiceInput): strin
     issues.push(`Buyer pincode "${input.buyer.pincode}" must be 6 digits.`)
   }
 
-  if (input.documentType && input.documentType !== 'INV') {
+  // A bill of supply is a standalone document; only notes must point back at an invoice.
+  if (input.documentType === 'CRN' || input.documentType === 'DBN') {
     if (!input.referenceNumber?.trim()) issues.push('Credit/debit notes must carry a reference invoice number.')
     if (!toNicDate(input.referenceDate)) issues.push('Credit/debit notes must carry a reference invoice date.')
   }
@@ -205,7 +208,7 @@ export function buildEInvoiceJson(seller: EiSeller, input: EiInvoiceInput): Reco
   const invoiceType = deriveInvoiceType(input)
   const buyerGstin = normalize(input.buyer.gstin)
   const buyerStateCode = buyerGstin ? buyerGstin.slice(0, 2) : normalize(input.buyer.stateCode) || input.placeOfSupply
-  const foreign = input.placeOfSupply === '99' || input.placeOfSupply === '01'
+  const foreign = input.placeOfSupply === '99'
 
   const itemDetails = input.items.map((item, i) => {
     const hsn = (item.hsnSac || '').replace(/\s/g, '')
@@ -256,6 +259,9 @@ export function buildEInvoiceJson(seller: EiSeller, input: EiInvoiceInput): Reco
   const data: Record<string, unknown> = {
     InvoiceType: invoiceType,
     DocumentType: docType,
+    // NIC requires this flag whenever the buyer is unregistered; a registered-buyer invoice only
+    // carries it when it is actually on reverse charge.
+    ...(input.reverseCharge || invoiceType === 'UGSP' ? { ReverseCharge: input.reverseCharge ? 'Y' : 'N' } : {}),
     InvoiceNumber: input.invoiceNumber,
     InvoiceDate: toNicDate(input.invoiceDate),
     BuyerGSTIN: buyerGstin || 'URP',

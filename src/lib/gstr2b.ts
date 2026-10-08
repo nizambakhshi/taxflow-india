@@ -106,29 +106,59 @@ function toNum(v: unknown): number {
 
 // ── GSTR-2B JSON parsing (official portal file) ──────────────────────────
 
+/** A document object as it comes off the portal: keys are present or not, values are whatever it sent. */
+type PortalRow = Record<string, unknown>
+
+/** Walk a chain of optional keys through parsed JSON without asserting its shape. */
+function jsonPath(value: unknown, ...keys: string[]): unknown {
+  return keys.reduce<unknown>((cur, k) => {
+    if (typeof cur !== 'object' || cur === null) return undefined
+    return (cur as Record<string, unknown>)[k]
+  }, value)
+}
+
+function field(source: PortalRow, key: string): string {
+  const v = source[key]
+  return typeof v === 'string' || typeof v === 'number' ? String(v) : ''
+}
+
+/** Read the string/number identity of a top-level portal field, if it is there. */
+function scalar(source: unknown, key: string): string | undefined {
+  if (typeof source !== 'object' || source === null) return undefined
+  const v = (source as Record<string, unknown>)[key]
+  return typeof v === 'string' || typeof v === 'number' ? String(v) : undefined
+}
+
+function asRows(value: unknown): PortalRow[] {
+  return Array.isArray(value)
+    ? value.filter((r): r is PortalRow => typeof r === 'object' && r !== null)
+    : []
+}
+
 export function parseGstr2bJson(text: string): { gstin?: string; period?: string; records: Gstr2bRecord[] } {
-  let json: any
+  let json: unknown
   try {
     json = JSON.parse(text)
   } catch {
     throw new Error('Invalid JSON file. Upload the .json inside the GSTR-2B zip downloaded from the GST portal.')
   }
 
-  const itc = json?.data?.docdata?.['itc-01'] ?? json?.data?.records?.['itc-01']
-  if (!itc) {
+  const itcData = jsonPath(json, 'data', 'docdata', 'itc-01') ?? jsonPath(json, 'data', 'records', 'itc-01')
+  if (typeof itcData !== 'object' || itcData === null) {
     throw new Error('Could not find itc-01 (Table B2B/CDNR) data in this file. Is this a GSTR-2B JSON?')
   }
+  const itc = itcData as PortalRow
+  const rowsIn = (key: string) => asRows(itc[key])
 
   const records: Gstr2bRecord[] = []
 
-  const mapList = (list: any[], section: string) => {
-    for (const r of list || []) {
-      if (!r || typeof r !== 'object') continue
+  const mapList = (list: PortalRow[], section: string) => {
+    for (const r of list) {
       records.push({
-        supplierGstin: normalizeGstin(r.sup_gstin || r.gstin),
-        invoiceNo: String(r.num ?? '').trim(),
-        invoiceDate: parsePortalDate(r.inv_dt || r.dt),
-        invoiceType: r.inv_typ || undefined,
+        supplierGstin: normalizeGstin(field(r, 'sup_gstin') || field(r, 'gstin')),
+        invoiceNo: field(r, 'num').trim(),
+        invoiceDate: parsePortalDate(field(r, 'inv_dt') || field(r, 'dt')),
+        invoiceType: field(r, 'inv_typ') || undefined,
         taxable: toNum(r.taxable),
         igst: toNum(r.igst),
         cgst: toNum(r.cgst),
@@ -139,15 +169,15 @@ export function parseGstr2bJson(text: string): { gstin?: string; period?: string
     }
   }
 
-  mapList(itc['B2B'], 'B2B')
-  mapList(itc['CD/DNR'] || itc['CDNR'], 'CD/DNR')
-  mapList(itc['B2CL'], 'B2CL')
-  mapList(itc['IMPG'], 'IMPG')
-  mapList(itc['IMPS'], 'IMPS')
+  mapList(rowsIn('B2B'), 'B2B')
+  mapList(rowsIn('CD/DNR').length ? rowsIn('CD/DNR') : rowsIn('CDNR'), 'CD/DNR')
+  mapList(rowsIn('B2CL'), 'B2CL')
+  mapList(rowsIn('IMPG'), 'IMPG')
+  mapList(rowsIn('IMPS'), 'IMPS')
 
   return {
-    gstin: json?.gstin ? String(json.gstin) : undefined,
-    period: json?.rtaxperiod ? String(json.rtaxperiod) : undefined,
+    gstin: scalar(json, 'gstin'),
+    period: scalar(json, 'rtaxperiod'),
     records,
   }
 }
@@ -371,22 +401,8 @@ export function reconcile(
 }
 
 // ── CSV export ──────────────────────────────────────────────────────────
-
-function csvCell(v: string | number | null | undefined): string {
-  const s = v === null || v === undefined ? '' : String(v)
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-}
-
-export function downloadCsv(filename: string, rows: (string | number | null | undefined)[][]) {
-  const csv = rows.map(r => r.map(csvCell).join(',')).join('\n')
-  const blob = new Blob([csv], { type: 'text/csv' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(url)
-}
+// The file itself is written by csvFromRows() + download() in gstr9.ts / party-ledger.ts,
+// which quote fields and prefix a single UTF-8 BOM.
 
 export function reconciliationExportRows(result: ReconciliationResult): (string | number)[][] {
   const header = [

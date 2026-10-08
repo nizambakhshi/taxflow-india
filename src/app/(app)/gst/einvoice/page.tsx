@@ -3,12 +3,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { formatINR } from '@/lib/gst-engine'
+import { Badge, Button, Card, EmptyState, PageHeader, SearchInput, Segmented, StatCard } from '@/components/ui'
+import Icon from '@/components/Icons'
 import {
-  EiInvoiceInput, EiLineItem, EiSeller, EwbInput,
+  EiInvoiceInput, EiSeller, EwbInput,
   validateEInvoice, buildEInvoiceJson, buildEwbJson, deriveInvoiceType,
   INVOICE_TYPE_LABELS, downloadJson, safeFilePart, stateNameFor,
 } from '@/lib/einvoice'
 import { upsertEwbEntry } from '@/lib/registers'
+
+// The portal only takes invoices that have been issued; a draft has no IRN to sign.
+const WINDOW = 300
 
 interface InvoiceRow {
   id: string
@@ -19,10 +24,8 @@ interface InvoiceRow {
   customer_id: string
   customer_name: string
   customer_gstin: string | null
-  customer_address: string | null
   customer_state_code: string | null
   place_of_supply: string
-  supply_type: string
   is_reverse_charge: boolean
   taxable_amount: number
   discount_amount: number
@@ -60,8 +63,43 @@ interface ItemRow {
   cgst_amount: number
   sgst_amount: number
   cess_amount: number
-  sort_order: number
 }
+
+interface OrgMaster {
+  name: string | null
+  address_line1: string | null
+  city: string | null
+  state_code: string | null
+  pincode: string | null
+}
+
+interface Membership {
+  organization_id: string
+  organizations: OrgMaster | null
+}
+
+interface DocRow {
+  inv: InvoiceRow
+  input: EiInvoiceInput
+  issues: string[]
+  typeLabel: string
+  draft: boolean
+  docKind: string
+}
+
+const money = (value: number) => `₹${formatINR(value)}`
+
+const DOC_KIND: Record<string, string> = {
+  tax_invoice: 'Tax invoice',
+  bill_of_supply: 'Bill of supply',
+}
+
+const FILTERS = [
+  { value: 'ready', label: 'Ready' },
+  { value: 'fix', label: 'To fix' },
+  { value: 'draft', label: 'Drafts' },
+  { value: 'all', label: 'All' },
+]
 
 export default function EInvoicePage() {
   const supabase = createClient()
@@ -74,7 +112,12 @@ export default function EInvoicePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  const [jsonModal, setJsonModal] = useState<{ title: string; json: string; issues: string[]; filename: string } | null>(null)
+  const [filter, setFilter] = useState('all')
+  const [search, setSearch] = useState('')
+  const [copied, setCopied] = useState(false)
+
+  const [jsonModal, setJsonModal] = useState<{ title: string; data: Record<string, unknown>; issues: string[]; filename: string } | null>(null)
+  const [inspect, setInspect] = useState<DocRow | null>(null)
   const [ewbFor, setEwbFor] = useState<InvoiceRow | null>(null)
   const [gspProvider, setGspProvider] = useState('mock')
   const [ewbSubmitting, setEwbSubmitting] = useState(false)
@@ -87,89 +130,10 @@ export default function EInvoicePage() {
     vehicleNumber: '', distanceKm: '', transactionType: 'O' as EwbInput['transactionType'],
   })
 
-  useEffect(() => {
-    async function load() {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { setError('Not signed in.'); setLoading(false); return }
-
-      const { data: membership } = await supabase
-        .from('org_members')
-        .select('organization_id, organizations(name, address_line1, city, state_code, pincode)')
-        .eq('user_id', user.id)
-        .eq('is_active', true)
-        .single()
-
-      if (!membership) { setError('No organization found.'); setLoading(false); return }
-      const org = membership.organizations as any
-      setOrgId(membership.organization_id)
-
-      const { data: gstReg } = await supabase
-        .from('gst_registrations')
-        .select('gstin, legal_name')
-        .eq('organization_id', membership.organization_id)
-        .eq('is_primary', true)
-        .single()
-
-      setSeller({
-        gstin: gstReg?.gstin || '',
-        legalName: gstReg?.legal_name || org?.name || '',
-        tradeName: org?.name || '',
-        address1: org?.address_line1 || '',
-        city: org?.city || '',
-        stateCode: org?.state_code || gstReg?.gstin?.slice(0, 2) || '',
-        pincode: org?.pincode || '',
-      })
-
-      const { data: invData } = await supabase
-        .from('invoices')
-        .select('*')
-        .eq('organization_id', membership.organization_id)
-        .neq('status', 'cancelled')
-        .order('invoice_date', { ascending: false })
-        .limit(300)
-
-      const invs = (invData || []) as InvoiceRow[]
-      setInvoices(invs)
-
-      if (invs.length > 0) {
-        const invIds = invs.map(i => i.id)
-        const custIds = [...new Set(invs.map(i => i.customer_id).filter(Boolean))]
-
-        const [itemsRes, custRes] = await Promise.all([
-          supabase.from('invoice_items')
-            .select('invoice_id, item_name, hsn_sac, quantity, unit, rate, discount_amount, taxable_value, gst_rate, igst_amount, cgst_amount, sgst_amount, cess_amount, sort_order')
-            .in('invoice_id', invIds)
-            .order('sort_order'),
-          custIds.length
-            ? supabase.from('customers')
-              .select('id, name, business_name, gstin, address_line1, city, state_code, pincode')
-              .in('id', custIds)
-            : Promise.resolve({ data: [] as CustomerRow[] }),
-        ])
-
-        const map = new Map<string, ItemRow[]>()
-        for (const it of ((itemsRes.data || []) as ItemRow[])) {
-          const list = map.get(it.invoice_id) || []
-          list.push(it)
-          map.set(it.invoice_id, list)
-        }
-        setItemsByInvoice(map)
-
-        const cmap = new Map<string, CustomerRow>()
-        for (const c of ((custRes.data || []) as CustomerRow[])) cmap.set(c.id, c)
-        setCustomers(cmap)
-      }
-
-      setLoading(false)
-    }
-    load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   function buildInput(inv: InvoiceRow): EiInvoiceInput {
     const cust = customers.get(inv.customer_id)
     const rawItems = itemsByInvoice.get(inv.id) || []
-    const items: EiLineItem[] = rawItems.map(it => ({
+    const items: EiInvoiceInput['items'] = rawItems.map(it => ({
       description: it.item_name,
       hsnSac: it.hsn_sac || '',
       qty: Number(it.quantity) || 0,
@@ -185,13 +149,14 @@ export default function EInvoicePage() {
     }))
 
     const pos = inv.place_of_supply || ''
+    const bos = inv.invoice_type === 'bill_of_supply'
     return {
       invoiceNumber: inv.invoice_number,
       invoiceDate: inv.invoice_date,
       dueDate: inv.due_date,
-      documentType: 'INV',
+      documentType: bos ? 'BIL' : 'INV',
       reverseCharge: !!inv.is_reverse_charge,
-      isExport: pos === '99' || pos === '01',
+      isExport: pos === '99',
       placeOfSupply: pos,
       buyer: {
         gstin: cust?.gstin || inv.customer_gstin || '',
@@ -215,24 +180,137 @@ export default function EInvoicePage() {
     }
   }
 
+  useEffect(() => {
+    async function loadDocuments() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { setError('Not signed in.'); setLoading(false); return }
+
+      const { data: memberData } = await supabase
+        .from('org_members')
+        .select('organization_id, organizations(name, address_line1, city, state_code, pincode)')
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .single()
+
+      const membership = memberData as unknown as Membership | null
+      if (!membership) { setError('No organization found.'); setLoading(false); return }
+      const org = membership.organizations
+      setOrgId(membership.organization_id)
+
+      const { data: gstReg } = await supabase
+        .from('gst_registrations')
+        .select('gstin, legal_name')
+        .eq('organization_id', membership.organization_id)
+        .eq('is_primary', true)
+        .single()
+
+      setSeller({
+        gstin: gstReg?.gstin || '',
+        legalName: gstReg?.legal_name || org?.name || '',
+        tradeName: org?.name || '',
+        address1: org?.address_line1 || '',
+        city: org?.city || '',
+        stateCode: org?.state_code || gstReg?.gstin?.slice(0, 2) || '',
+        pincode: org?.pincode || '',
+      })
+
+      const { data: invData } = await supabase
+        .from('invoices')
+        .select('id, invoice_number, invoice_date, due_date, invoice_type, customer_id, customer_name, customer_gstin, customer_state_code, place_of_supply, is_reverse_charge, taxable_amount, discount_amount, igst_amount, cgst_amount, sgst_amount, cess_amount, round_off, grand_total, status')
+        .eq('organization_id', membership.organization_id)
+        .neq('status', 'cancelled')
+        .order('invoice_date', { ascending: false })
+        .limit(WINDOW)
+
+      const invs = (invData || []) as InvoiceRow[]
+      setInvoices(invs)
+      if (invs.length === 0) { setLoading(false); return }
+
+      // The window is capped at 300, so one batch stays inside Supabase's 500-id limit.
+      const custIds = [...new Set(invs.map(i => i.customer_id).filter(Boolean))]
+      const [itemsRes, custRes] = await Promise.all([
+        supabase.from('invoice_items')
+          .select('invoice_id, item_name, hsn_sac, quantity, unit, rate, discount_amount, taxable_value, gst_rate, igst_amount, cgst_amount, sgst_amount, cess_amount')
+          .in('invoice_id', invs.map(i => i.id))
+          .order('sort_order'),
+        custIds.length
+          ? supabase.from('customers')
+            .select('id, name, business_name, gstin, address_line1, city, state_code, pincode')
+            .in('id', custIds)
+          : Promise.resolve({ data: [] as CustomerRow[] }),
+      ])
+
+      const map = new Map<string, ItemRow[]>()
+      for (const it of ((itemsRes.data || []) as ItemRow[])) {
+        const list = map.get(it.invoice_id) || []
+        list.push(it)
+        map.set(it.invoice_id, list)
+      }
+      setItemsByInvoice(map)
+
+      const cmap = new Map<string, CustomerRow>()
+      for (const c of ((custRes.data || []) as CustomerRow[])) cmap.set(c.id, c)
+      setCustomers(cmap)
+
+      setLoading(false)
+    }
+
+    loadDocuments()
+  }, [])
+
   const rows = useMemo(
-    () => invoices.map(inv => ({ inv, issues: seller ? validateEInvoice(seller, buildInput(inv)) : ['Seller not loaded yet.'] })),
+    () => invoices.map(inv => {
+      const input = buildInput(inv)
+      return {
+        inv,
+        input,
+        draft: inv.status === 'draft',
+        docKind: DOC_KIND[inv.invoice_type] || 'Tax invoice',
+        typeLabel: INVOICE_TYPE_LABELS[deriveInvoiceType(input)] || deriveInvoiceType(input),
+        issues: seller ? validateEInvoice(seller, input) : ['Seller details are still loading.'],
+      }
+    }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [invoices, seller, customers, itemsByInvoice]
   )
 
-  const readyCount = rows.filter(r => r.issues.length === 0).length
+  const issued = rows.filter(r => !r.draft)
+  const readyRows = issued.filter(r => r.issues.length === 0)
+  const fixRows = issued.filter(r => r.issues.length > 0)
+  const draftRows = rows.filter(r => r.draft)
 
-  function openJson(inv: InvoiceRow, issues: string[]) {
+  const buckets: Record<string, DocRow[]> = {
+    ready: readyRows, fix: fixRows, draft: draftRows, all: rows,
+  }
+
+  const visible = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    const list = buckets[filter] || rows
+    if (!q) return list
+    return list.filter(({ inv, input }) =>
+      [inv.invoice_number, input.buyer.name, input.buyer.gstin || '', inv.place_of_supply]
+        .some(v => String(v).toLowerCase().includes(q))
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, filter, search])
+
+  const totalIssues = fixRows.reduce((s, r) => s + r.issues.length, 0)
+
+  function openJson(row: DocRow) {
     if (!seller) return
-    const input = buildInput(inv)
-    const json = buildEInvoiceJson(seller, input)
+    setCopied(false)
+    setInspect(null)
     setJsonModal({
-      title: `e-Invoice JSON — ${inv.invoice_number}`,
-      json: JSON.stringify(json, null, 2),
-      issues,
-      filename: `einvoice_${safeFilePart(inv.invoice_number)}.json`,
+      title: `e-Invoice JSON — ${row.inv.invoice_number}`,
+      data: buildEInvoiceJson(seller, row.input),
+      issues: row.issues,
+      filename: `einvoice_${safeFilePart(row.inv.invoice_number)}.json`,
     })
+  }
+
+  function closeModal() {
+    setJsonModal(null)
+    setCopied(false)
   }
 
   function openEwb(inv: InvoiceRow) {
@@ -281,9 +359,10 @@ export default function EInvoicePage() {
     if (!ewbFor) return
     const json = buildEwbPayload(ewbFor)
     setEwbFor(null)
+    setCopied(false)
     setJsonModal({
       title: `E-way bill request — ${ewbFor.invoice_number}`,
-      json: JSON.stringify(json, null, 2),
+      data: json,
       issues: [],
       filename: `ewaybill_${safeFilePart(ewbFor.invoice_number)}.json`,
     })
@@ -334,341 +413,488 @@ export default function EInvoicePage() {
     }
   }
 
-  const inputStyle: React.CSSProperties = {
-    padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: '8px',
-    fontSize: '13px', width: '100%', boxSizing: 'border-box', background: 'white',
-  }
+  const columns = [
+    { key: 'invoice', label: 'Invoice', width: '1.1fr', align: 'left' },
+    { key: 'buyer', label: 'Buyer', width: '1.6fr', align: 'left' },
+    { key: 'value', label: 'Invoice value', width: '1fr', align: 'right' },
+    { key: 'document', label: 'Document', width: '1fr', align: 'left' },
+    { key: 'readiness', label: 'Readiness', width: '1.1fr', align: 'left' },
+    { key: 'actions', label: 'Actions', width: 'auto', align: 'left' },
+  ]
+  const grid = columns.map(c => c.width).join(' ')
 
   if (loading) {
-    return <div className="page-container"><p style={{ color: '#64748b' }}>Loading invoices...</p></div>
+    return <div className="page-container" style={{ color: 'var(--muted)', fontSize: 13 }}>Reading your issued invoices…</div>
   }
 
   return (
-    <div className="page-container">
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">E-Invoicing (IRN)</h1>
-          <p className="page-subtitle">
-            Generate NIC e-invoice JSON for your invoices and e-way bill request payloads.
-            Ready invoices are {readyCount} of {rows.length}.
-          </p>
-        </div>
-      </div>
+    <div className="page-container ef" style={{ maxWidth: 1080 }}>
+      <PageHeader
+        eyebrow="GST compliance"
+        title="E-invoicing (IRN)"
+        subtitle={seller
+          ? `NIC-ready documents for ${seller.gstin || 'this organisation'} · ${readyRows.length} of ${issued.length} issued invoices can be signed as they are`
+          : 'Generate the standard NIC e-invoice JSON and e-way bill request payloads'}
+        actions={rows.length > 0 ? (
+          <SearchInput
+            value={search}
+            onChange={v => { setSearch(v); setFilter('all') }}
+            ariaLabel="Search by invoice number, buyer or GSTIN"
+            placeholder="Invoice no., buyer, GSTIN…"
+            style={{ width: '100%', maxWidth: 260 }}
+          />
+        ) : undefined}
+      />
 
-      <div style={{
-        background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '12px',
-        padding: '12px 16px', marginBottom: '16px', fontSize: '13px', color: '#1e40af', lineHeight: 1.5,
-      }}>
-        <strong>How this works:</strong> e-invoicing is mandatory for B2B invoices when aggregate turnover
-        exceeds ₹5 crore. For each invoice below we build the standard <code style={{ background: '#dbeafe', padding: '1px 5px', borderRadius: '4px' }}>Ctx 1.10</code> JSON —
-        upload or paste it into your GSP / the NIC e-invoice portal (or your accounting integration) to sign it and receive the
-        <strong> IRN + QR code</strong>, which you then print on the invoice PDF. Nothing is sent from this app.
+      <div className="ef-alert is-info">
+        <Icon name="book" size={15} />
+        <span>
+          <strong>How this works:</strong> e-invoicing is mandatory for B2B invoices once aggregate turnover
+          crosses ₹5 crore. Each row below builds the standard <code>Ctx 1.10</code> JSON exactly as NIC expects it.
+          Upload or paste that file into your GSP / the e-invoice portal to sign it; the portal returns the
+          <strong> IRN and QR code</strong> you print on the invoice. Nothing leaves this browser until you send it.
+        </span>
       </div>
-
-      {seller && !seller.gstin && (
-        <div style={{
-          background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '12px',
-          padding: '12px 16px', marginBottom: '16px', fontSize: '13px', color: '#991b1b',
-        }}>
-          No primary GSTIN found for this organization. Add it under Settings → GST registration before generating e-invoices.
-        </div>
-      )}
 
       {error && (
-        <div style={{
-          background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '12px',
-          padding: '12px 16px', marginBottom: '16px', fontSize: '13px', color: '#991b1b',
-        }}>{error}</div>
-      )}
-
-      {rows.length === 0 && (
-        <div className="panel" style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>
-          No invoices found. Create an invoice first — it will appear here for e-invoice generation.
+        <div className="ef-alert is-error">
+          <Icon name="alert" size={15} />
+          <span>{error}</span>
         </div>
       )}
 
-      {rows.length > 0 && (
-        <div className="panel" style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
-          <div className="responsive-table">
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-              <thead>
-                <tr className="table-header" style={{ background: '#f8fafc', textAlign: 'left' }}>
-                  <th style={{ padding: '10px 14px' }}>Invoice</th>
-                  <th style={{ padding: '10px 14px' }}>Date</th>
-                  <th style={{ padding: '10px 14px' }}>Buyer</th>
-                  <th style={{ padding: '10px 14px' }}>Value</th>
-                  <th style={{ padding: '10px 14px' }}>Type</th>
-                  <th style={{ padding: '10px 14px' }}>Readiness</th>
-                  <th style={{ padding: '10px 14px' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map(({ inv, issues }) => {
-                  const ready = issues.length === 0
-                  const invType = deriveInvoiceType(buildInput(inv))
-                  return (
-                    <tr key={inv.id} className="table-row" style={{ borderTop: '1px solid #f1f5f9' }}>
-                      <td className="table-cell" data-label="Invoice" style={{ padding: '10px 14px', fontWeight: 600, color: '#1e293b' }}>
-                        {inv.invoice_number}
-                      </td>
-                      <td className="table-cell" data-label="Date" style={{ padding: '10px 14px', color: '#64748b' }}>
-                        {inv.invoice_date}
-                      </td>
-                      <td className="table-cell" data-label="Buyer" style={{ padding: '10px 14px' }}>
-                        <div>{inv.customer_name}</div>
-                        <div style={{ fontSize: '11px', color: '#94a3b8', fontFamily: 'monospace' }}>
-                          {customers.get(inv.customer_id)?.gstin || inv.customer_gstin || 'Unregistered'}
-                        </div>
-                      </td>
-                      <td className="table-cell" data-label="Value" style={{ padding: '10px 14px' }}>
-                        {formatINR(Number(inv.grand_total))}
-                      </td>
-                      <td className="table-cell" data-label="Type" style={{ padding: '10px 14px' }}>
-                        <span style={{
-                          fontSize: '11px', padding: '2px 8px', borderRadius: '99px',
-                          background: '#f1f5f9', color: '#475569', fontWeight: 600,
-                        }}>
-                          {INVOICE_TYPE_LABELS[invType] || invType}
+      {seller && !seller.gstin && (
+        <div className="ef-alert is-error">
+          <Icon name="alert" size={15} />
+          <span>No primary GSTIN for this organisation yet. Add it under Settings → GST registration before generating e-invoices.</span>
+        </div>
+      )}
+
+      {rows.length === 0 ? (
+        <Card className="ef-card">
+          <EmptyState
+            icon="invoice"
+            title="No invoices to e-invoice"
+            message="E-invoice payloads are built from your issued invoices. Create an invoice and it appears here, validated against the NIC rules before you sign it."
+            action={<Button variant="primary" icon="plus" href="/invoices/new">New invoice</Button>}
+          />
+        </Card>
+      ) : (
+        <>
+          <div className="ef-metrics">
+            <StatCard label="Ready to sign" value={`${readyRows.length}`} tone="green" icon="check"
+              sub={issued.length ? `${Math.round(readyRows.length / issued.length * 100)}% of issued invoices` : 'Nothing issued yet'} />
+            <StatCard label="Needs fixing" value={`${fixRows.length}`} tone={fixRows.length ? 'amber' : 'green'} icon="alert"
+              sub={totalIssues ? `${totalIssues} field${totalIssues === 1 ? '' : 's'} NIC will reject` : 'No validation errors'} />
+            <StatCard label="Drafts" value={`${draftRows.length}`} tone="grey" icon="clipboard"
+              sub="No IRN until they are issued" />
+            <StatCard label="Invoice value ready" value={readyRows.reduce((s, r) => s + Number(r.inv.grand_total), 0)}
+              tone="blue" icon="invoice" sub={`Latest ${WINDOW} documents, cancelled excluded`} />
+          </div>
+
+          <div className="ef-tabs">
+            <Segmented value={filter} onChange={v => setFilter(v)}
+              options={FILTERS.map(f => ({
+                value: f.value,
+                label: f.value === 'all' ? `All ${rows.length}` : `${f.label} ${(buckets[f.value] || []).length}`,
+              }))} />
+            <span className="ef-tabs-note">
+              {search ? `Matching “${search}”` : `Showing ${visible.length} of ${rows.length}`}
+            </span>
+          </div>
+
+          {visible.length === 0 ? (
+            <Card className="ef-card">
+              <EmptyState
+                icon="check"
+                title={filter === 'fix' ? 'Nothing to fix' : filter === 'ready' ? 'No invoice is ready yet' : filter === 'draft' ? 'No drafts' : 'No invoice matches that search'}
+                message={search
+                  ? 'Clear the search, or switch tab to see the rest of the window.'
+                  : filter === 'ready'
+                    ? 'Open the Needs fixing tab and NIC will tell you exactly which field is missing.'
+                    : undefined}
+                action={search ? <Button variant="subtle" icon="x" onClick={() => setSearch('')}>Clear search</Button> : undefined}
+              />
+            </Card>
+          ) : (
+            <div className="table-frame ef-frame">
+              <div className="table-scroll">
+                <div className="responsive-table">
+                  <div className="ef-cols ef-head" style={{ gridTemplateColumns: grid }}>
+                    {columns.map(c => (
+                      <span key={c.key} className={c.align === 'right' ? 'is-right' : undefined}>{c.label}</span>
+                    ))}
+                  </div>
+                  {visible.map(row => (
+                    <div key={row.inv.id} className="ef-cols ef-row tf-tr" style={{ gridTemplateColumns: grid }}>
+                      <span className="ef-td is-lead" data-label="Invoice">
+                        <span className="ef-lead">
+                          <strong>{row.inv.invoice_number}</strong>
+                          <em>{new Date(row.inv.invoice_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            {row.input.placeOfSupply ? ` · POS ${row.input.placeOfSupply}` : ''}</em>
                         </span>
-                      </td>
-                      <td className="table-cell" data-label="Readiness" style={{ padding: '10px 14px' }}>
-                        {ready ? (
-                          <span style={{
-                            fontSize: '11px', padding: '2px 8px', borderRadius: '99px',
-                            background: '#dcfce7', color: '#166534', fontWeight: 600,
-                          }}>● Ready</span>
+                      </span>
+
+                      <span className="ef-td" data-label="Buyer">
+                        <span className="ef-buyer">
+                          <strong>{row.input.buyer.name || '—'}</strong>
+                          <em>{row.input.buyer.gstin || 'Unregistered buyer'}</em>
+                        </span>
+                      </span>
+
+                      <span className="ef-td is-right" data-label="Invoice value">{money(Number(row.inv.grand_total))}</span>
+
+                      <span className="ef-td" data-label="Document">
+                        <span className="ef-doc">
+                          <Badge tone={row.docKind === 'Bill of supply' ? 'grey' : 'cyan'} dot={false}>{row.docKind}</Badge>
+                          <em>{row.typeLabel}{row.input.reverseCharge ? ' · reverse charge' : ''}</em>
+                        </span>
+                      </span>
+
+                      <span className="ef-td" data-label="Readiness">
+                        {row.draft ? (
+                          <Badge tone="grey">Draft</Badge>
+                        ) : row.issues.length === 0 ? (
+                          <Badge tone="green">Ready to sign</Badge>
                         ) : (
-                          <span style={{ cursor: 'help' }} title={issues.join('\n')}>
-                            <span style={{
-                              fontSize: '11px', padding: '2px 8px', borderRadius: '99px',
-                              background: '#fef9c3', color: '#854d0e', fontWeight: 600,
-                            }}>⚠ {issues.length} to fix</span>
-                          </span>
+                          <button type="button" className="ef-fixbtn" onClick={() => setInspect(row)}
+                            title={row.issues.join('\n')}>
+                            <Badge tone="amber" dot={false}>{row.issues.length} to fix</Badge>
+                            <Icon name="search" size={13} />
+                          </button>
                         )}
-                      </td>
-                      <td className="table-cell" data-label="Actions">
-                        <div className="btn-group" style={{ padding: '8px 0' }}>
-                          <button onClick={() => openJson(inv, issues)} style={{
-                            padding: '6px 12px', background: ready ? '#2563eb' : '#eff6ff',
-                            color: ready ? 'white' : '#2563eb',
-                            border: ready ? 'none' : '1px solid #bfdbfe',
-                            borderRadius: '8px', fontSize: '12px', cursor: 'pointer', fontWeight: 600,
-                          }}>
-                            ⚡ e-Invoice JSON
-                          </button>
-                          <button onClick={() => openEwb(inv)} style={{
-                            padding: '6px 12px', background: 'white',
-                            color: '#374151', border: '1px solid #e2e8f0',
-                            borderRadius: '8px', fontSize: '12px', cursor: 'pointer',
-                          }}>
-                            🚚 E-way bill
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+                      </span>
+
+                      <span className="ef-td ef-actions" data-label="Actions">
+                        <Button variant={row.issues.length === 0 && !row.draft ? 'primary' : 'subtle'}
+                          size="sm" icon="zap" onClick={() => openJson(row)}>IRN JSON</Button>
+                        <Button variant="ghost" size="sm" icon="box" onClick={() => openEwb(row.inv)}>E-way bill</Button>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <p className="ef-foot">
+            A B2C bill of supply and invoices to unregistered buyers below the notification threshold do not need an IRN.
+            Every payload here is built in your browser from the invoice and its line items — signing and IRN generation
+            stay at the NIC/GSP end, so the document you print always carries the portal&apos;s own signature.
+          </p>
+        </>
+      )}
+
+      {inspect && (
+        <div className="ef-scrim" role="dialog" aria-modal="true" aria-label={`Fixes needed on ${inspect.inv.invoice_number}`}
+          onClick={() => setInspect(null)}>
+          <div className="ef-modal ef-modal-narrow" onClick={e => e.stopPropagation()}>
+            <div className="ef-modal-head">
+              <h2>Before NIC will accept {inspect.inv.invoice_number}</h2>
+              <button type="button" className="ef-close" onClick={() => setInspect(null)} aria-label="Close">
+                <Icon name="x" size={16} />
+              </button>
+            </div>
+
+            <p className="ef-modal-note">
+              {inspect.input.buyer.name || 'This buyer'} · {money(Number(inspect.inv.grand_total))} ·{' '}
+              {DOC_KIND[inspect.inv.invoice_type] || 'Tax invoice'} ({inspect.typeLabel})
+            </p>
+
+            <ul className="ef-issues">
+              {inspect.issues.map((iss, i) => (
+                <li key={i}>{iss}</li>
+              ))}
+            </ul>
+
+            <div className="ef-modal-actions">
+              <Button variant="ghost" size="sm" href={`/invoices/${inspect.inv.id}`}>Open invoice</Button>
+              <Button variant="subtle" size="sm" icon="x" onClick={() => setInspect(null)}>Close</Button>
+              <Button variant="primary" size="sm" icon="zap" onClick={() => openJson(inspect)}>
+                Build the JSON anyway
+              </Button>
+            </div>
           </div>
         </div>
       )}
 
-      <p style={{ fontSize: '12px', color: '#94a3b8', marginTop: '16px' }}>
-        Note: B2C (bill of supply) invoices and invoices to unregistered buyers below the threshold do not need IRNs.
-        The e-invoice JSON is generated locally in your browser; signing happens at the NIC/GSP end.
-      </p>
-
-      {/* ── JSON modal ── */}
       {jsonModal && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)',
-          zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem',
-        }} onClick={() => setJsonModal(null)}>
-          <div style={{
-            background: 'white', borderRadius: '16px', width: '100%', maxWidth: '720px',
-            maxHeight: '86vh', display: 'flex', flexDirection: 'column', overflow: 'hidden',
-          }} onClick={e => e.stopPropagation()}>
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ fontWeight: 700, fontSize: '15px', color: '#1e293b' }}>{jsonModal.title}</div>
-              <button onClick={() => setJsonModal(null)} style={{
-                background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#94a3b8',
-              }}>✕</button>
+        <div className="ef-scrim" role="dialog" aria-modal="true" aria-label={jsonModal.title} onClick={closeModal}>
+          <div className="ef-modal" onClick={e => e.stopPropagation()}>
+            <div className="ef-modal-head">
+              <h2>{jsonModal.title}</h2>
+              <button type="button" className="ef-close" onClick={closeModal} aria-label="Close">
+                <Icon name="x" size={16} />
+              </button>
             </div>
 
             {jsonModal.issues.length > 0 && (
-              <div style={{
-                margin: '12px 20px 0', padding: '10px 14px', background: '#fef9c3',
-                border: '1px solid #fde68a', borderRadius: '10px', fontSize: '12px', color: '#854d0e',
-              }}>
-                <strong>NIC will reject this JSON until fixed:</strong>
-                <ul style={{ margin: '6px 0 0', paddingLeft: '18px' }}>
-                  {jsonModal.issues.map((iss, i) => <li key={i}>{iss}</li>)}
-                </ul>
+              <div className="ef-alert is-warn" style={{ marginTop: 0, marginBottom: 12 }}>
+                <Icon name="alert" size={15} />
+                <span>
+                  <strong>NIC will reject this until fixed:</strong>{' '}
+                  {jsonModal.issues.join(' ')}
+                </span>
               </div>
             )}
 
-            <div style={{ flex: 1, overflow: 'auto', padding: '12px 20px' }}>
-              <pre style={{
-                background: '#0f172a', color: '#e2e8f0', borderRadius: '10px',
-                padding: '16px', fontSize: '12px', lineHeight: 1.5, overflow: 'auto', margin: 0,
-                whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-              }}>
-                {jsonModal.json}
-              </pre>
-            </div>
+            <pre className="ef-json">{JSON.stringify(jsonModal.data, null, 2)}</pre>
 
-            <div style={{ padding: '14px 20px', borderTop: '1px solid #e2e8f0', display: 'flex', gap: '10px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-              <button onClick={() => { navigator.clipboard.writeText(jsonModal.json) }} style={{
-                padding: '9px 16px', background: 'white', color: '#374151',
-                border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '13px', cursor: 'pointer', fontWeight: 600,
-              }}>
-                📋 Copy JSON
-              </button>
-              <button onClick={() => {
-                downloadJson(jsonModal.filename, JSON.parse(jsonModal.json))
-              }} style={{
-                padding: '9px 16px', background: '#2563eb', color: 'white',
-                border: 'none', borderRadius: '8px', fontSize: '13px', cursor: 'pointer', fontWeight: 600,
-              }}>
-                ↓ Download {jsonModal.filename}
-              </button>
+            {copied && (
+              <div className="ef-alert is-success" style={{ marginTop: 12 }}>
+                <Icon name="check" size={15} />
+                <span>Copied — paste it into your GSP&apos;s e-invoice JSON tab.</span>
+              </div>
+            )}
+
+            <div className="ef-modal-actions">
+              <Button variant="ghost" size="sm" icon="x" onClick={closeModal}>Close</Button>
+              <Button variant="subtle" size="sm" icon="clipboard" onClick={() => {
+                navigator.clipboard.writeText(JSON.stringify(jsonModal.data, null, 2))
+                setCopied(true)
+              }}>Copy JSON</Button>
+              <Button variant="primary" size="sm" icon="download"
+                onClick={() => downloadJson(jsonModal.filename, jsonModal.data)}>
+                Download {jsonModal.filename}
+              </Button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── E-way bill modal ── */}
       {ewbFor && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)',
-          zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem',
-        }} onClick={() => setEwbFor(null)}>
-          <div style={{
-            background: 'white', borderRadius: '16px', width: '100%', maxWidth: '560px',
-            maxHeight: '86vh', overflow: 'auto', padding: '20px',
-          }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-              <div style={{ fontWeight: 700, fontSize: '15px', color: '#1e293b' }}>
-                E-way bill — {ewbFor.invoice_number}
-              </div>
-              <button onClick={() => setEwbFor(null)} style={{
-                background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#94a3b8',
-              }}>✕</button>
+        <div className="ef-scrim" role="dialog" aria-modal="true"
+          aria-label={`E-way bill for ${ewbFor.invoice_number}`} onClick={() => setEwbFor(null)}>
+          <div className="ef-modal ef-modal-narrow" onClick={e => e.stopPropagation()}>
+            <div className="ef-modal-head">
+              <h2>E-way bill — {ewbFor.invoice_number}</h2>
+              <button type="button" className="ef-close" onClick={() => setEwbFor(null)} aria-label="Close">
+                <Icon name="x" size={16} />
+              </button>
             </div>
 
-            <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <label style={{ fontSize: '12px', color: '#475569' }}>
-                From place (dispatch)
-                <input style={inputStyle} value={ewbForm.fromPlace}
+            <div className="ef-grid">
+              <label className="ef-field">
+                <span>Dispatch place</span>
+                <input className="tf-input" value={ewbForm.fromPlace}
                   onChange={e => setEwbForm({ ...ewbForm, fromPlace: e.target.value })} />
               </label>
-              <label style={{ fontSize: '12px', color: '#475569' }}>
-                From pincode
-                <input style={inputStyle} value={ewbForm.fromPincode} maxLength={6}
+              <label className="ef-field">
+                <span>Dispatch pincode</span>
+                <input className="tf-input" inputMode="numeric" maxLength={6} value={ewbForm.fromPincode}
                   onChange={e => setEwbForm({ ...ewbForm, fromPincode: e.target.value })} />
               </label>
-              <label style={{ fontSize: '12px', color: '#475569' }}>
-                To place — {stateNameFor(ewbFor.place_of_supply) || 'destination'}
-                <input style={inputStyle} value={ewbForm.toPlace}
+              <label className="ef-field">
+                <span>Delivery place — {stateNameFor(ewbFor.place_of_supply) || 'destination'}</span>
+                <input className="tf-input" value={ewbForm.toPlace}
                   onChange={e => setEwbForm({ ...ewbForm, toPlace: e.target.value })} />
               </label>
-              <label style={{ fontSize: '12px', color: '#475569' }}>
-                Distance (km)
-                <input style={inputStyle} type="number" value={ewbForm.distanceKm}
+              <label className="ef-field">
+                <span>Distance (km)</span>
+                <input className="tf-input" type="number" min={0} value={ewbForm.distanceKm}
+                  placeholder="e.g. 240"
                   onChange={e => setEwbForm({ ...ewbForm, distanceKm: e.target.value })} />
               </label>
-              <label style={{ fontSize: '12px', color: '#475569' }}>
-                Transport mode
-                <select style={inputStyle} value={ewbForm.transportMode}
+              <label className="ef-field">
+                <span>Transport mode</span>
+                <select className="tf-input" value={ewbForm.transportMode}
                   onChange={e => setEwbForm({ ...ewbForm, transportMode: e.target.value as EwbInput['transportMode'] })}>
                   <option>Road</option><option>Rail</option><option>Air</option><option>Ship</option>
                 </select>
               </label>
-              <label style={{ fontSize: '12px', color: '#475569' }}>
-                Vehicle type
-                <select style={inputStyle} value={ewbForm.vehicleType}
+              <label className="ef-field">
+                <span>Vehicle type</span>
+                <select className="tf-input" value={ewbForm.vehicleType}
                   onChange={e => setEwbForm({ ...ewbForm, vehicleType: e.target.value as NonNullable<EwbInput['vehicleType']> })}>
                   <option>Regular</option><option>Hired</option><option>Consignor own</option><option>Consignee own</option>
                 </select>
               </label>
-              <label style={{ fontSize: '12px', color: '#475569' }}>
-                Vehicle / document number
-                <input style={inputStyle} value={ewbForm.vehicleNumber}
-                  placeholder="e.g. MH12AB1234 or LR no."
+              <label className="ef-field">
+                <span>Vehicle / transport doc no.</span>
+                <input className="tf-input" value={ewbForm.vehicleNumber} placeholder="MH12AB1234 or LR no."
                   onChange={e => setEwbForm({ ...ewbForm, vehicleNumber: e.target.value })} />
               </label>
-              <label style={{ fontSize: '12px', color: '#475569' }}>
-                Transaction type
-                <select style={inputStyle} value={ewbForm.transactionType}
+              <label className="ef-field">
+                <span>Transaction type</span>
+                <select className="tf-input" value={ewbForm.transactionType}
                   onChange={e => setEwbForm({ ...ewbForm, transactionType: e.target.value as EwbInput['transactionType'] })}>
                   <option value="O">Outward (sale)</option>
-                  <option value="C">Supply on sale/approval</option>
+                  <option value="C">Supply on sale / approval</option>
                   <option value="D">Inward</option>
                   <option value="E">Export</option>
                 </select>
               </label>
             </div>
 
-            <p style={{ fontSize: '11px', color: '#94a3b8', marginTop: '10px' }}>
-              Buyer pincode, GSTIN and item HSN/qty are pulled from the invoice and customer master.
+            <p className="ef-modal-note">
+              Buyer pincode, GSTIN and the item HSN/quantity summary are pulled from the invoice and the customer
+              master — only the movement details are asked for here.
             </p>
 
             {ewbResult && (
-              <div style={{
-                marginTop: '14px', padding: '12px 14px', background: '#f0fdf4',
-                border: '1px solid #bbf7d0', borderRadius: '10px', fontSize: '13px', color: '#166534',
-              }}>
-                <div style={{ fontWeight: 700, marginBottom: '4px' }}>
+              <div className="ef-alert is-success">
+                <Icon name="check" size={15} />
+                <span>
+                  <strong>
+                    {ewbResult.mock && <Badge tone="amber" dot={false}>MOCK</Badge>}
+                    {' '}E-way bill generated
+                  </strong>
+                  <br />
+                  <span className="ef-mono">EWB No: {ewbResult.ewbNo}</span>
+                  <br />
+                  Valid till {ewbResult.validityEndDate}
                   {ewbResult.mock && (
-                    <span style={{
-                      background: '#f59e0b', color: 'white', borderRadius: '6px',
-                      padding: '1px 8px', fontSize: '11px', marginRight: '8px', fontWeight: 700,
-                    }}>MOCK</span>
+                    <>
+                      <br />
+                      <span className="ef-warn-text">Simulated only — no e-way bill exists on the government system yet.</span>
+                    </>
                   )}
-                  E-way bill generated
-                </div>
-                <div style={{ fontFamily: 'monospace', fontSize: '12px', wordBreak: 'break-all' }}>EWB No: {ewbResult.ewbNo}</div>
-                <div style={{ fontSize: '12px' }}>Valid till: {ewbResult.validityEndDate}</div>
-                {ewbResult.mock && (
-                  <div style={{ fontSize: '11px', color: '#854d0e', marginTop: '4px' }}>
-                    Simulated only — no e-way bill exists on the government system yet.
-                  </div>
-                )}
+                </span>
               </div>
             )}
+
             {ewbError && (
-              <div style={{
-                marginTop: '14px', padding: '10px 14px', background: '#fef2f2',
-                border: '1px solid #fecaca', borderRadius: '10px', fontSize: '12px', color: '#991b1b',
-              }}>{ewbError}</div>
+              <div className="ef-alert is-error">
+                <Icon name="alert" size={15} />
+                <span>{ewbError}</span>
+              </div>
             )}
 
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', alignItems: 'center', marginTop: '16px', flexWrap: 'wrap' }}>
-              <select value={gspProvider} onChange={e => setGspProvider(e.target.value)} style={{
-                padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: '8px',
-                fontSize: '12px', background: 'white', color: '#374151',
-              }}>
-                <option value="mock">Mock GSP (local simulator)</option>
-              </select>
-              <button onClick={submitToGsp} disabled={ewbSubmitting} style={{
-                padding: '9px 16px', background: ewbSubmitting ? '#93c5fd' : '#16a34a', color: 'white',
-                border: 'none', borderRadius: '8px', fontSize: '13px', cursor: ewbSubmitting ? 'wait' : 'pointer', fontWeight: 600,
-              }}>
-                {ewbSubmitting ? 'Submitting...' : '🔌 Submit to GSP'}
-              </button>
-              <button onClick={() => setEwbFor(null)} style={{
-                padding: '9px 16px', background: 'white', color: '#374151',
-                border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '13px', cursor: 'pointer',
-              }}>Close</button>
-              <button onClick={generateEwb} style={{
-                padding: '9px 16px', background: '#2563eb', color: 'white',
-                border: 'none', borderRadius: '8px', fontSize: '13px', cursor: 'pointer', fontWeight: 600,
-              }}>↓ Download request JSON</button>
+            <div className="ef-modal-actions">
+              <label className="ef-channel">
+                <span>Channel</span>
+                <select className="tf-input" value={gspProvider} onChange={e => setGspProvider(e.target.value)}
+                  aria-label="GSP provider">
+                  <option value="mock">Mock GSP (local simulator)</option>
+                </select>
+              </label>
+              <Button variant="subtle" size="sm" icon="download" onClick={generateEwb}>Download request JSON</Button>
+              <Button variant="primary" size="sm" icon="upload" onClick={submitToGsp} disabled={ewbSubmitting}>
+                {ewbSubmitting ? 'Submitting…' : 'Submit to GSP'}
+              </Button>
             </div>
           </div>
         </div>
       )}
+
+      <style>{`
+        .ef-alert {
+          display: flex; gap: 8px; align-items: flex-start; font-size: 12px; line-height: 1.65;
+          border: 1px solid var(--line); border-radius: var(--radius); padding: 11px 13px; margin-bottom: 14px;
+        }
+        .ef-alert svg { flex-shrink: 0; margin-top: 2px; }
+        .ef-alert.is-info { background: var(--cyan-soft); color: #0e7490; }
+        .ef-alert.is-warn { background: var(--amber-soft); color: #b45309; }
+        .ef-alert.is-error { background: var(--red-soft); color: #b91c1c; }
+        .ef-alert.is-success { background: var(--green-soft); color: #15803d; }
+        .ef-alert code {
+          font-family: ui-monospace, Menlo, monospace; font-size: 11px;
+          background: var(--surface); padding: 1px 5px; border-radius: 4px;
+        }
+
+        .ef-card { margin-bottom: 1rem; }
+        .ef-metrics {
+          display: grid; gap: 0.9rem; margin-bottom: 1rem;
+          grid-template-columns: repeat(auto-fit, minmax(196px, 1fr));
+        }
+        .ef-tabs { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+        .ef-tabs-note { font-size: 11.5px; color: var(--faint); }
+
+        .ef-frame { overflow: hidden; }
+        .ef-cols {
+          display: grid; gap: 10px; padding: 10px 1.3rem; align-items: center;
+          font-size: 12px; color: var(--ink-2);
+        }
+        .ef-head {
+          background: var(--surface-2);
+          border-bottom: 1px solid var(--line-soft);
+          font-size: 10.5px; font-weight: 700; color: var(--faint);
+          text-transform: uppercase; letter-spacing: 0.05em;
+        }
+        .ef-head .is-right, .ef-td.is-right { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .ef-row { border-bottom: 1px solid var(--line-soft); }
+        .ef-row:last-child { border-bottom: none; }
+        .ef-lead strong, .ef-buyer strong { display: block; font-size: 12.5px; font-weight: 600; color: var(--ink); }
+        .ef-lead em, .ef-buyer em {
+          display: block; font-style: normal; font-size: 11px; color: var(--faint);
+          font-family: ui-monospace, Menlo, monospace;
+        }
+        .ef-doc { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+        .ef-doc em { font-style: normal; font-size: 11px; color: var(--muted); }
+        .ef-fixbtn {
+          display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+          font-family: inherit; background: none; border: none; padding: 0; color: var(--faint);
+        }
+        .ef-actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+        .ef-mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; word-break: break-all; }
+        .ef-warn-text { font-size: 11.5px; color: #b45309; }
+
+        .ef-scrim {
+          position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); z-index: 100;
+          display: flex; align-items: center; justify-content: center; padding: 1rem;
+        }
+        .ef-modal {
+          background: var(--surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
+          width: 100%; max-width: 760px; max-height: 90vh; overflow-y: auto; padding: 1.4rem 1.5rem;
+        }
+        .ef-modal-narrow { max-width: 600px; }
+        .ef-modal-head {
+          display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px;
+        }
+        .ef-modal-head h2 { font-size: 16px; font-weight: 650; color: var(--ink); margin: 0; }
+        .ef-close {
+          background: none; border: none; color: var(--faint); cursor: pointer;
+          padding: 5px; border-radius: 6px; display: flex;
+        }
+        .ef-close:hover { background: var(--slate-soft); color: var(--ink-2); }
+        .ef-modal-note { font-size: 11.5px; color: var(--muted); line-height: 1.6; margin: 0 0 12px; }
+        .ef-modal-actions {
+          display: flex; gap: 8px; justify-content: flex-end; align-items: flex-end;
+          flex-wrap: wrap; margin-top: 16px;
+        }
+        .ef-issues { margin: 0; padding-left: 1.1rem; font-size: 12.5px; color: var(--ink-2); line-height: 1.9; }
+        .ef-json {
+          margin: 0; padding: 14px 16px; max-height: 46vh; overflow: auto;
+          background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm);
+          font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; line-height: 1.6;
+          color: var(--ink-2); white-space: pre; tab-size: 2;
+        }
+        .ef-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .ef-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+        .ef-field > span { font-size: 12px; font-weight: 550; color: var(--ink-2); }
+        .ef-channel { display: flex; flex-direction: column; gap: 4px; margin-right: auto; }
+        .ef-channel > span { font-size: 11px; font-weight: 550; color: var(--faint); }
+        .ef-channel select { min-width: 190px; font-size: 12px; }
+        .ef-foot { font-size: 11.5px; color: var(--faint); line-height: 1.7; margin-top: 14px; }
+
+        @media (max-width: 768px) {
+          .ef-metrics { grid-template-columns: 1fr 1fr; }
+          .ef-cols { grid-template-columns: 1fr !important; gap: 5px; padding: 12px 14px; }
+          /* .table-frame goes transparent on mobile, so each row has to card itself. */
+          .ef-row {
+            border: 1px solid var(--line); border-radius: var(--radius);
+            background: var(--surface); margin: 0 0 10px;
+          }
+          .ef-row:last-child { margin-bottom: 0; }
+          .ef-head { display: none !important; }
+          .ef-td {
+            display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+            text-align: left; white-space: normal; overflow: visible;
+          }
+          /* .is-right sets nowrap on desktop; match its specificity or the amount cannot wrap. */
+          .ef-td.is-right { white-space: normal; }
+          .ef-td.is-lead { display: block; }
+          .ef-td.is-lead::before { content: none; }
+          .ef-td::before {
+            content: attr(data-label); font-size: 10.5px; font-weight: 700; color: var(--faint);
+            text-transform: uppercase; letter-spacing: 0.05em; flex-shrink: 0;
+          }
+          .ef-actions { justify-content: flex-start; }
+          .ef-grid { grid-template-columns: 1fr; }
+          .ef-channel { margin-right: 0; width: 100%; }
+          .ef-modal-actions .tf-btn { flex: 1; justify-content: center; }
+        }
+      `}</style>
     </div>
   )
 }
