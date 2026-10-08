@@ -331,6 +331,57 @@ export function buildInvoicePayload(
   }
 }
 
+/**
+ * The bill header + items for createPurchaseBill() when a purchase order is
+ * billed. The bill number is the vendor's, not ours — it is what GSTR-2B will
+ * match against — so it is passed in rather than invented.
+ */
+export function buildBillPayload(
+  doc: FlowDoc,
+  computed: FlowTotals,
+  billNumber: string,
+  billDate: string,
+): { billFields: Record<string, unknown>; items: Record<string, unknown>[] } {
+  const t = computed.totals
+  if (!t) throw new Error('Nothing to bill — the document has no usable lines')
+  if (!billNumber.trim()) throw new Error("Record the vendor's bill number first")
+  const items = doc.lines.filter(isUsableLine).map((line, idx) => ({
+    ...lineToItemFields(line, computed.results[idx]),
+    itc_eligible: true,
+  }))
+  return {
+    billFields: {
+      bill_number: billNumber.trim(),
+      bill_date: billDate,
+      due_date: doc.due_date || null,
+      vendor_id: doc.party_id,
+      vendor_name: doc.party_name,
+      vendor_gstin: doc.party_gstin,
+      vendor_state_code: doc.party_state,
+      place_of_supply: doc.place_of_supply,
+      place_of_supply_name: stateNameFor(doc.place_of_supply),
+      is_reverse_charge: false,
+      subtotal: t.subtotal,
+      discount_amount: t.discount_amount,
+      taxable_amount: t.taxable_amount,
+      cgst_amount: t.cgst_amount,
+      sgst_amount: t.sgst_amount,
+      igst_amount: t.igst_amount,
+      cess_amount: t.cess_amount,
+      total_tax: t.total_tax,
+      round_off: t.round_off,
+      grand_total: t.grand_total,
+      itc_eligible: true,
+      amount_paid: 0,
+      balance_due: t.grand_total,
+      payment_status: 'unpaid',
+      notes: doc.notes,
+      status: 'active',
+    },
+    items,
+  }
+}
+
 // ── Misc helpers ─────────────────────────────────────────────────────────────
 
 export function newDoc(kind: FlowKind, number: string, docDate: string): FlowDoc {
