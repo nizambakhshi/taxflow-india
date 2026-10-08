@@ -1,6 +1,6 @@
 # 7 — Competitor Comparison
 
-**Built:** 2026-10-08 · **TaxFlow column:** read out of this codebase (51 routes, 35 libraries — not marketing copy) · **Competitor columns:** each vendor's own public pages, fetched 2026-10-08 over plain HTTP.
+**Built:** 2026-10-08 · **TaxFlow column:** read out of this codebase (52 routes, 36 libraries — not marketing copy) · **Competitor columns:** each vendor's own public pages, fetched 2026-10-08 over plain HTTP.
 
 ## Legend — read this before the table
 
@@ -34,7 +34,7 @@ Everything below is "what the vendor advertises", which is exactly the thing Tax
 | Feature | TaxFlow | Tally | Zoho Books | Vyapar | myBillBook | Busy | Marg | ClearTax | Refrens |
 | --- | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: |
 | Stock tracking + movements | ✔ | ✔ | ✔ | ✔ | ✔ | · | ✔ | · | · |
-| Multi-godown / branch | · | ✔ | · | ✔ | · | ✔ | ✔ | ✔ | · |
+| Multi-godown / branch | ✔ (R2-17 — batch lots placed by godown, transfer = lot split, per-place stock; registered lots only) | ✔ | · | ✔ | · | ✔ | ✔ | ✔ | · |
 | Batch / expiry | ✔ (R2-15 — lots, FEFO, expiry watch) | · | ~ (Elite) | ✔ (pharmacy page) | · | · | ✔ | · | ~ |
 | Serial numbers | ✔ (R2-15 — one row per unit, derived warranty) | · | ~ (Elite) | · | · | · | ✔ | · | ~ |
 | Barcode | ✔ (camera + wedge) | · | · | ✔ | ✔ | · | ✔ | · | · |
@@ -111,7 +111,7 @@ Everything below is "what the vendor advertises", which is exactly the thing Tax
 | --- | --- | --- | --- |
 | 1 | **Actual return filing / GSP submission** — we stop at workpaper + JSON | everyone | Blocked: needs a contracted GSP (see ADR-016) |
 | 2 | **Delivery challan + purchase/sales orders + order-to-invoice flow** — **closed** (R2-14): `/challans` register and printable document (B1, `f982aed`), then sales and purchase orders on the same engine (B2, `b851818`) — confirm → close → convert to invoice, place → receive → convert to bill through the real write paths; then the book joins the discovery surfaces (B3, `94b3c1c`): an Order flow tab in `/reports/registers` and synchronous ⌘K search over the three stores | Zoho, Marg, Refrens, myBillBook, Busy | Done — the PO-to-bill conversion asks for the vendor's own bill number (GSTR-2B matches it) instead of inventing one |
-| 3 | **Batch/expiry + serial tracking, multi-godown** | Marg, Zoho (Elite), Vyapar, Refrens | **Closed except multi-godown** (R2-15): the batch/expiry register with FEFO consumption wired into the invoice write path (B1, `9b7a4c6`), then the serial-number register — one row per unit, append-only event log, warranty derived from the latest sale, units attached to invoices through the Issue action (B2, `e2a94d4`). Both client-side under ADR-013, because a batch and a serial are owner bookkeeping and the statutory paper never carries either. Multi-godown needs real columns, so it waits for the Phase 14 schema window rather than being faked |
+| 3 | **Batch/expiry + serial tracking, multi-godown** | Marg, Zoho (Elite), Vyapar, Refrens | **Closed** (R2-15 + R2-17): the batch/expiry register with FEFO consumption wired into the invoice write path (B1, `9b7a4c6`), then the serial-number register — one row per unit, append-only event log, warranty derived from the latest sale, units attached to invoices through the Issue action (B2, `e2a94d4`). Both client-side under ADR-013, because a batch and a serial are owner bookkeeping and the statutory paper never carries either. Multi-godown closes the same way (R2-17 B1, `8188d46`): a client-side godown register places each batch lot in a named place, a transfer is a **split** — a new destination lot keeps the source identity plus one negative `kind:'transfer'` move on the source, so the `left = qty + back − out` invariant and FEFO sorting never move — and a virtual Main seed reads every unplaced lot ("unplaced is not nowhere"); `/inventory/godowns` on the kit. Honest v1 boundary: per-place figures cover **registered lots only**, because `products.current_stock` has no per-godown column yet — that one rollup waits for the Phase 14 schema window rather than being faked |
 | 4 | **Customer portal** | Zoho (free), Busy, Marg, ClearTax | **v1 shipped** (R2-16 B1, `ccea4d5`): the statement travels inside its own link — JSON → deflate → base64url in the URL **fragment**, so nothing is stored server-side and there is nothing to revoke; each open invoice row carries a UPI deep link with its own due amount (VPA baked at share time), and the figures are the ledger's own by construction. Auth'd customer logins remain |
 | 5 | **Multi-user roles / permissions** | Zoho (Professional), Busy, Marg | Auth + schema; belongs with Phase 14 security |
 | 6 | **Payroll** | Tally (₹750/mo), Zoho (Premium), ClearTax | Large; consider partnering rather than building |

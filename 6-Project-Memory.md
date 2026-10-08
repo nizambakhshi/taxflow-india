@@ -35,7 +35,7 @@ the repository as it exists today.
 | API routes | 2 only — `/api/gsp/ewaybill` (mock GSP transport), `/api/pdf-worker` (serves the pdf.js worker asset) |
 | Developer OS | Mac Mini M4 (macOS) |
 | Code editor | Qoder (was Cursor) |
-| History | 82 commits on `main`; MVP landed 2026-09-19, rounds ran 2026-10-05 → 2026-10-08 |
+| History | 84 commits on `main`; MVP landed 2026-09-19, rounds ran 2026-10-05 → 2026-10-08 |
 
 ---
 
@@ -425,7 +425,24 @@ E-invoice threshold, e-way bill requirement, filing profile (monthly/QRMP) and T
 
 **Commit:** `ccea4d5`.
 
-### Routes — 49 pages
+### Session 38 — 2026-10-08 (R2-17 B1 — godowns: a batch learns the place it is kept in)
+**Built:** `src/lib/godowns.ts` (`8188d46`) — the last third of competitor gap #3, closed the same way the first two were: under ADR-013, because a place is owner bookkeeping and the statutory paper never names it. The schema decision is explicit — `warehouses` still exists in Postgres and the app **still never queries it** (its columns are unknowable from here); the registry lives in `taxflow:godowns:<orgId>`. Two load-bearing decisions, both enforced in the library: **unplaced is not nowhere** — a virtual `Main` godown (`GODOWN_MAIN = 'main'`) is seeded and every lot whose `godown_id` is blank or unknown resolves to it, and Main can be renamed but never archived (guarded in both `archiveGodown` and the `loadGodowns` merge, so a hand-edited stored Main still comes back `archived: false`); and **a transfer is a split, not a shipment** — the destination gets a new lot carrying the source's identity (`{...source, id: newId(), qty, godown_id: to, received_date: date, notes: 'Transferred in from …'}`) and the source takes one negative `kind:'transfer'` move, so the `left = qty + back − out` invariant and FEFO sorting from R2-15 B1 are untouched rather than re-derived. Everything the page shows is derived: `godownStock` folds the batch views per place (units/value left, live lots, expired, critical, and an `unplaced` count that lands only on the Main row); `transferHistory` reads only negative transfer moves and parses the destination back out of the `→ X` note; `planTransfer`/`validateTransfer` refuse unselected lots, non-positive or over-`left` quantities, missing / same / archived destinations, and lots that left the register. `lotFilter(godowns, id)` is handed to `allocateFefo(..., where?)` as a predicate so `batches.ts` never imports `godowns.ts` — no cycle, and the automatic `recordSale` invoice drawdown stays global exactly as the serials engine's "no automatic hook" precedent. Honest v1 boundary stated in the header and the UI: per-place figures cover **registered lots only**, because `products.current_stock` has no per-godown column.
+
+**Wired:** `/inventory/godowns` on the kit — place cards (`gd-grid`) with a value-share `ProgressBar`, `StatRow`s, a per-place expiry alert and an expandable FEFO lot drilldown; four stat cards (open places, value on the register, never-placed units, expiry across places); a `Segmented` view filter (`active / holding / empty / archived / all`) plus a place search; a **Move stock** modal whose "This is what gets written" preview renders the plan from `validateTransfer` (red source take, green destination lot, blue note) and stays disabled until the check is `ok`; a Stock-moves table (`transferHistory`) with its own CSV; archive refuses when lots still hold stock there ("move them out or write them off first") and routes the refusal through `warn`, not the green `flash`. `batches.ts` gained `Batch.godown_id`, `kind:'transfer'`, `newBatch(receivedDate)` and `allocateFefo(..., where?)`, and `BATCH_CSV_HEADERS` gained a **Godown** column (19 wide) via `batchCsvRows(views, placeOf?)`. `/inventory/batches` gained a per-place `?godown=` deep link, a Godown table column ("never placed" inline), a godown editor field, a "Draw from" narrowing on the FEFO allocator (per-pick place labels), and the CSV Godown column. Nav entry "Godowns" under Masters; ⌘K "Add godown" action → `?new=1`; new `warehouse` and `list` glyphs.
+
+**Traps recorded:**
+- A stored Main row must not be archivable even if localStorage says it is. `loadGodowns` merges the seed with the override and forces `archived: false` — the test that a hand-edited stored Main stays open is what caught a real library bug (it had let Main be closed).
+- A transfer is a split, so `left` and FEFO never change meaning. Re-introducing the moved units as a *new* lot with a negative source move is the one model that keeps the R2-15 invariant, the expired-first rotation, and the batch number's provenance ("which receipt is left") all intact.
+- No import cycle: `godowns.ts` imports `batches.ts`, never the reverse. The per-place allocator filter arrives as a predicate argument (`where?: (b: Batch) => boolean`), so the batch engine stays free of godown knowledge and the automatic invoice hook stays global.
+- `?new=1` and `?godown=` are handled *inside* the async load effect (setState after an await), never a second effect calling a declared-below opener — the repo's React-compiler lint still owns that.
+
+**Method:** 97 assertions in `/tmp/godowns-test.mjs` (registry load/save/upsert/dedupe/validation, reorder putting Main first then active-by-name then archived, archive refusal and unarchive, every transfer-refusal branch, the split's `left` invariant + one negative transfer move + FEFO order preserved, derived per-place stock incl. the unplaced-only-on-Main rule, transfer-history parsing incl. an unknown destination, CSV shape); `batches-test` 78 (updated for the 19-column CSV) · `serials-test` 84 · `orderflow-test` 111 · `commands-test` 42 (new palette assertions for `action:new-godown`, the nav page, and `/inventory/godowns?new=1` resolving through `isKnownHref`) · `registers-test` 21 · `gst-rates` 22 · `portal-test` 82 — all green (8 suites); `tsc` 0; `eslint` 0 on every touched file — `batches/page.tsx`, `godowns/page.tsx`, `nav.ts`, `commands.ts`, `godowns.ts`, `batches.ts`, `Icons.tsx`; `npm run build` 52/52 (50 pages + 2 api) with `○ /inventory/godowns` in the route table.
+
+**Ledger:** **41 pages on the kit, 4 partial, 0 pre-kit** (+3 auth, + public `portal`). **Gap #3 is now fully closed** — batch/expiry (R2-15 B1), serials (R2-15 B2), and multi-godown (R2-17 B1) — the only caveat being the `products.current_stock` rollup, which still needs a real per-godown column and waits for the Phase 14 schema window. Next on the ranked list is gap **#5 (multi-user roles / permissions)**, which is genuinely schema + auth work. Browser pass still blocked by the expired Supabase dev session.
+
+**Commit:** `8188d46`.
+
+### Routes — 50 pages
 ```
 src/app/
 ├── layout.tsx, page.tsx (→ /login), manifest.ts, globals.css, favicon.ico
@@ -440,7 +457,7 @@ src/app/
     ├── sales-orders/{page,[id]}/    purchase-orders/{page,[id]}/  ← order register + document (R2-14 B2)
     ├── bills/  expenses/  credit-notes/  debit-notes/
     ├── payments/page  payments/links/  bank/
-    ├── inventory/{page,reorder,batches,serials}/  ← reorder planner + batch/expiry + serial registers (R2-15)
+    ├── inventory/{page,reorder,batches,serials,godowns}/  ← reorder planner + batch/expiry + serial + godown registers (R2-15, R2-17)
     ├── ledger/  accounting/
     ├── tds/                         ← withholding workpaper
     ├── gst/{page,gstr1,gstr3b,gstr9,gstr4,reconciliation,einvoice,calendar}/
@@ -450,7 +467,7 @@ src/app/
 public/sw.js  public/offline.html
 ```
 
-### Libraries — 35 modules in `src/lib/` + `src/lib/gsp/`
+### Libraries — 36 modules in `src/lib/` + `src/lib/gsp/`
 ```
 supabase.ts  constants.ts  gst-engine.ts  format.ts  words.ts  reports.ts
 gst-rates.ts                                 ← the one GST rate table every picker imports
@@ -464,6 +481,7 @@ gstr4.ts                                      ← composition slabs, CMP-08 quar
 orderflow.ts                                  ← challans / sales orders / purchase orders (localStorage)
 batches.ts                                    ← lots, FEFO drawdown, expiry watch (localStorage)
 serials.ts                                    ← one row per unit, append-only event log, derived warranty (localStorage)
+godowns.ts                                    ← godown registry + transfers as lot splits, per-place stock (localStorage)
 portal.ts                                     ← share-link statements: deflate + base64url in the URL fragment, nothing stored
 pdf-export.ts                                 ← shared html2canvas → jsPDF slice pipeline
 gsp/{index.ts, types.ts, mock.ts}            ← provider adapter, mock transport
@@ -495,7 +513,9 @@ Added after the MVP: `logos`,
 `credit_notes` + `credit_note_items` + `credit_note_sequences`,
 `debit_notes` + `debit_note_items` + `debit_note_sequences`,
 and columns on `products` (`sku`, `minimum_stock`, `opening_stock`).
-`warehouses` is in the schema but never queried — stock is tracked per product.
+`warehouses` is in the schema but never queried — the R2-17 godown register is client-side
+(`taxflow:godowns:<orgId>`), and a product's `current_stock` still has no per-godown column,
+so per-place figures cover the registered batch lots only.
 Scanned bills are drafted in the browser and only reach the database when the user
 saves a real purchase bill; there is no `documents` table.
 
@@ -534,6 +554,7 @@ anything here is either reconstructible from documents or already exported.
 | `taxflow:challan:` · `taxflow:sorder:` · `taxflow:porder:` | order-flow documents + numbering per kind (`challan` / `sales_order` / `purchase_order`) | `/challans`, `/sales-orders`, `/purchase-orders` |
 | `taxflow:batches:` · `taxflow:batchmoves:` | batch lots and their signed movements (FEFO drawdown) | `/inventory/batches`, `create-invoice.ts` |
 | `taxflow:serials:` · `taxflow:serialevents:` | serial units and their append-only event log (issue / return / restock / scrap) | `/inventory/serials` |
+| `taxflow:godowns:` | the godown registry (named places stock is kept in; a virtual `Main` seed holds unplaced lots) | `/inventory/godowns` |
 | `taxflow:palette-recents:` | recent ⌘K hits | `CommandPalette.tsx` |
 
 ---
@@ -654,7 +675,7 @@ node --version
 
 ## Next Steps (Priority Order)
 
-1. **R2-15 — gap #3 — is nearly closed: batch/expiry and serials are shipped; only multi-godown remains.** B1 (`9b7a4c6`) added the batch & expiry register with FEFO consumption wired into `create-invoice.ts`; B2 (`e2a94d4`) added the serial-number register — one row per unit, append-only event log, warranty derived from the latest sale, Issue carrying the invoice number because no invoice can name a physical unit. Both closed on ADR-013 (owner bookkeeping → localStorage, no tables). What remains of the gap is **multi-godown only**, which does need real columns and therefore waits for the Phase 14 schema window instead of being faked. Then gaps #4–#12 by rank. R2-14 is complete (B1 `f982aed`, B2 `b851818`, B3 `94b3c1c` — gap #2 closed end-to-end), and R2-12's design-system pass is complete — 4 lists (`bills`, `credit-notes`, `debit-notes`, `quotations`) still hand-code their chrome and get migrated when next touched.
+1. **Gap #3 is closed.** R2-15 B1 (`9b7a4c6`) shipped the batch & expiry register with FEFO consumption wired into `create-invoice.ts`; R2-15 B2 (`e2a94d4`) shipped the serial-number register; R2-17 B1 (`8188d46`) closed the last third — **multi-godown** — with a client-side godown registry where a transfer is a lot split (source identity carried to a new destination lot + one negative `kind:'transfer'` move), a virtual `Main` seed reads every unplaced lot, and `/inventory/godowns` shows per-place stock. All three closed on ADR-013 (owner bookkeeping → localStorage, no tables); the one honest gap left is the `products.current_stock` per-place rollup, which needs a real column and waits for Phase 14. The next item on the ranked list is **gap #5 (multi-user roles / permissions)** — genuinely schema + auth work, paired with the Phase 14 security pass; then #6–#12 by rank. R2-14 is complete (B1 `f982aed`, B2 `b851818`, B3 `94b3c1c` — gap #2 closed end-to-end), R2-16 B1 opened gap #4 with share-link statements (`ccea4d5`), and R2-12's design-system pass is complete — 4 lists (`bills`, `credit-notes`, `debit-notes`, `quotations`) still hand-code their chrome and get migrated when next touched.
 2. **The unfinished browser pass** — GST batch 6 (`dd7d449`) and `gst/gstr4` (`da672a2`) were verified statically only; the Supabase dev session is expired, so nothing was measured at 355px or 1440px. Needs the user to sign in at `localhost:3000`.
 3. **Phase 14 — Security**: generated Supabase types, tightened dashboard RLS policies, audit log, multi-account isolation test. Do this before onboarding a real customer.
 4. **Real GSP integration** once a provider is chosen (ADR-016) — plus email invoices and multi-user, which need the pending decisions above.
