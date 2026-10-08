@@ -449,7 +449,7 @@ export default function GSTDashboardPage() {
       </Card>
 
       {/* Reports */}
-      <div className="tf-g-3 gh-links">
+      <div className="tf-g-4 gh-links">
         <Link href="/gst/gstr1" className="gh-link">
           <Card hover>
             <div className="gh-link-head">
@@ -480,6 +480,17 @@ export default function GSTDashboardPage() {
             </div>
             <div className="gh-link-sub">
               Annual tables, the 180-day credit watchlist and books against filed 3B.
+            </div>
+          </Card>
+        </Link>
+        <Link href="/gst/gstr4" className="gh-link">
+          <Card hover>
+            <div className="gh-link-head">
+              <Icon name="percent" size={17} style={{ color: 'var(--amber)' }} />
+              <span className="gh-link-title">GSTR-4 / CMP-08 Workpaper</span>
+            </div>
+            <div className="gh-link-sub">
+              Composition slab tax, the 2.5% deemed debit and the bills that end the scheme.
             </div>
           </Card>
         </Link>

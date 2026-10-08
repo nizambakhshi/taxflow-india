@@ -73,7 +73,7 @@ export function generateEvents(fyStart: number, profile: Profile = DEFAULT_PROFI
           category: 'gst', due: iso(q.y, q.m + 1, 18),
           period: `for ${quarterLabel(supply, i)}`,
           description: 'Quarterly composition-scheme tax payment and return.',
-          href: '/gst/gstr3b',
+          href: '/gst/gstr4',
           penalty: { lateFeePerDay: 50, lateFeeCap: 5000, interestPct: 18, note: '₹50/day, and 18% interest on the tax short-paid.' },
         })
       }
@@ -207,10 +207,11 @@ export function generateEvents(fyStart: number, profile: Profile = DEFAULT_PROFI
 
   if (profile.filing === 'composition') {
     push({
-      key: `gstr4-${nextYear + 1}`, form: 'GSTR-4', title: 'GSTR-4 annual return',
-      category: 'gst', due: iso(nextYear + 1, 4, 30),
+      key: `gstr4-${nextYear}`, form: 'GSTR-4', title: 'GSTR-4 annual return',
+      category: 'gst', due: iso(nextYear, 4, 30),
       period: `for FY ${fyStart}-${String(nextYear).slice(2)}`,
       description: 'Annual statement for composition dealers.',
+      href: '/gst/gstr4',
       penalty: { lateFeePerDay: 50, lateFeeCap: 5000, note: '₹50/day, and 18% interest on tax unpaid.' },
     })
   }
