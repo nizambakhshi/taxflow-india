@@ -9,6 +9,8 @@ import {
   type PartySummary,
 } from '@/lib/party-ledger'
 import { changePct, formatDateIN, formatCompactINR } from '@/lib/format'
+import { buildPortalPayload, encodePortal, portalUrl } from '@/lib/portal'
+import { buildWhatsAppLink, loadUpiSettings, validateVpa } from '@/lib/payments'
 import {
   Badge, Button, Card, EmptyState, PageHeader, Segmented, StatCard, StatRow,
 } from '@/components/ui'
@@ -16,6 +18,11 @@ import Icon from '@/components/Icons'
 import Link from 'next/link'
 
 const DAY = 86400000
+
+type ShareState =
+  | { stage: 'busy' }
+  | { stage: 'error'; message: string }
+  | { stage: 'ready'; url: string; closing: number; openCount: number; hasUpi: boolean; dropped: number }
 
 function iso(d: Date) { return d.toISOString().split('T')[0] }
 
@@ -45,6 +52,8 @@ export default function LedgerPage() {
   const [kindFilter, setKindFilter] = useState('all')
   const [preset, setPreset] = useState('fy')
   const [range, setRange] = useState(() => presetRange('fy'))
+  const [share, setShare] = useState<ShareState | null>(null)
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -59,7 +68,7 @@ export default function LedgerPage() {
 
       const oid = membership.organization_id
       setOrgId(oid)
-      setOrgName((membership.organizations as any)?.name || '')
+      setOrgName((membership.organizations as { name?: string } | null)?.name || '')
 
       const [inv, bills, cn, dn, pay, voidInv, voidBills, cust, vend, reg] = await Promise.all([
         supabase.from('invoices').select('*').eq('organization_id', oid).neq('status', 'cancelled'),
@@ -129,6 +138,55 @@ export default function LedgerPage() {
       statementToCsv(selected.party, statement, { from: range.from, to: range.to, business: orgName, gstin: orgGstin }),
     )
   }
+
+  async function openShare() {
+    if (!selected || !statement) return
+    setCopied(false)
+    setShare({ stage: 'busy' })
+    try {
+      const s = loadUpiSettings(orgId)
+      const upi = s.vpa.trim() && !validateVpa(s.vpa)
+        ? { vpa: s.vpa.trim(), payeeName: (s.payeeName || orgName).trim() }
+        : null
+      const payload = buildPortalPayload({
+        businessName: orgName,
+        businessGstin: orgGstin,
+        upi,
+        party: { name: selected.party.name, kind: selected.party.kind, gstin: selected.party.gstin },
+        statement,
+        from: range.from,
+        to: range.to,
+      })
+      const token = await encodePortal(payload)
+      setShare({
+        stage: 'ready',
+        url: portalUrl(token, window.location.origin),
+        closing: payload.totals.closing,
+        openCount: payload.rows.filter(r => r.type === 'invoice' && r.due > 0).length,
+        hasUpi: Boolean(upi),
+        dropped: payload.dropped,
+      })
+    } catch {
+      setShare({ stage: 'error', message: 'Could not build the share link — please try again.' })
+    }
+  }
+
+  async function copyShareUrl(url: string) {
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1600)
+    } catch {
+      /* clipboard blocked — the input below is selectable by hand */
+    }
+  }
+
+  const shareWa = share?.stage === 'ready' && selected?.party.phone
+    ? buildWhatsAppLink(
+        selected.party.phone,
+        `Hi ${selected.party.name}, here is your account statement from ${orgName || 'us'} — ₹${formatINR(Math.abs(share.closing))} ${share.closing > 0 ? 'outstanding' : share.closing < 0 ? 'in credit' : 'settled'}. View it here: ${share.url}`,
+      )
+    : null
 
   return (
     <div className="page-container" style={{ maxWidth: 1320 }}>
@@ -226,9 +284,14 @@ export default function LedgerPage() {
                   </div>
                 </div>
                 <div className="tf-row tf-wrap no-print" style={{ gap: 8 }}>
+                  {selected.party.kind === 'customer' && (
+                    <Button variant="primary" size="sm" icon="link" onClick={openShare} disabled={share?.stage === 'busy'}>
+                      Portal link
+                    </Button>
+                  )}
                   <Button variant="ghost" size="sm" icon="download" onClick={exportCsv}>CSV</Button>
                   <Button variant="ghost" size="sm" icon="printer" onClick={() => window.print()}>Print</Button>
-                  <Button variant="primary" size="sm" icon="chat" href="/payments/links">Remind</Button>
+                  <Button variant={selected.party.kind === 'customer' ? 'ghost' : 'primary'} size="sm" icon="chat" href="/payments/links">Remind</Button>
                 </div>
               </div>
 
@@ -342,6 +405,96 @@ export default function LedgerPage() {
         )}
       </div>
 
+      {/* ── Share statement (portal link) ── */}
+      {share && (
+        <div
+          className="pt-share-scrim no-print" role="dialog" aria-modal="true" aria-label="Share statement"
+          onClick={e => { if (e.target === e.currentTarget) setShare(null) }}
+        >
+          <div className="pt-share-modal">
+            <div className="pt-share-head">
+              <div>
+                <h2>Share statement</h2>
+                <p>
+                  A customer-facing copy of this statement, opened from a link — no sign-in
+                  for {selected?.party.name ?? 'the party'} and nothing stored on any server.
+                </p>
+              </div>
+              <button type="button" className="pt-share-close" onClick={() => setShare(null)} aria-label="Close">
+                <Icon name="x" size={16} />
+              </button>
+            </div>
+
+            {share.stage === 'busy' && (
+              <div className="pt-share-busy" aria-busy="true">
+                <div className="pt-share-bar" style={{ width: '62%' }} />
+                <div className="pt-share-bar" style={{ width: '88%' }} />
+              </div>
+            )}
+
+            {share.stage === 'error' && (
+              <div className="pt-share-alert" role="alert">
+                <Icon name="alert" size={14} strokeWidth={2.2} />{share.message}
+              </div>
+            )}
+
+            {share.stage === 'ready' && (
+              <>
+                <div className="pt-share-stats">
+                  <span>
+                    <b>₹{formatINR(Math.abs(share.closing))}</b>{' '}
+                    {share.closing > 0 ? 'outstanding' : share.closing < 0 ? 'in credit' : 'settled'}
+                  </span>
+                  <span>·</span>
+                  <span>{share.openCount} open {share.openCount === 1 ? 'invoice' : 'invoices'}</span>
+                  {share.dropped > 0 && (<><span>·</span><span>{share.dropped} older entries folded in</span></>)}
+                </div>
+
+                <label className="pt-share-field">
+                  <span>Statement link</span>
+                  <div className="pt-share-linkrow">
+                    <input
+                      readOnly
+                      className="pt-share-input"
+                      value={share.url}
+                      onFocus={e => e.target.select()}
+                      aria-label="Statement link"
+                    />
+                    <Button variant="primary" size="sm" icon={copied ? 'check' : 'clipboard'} onClick={() => copyShareUrl(share.url)}>
+                      {copied ? 'Copied' : 'Copy'}
+                    </Button>
+                  </div>
+                </label>
+
+                {!share.hasUpi && (
+                  <div className="pt-share-hint">
+                    No UPI ID configured — the statement will open without pay buttons.
+                    Add one on the Payments → links page and share again to include them.
+                  </div>
+                )}
+
+                <div className="pt-share-actions">
+                  {shareWa?.link ? (
+                    <a className="tf-btn tf-btn-primary tf-btn-sm" href={shareWa.link} target="_blank" rel="noreferrer">
+                      <Icon name="chat" size={13} strokeWidth={2} /> WhatsApp
+                    </a>
+                  ) : null}
+                  <a className="tf-btn tf-btn-ghost tf-btn-sm" href={share.url} target="_blank" rel="noreferrer">
+                    <Icon name="link" size={13} strokeWidth={2} /> Open preview
+                  </a>
+                </div>
+
+                <p className="pt-share-note">
+                  The whole statement rides inside the link itself — up to 120 entries; older
+                  ones fold into the opening balance. Send it however you like; there is nothing
+                  to revoke, because nothing was kept.
+                  {!shareWa?.link ? ' No phone on file for WhatsApp — copy the link instead.' : ''}                </p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       <style>{`
         .ledger-grid { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 1rem; align-items: start; }
         .ledger-list { overflow: hidden; max-height: calc(100vh - 120px); display: flex; flex-direction: column; }
@@ -358,6 +511,66 @@ export default function LedgerPage() {
         .date-input {
           font-family: inherit; font-size: 12px; padding: 6px 8px;
           border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink-2);
+        }
+        /* ── share-statement modal ── */
+        .pt-share-scrim {
+          position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45);
+          display: flex; align-items: center; justify-content: center;
+          z-index: 70; padding: 1rem;
+        }
+        .pt-share-modal {
+          background: var(--surface); border-radius: var(--radius-lg);
+          padding: 1.4rem 1.5rem; width: 100%; max-width: 560px;
+          max-height: 90vh; overflow-y: auto; box-shadow: var(--shadow-lg);
+          display: flex; flex-direction: column; gap: 12px;
+        }
+        .pt-share-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+        .pt-share-head h2 { font-size: 17px; font-weight: 650; color: var(--ink); }
+        .pt-share-head p { font-size: 12px; color: var(--muted); margin-top: 2px; max-width: 430px; line-height: 1.5; }
+        .pt-share-close {
+          background: none; border: none; color: var(--faint); cursor: pointer;
+          padding: 4px; border-radius: 6px; flex-shrink: 0;
+        }
+        .pt-share-close:hover { background: var(--slate-soft); color: var(--ink-2); }
+        .pt-share-busy { display: flex; flex-direction: column; gap: 8px; padding: 4px 0; }
+        .pt-share-bar {
+          height: 12px; border-radius: 6px;
+          background: linear-gradient(90deg, var(--bg-elevated), #f3f6fb, var(--bg-elevated));
+          background-size: 200% 100%; animation: pt-share-shimmer 1.4s ease infinite;
+        }
+        @keyframes pt-share-shimmer {
+          from { background-position: 200% 0; }
+          to { background-position: -200% 0; }
+        }
+        .pt-share-alert {
+          display: flex; align-items: center; gap: 8px; font-size: 12.5px;
+          color: var(--red); background: var(--red-soft); border-radius: 10px; padding: 9px 12px;
+        }
+        .pt-share-stats {
+          display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline;
+          font-size: 12.5px; color: var(--ink-2);
+          background: var(--surface-2); border: 1px solid var(--line);
+          border-radius: 10px; padding: 9px 12px;
+        }
+        .pt-share-field { display: flex; flex-direction: column; gap: 4px; }
+        .pt-share-field > span { font-size: 12px; font-weight: 550; color: var(--ink-2); }
+        .pt-share-linkrow { display: flex; gap: 8px; }
+        .pt-share-input {
+          flex: 1; min-width: 0; font-family: ui-monospace, monospace; font-size: 12px;
+          padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px;
+          background: var(--surface-2); color: var(--ink-2); outline: none;
+        }
+        .pt-share-hint {
+          font-size: 12px; color: var(--amber); background: var(--amber-soft);
+          border: 1px solid color-mix(in srgb, var(--amber) 22%, white);
+          border-radius: 9px; padding: 8px 10px;
+        }
+        .pt-share-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        .pt-share-note { font-size: 11.5px; color: var(--faint); line-height: 1.55; }
+        @media (max-width: 640px) {
+          .pt-share-scrim { align-items: flex-end; padding: 0; }
+          .pt-share-modal { max-width: none; border-radius: 16px 16px 0 0; max-height: 92vh; padding: 1.1rem 1.15rem; }
+          .pt-share-linkrow { flex-direction: column; }
         }
         @media (max-width: 1024px) {
           .ledger-grid { grid-template-columns: minmax(0, 1fr); }
