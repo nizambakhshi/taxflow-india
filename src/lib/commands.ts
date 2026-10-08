@@ -354,6 +354,16 @@ export function buildActionCommands(): Command[] {
       keywords: 'create add invoice sale bill new',
     },
     {
+      id: 'action:new-recurring',
+      kind: 'action',
+      label: 'New recurring invoice',
+      sublabel: 'Set up a retainer, rent or AMC',
+      href: '/recurring?new=1',
+      icon: 'repeat',
+      badge: 'Action',
+      keywords: 'create add recurring invoice schedule subscription retainer rent amc monthly periodic auto',
+    },
+    {
       id: 'action:counter-sale',
       kind: 'action',
       label: 'Counter sale',

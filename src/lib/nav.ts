@@ -24,6 +24,7 @@ export const NAV_ITEMS: NavSection[] = [
     section: 'Sales',
     items: [
       { label: 'Invoices', href: '/invoices', icon: 'invoice' },
+      { label: 'Recurring Invoices', href: '/recurring', icon: 'repeat' },
       { label: 'Counter Sale', href: '/pos', icon: 'pos' },
       { label: 'Quotations', href: '/quotations', icon: 'clipboard' },
       { label: 'Sales Orders', href: '/sales-orders', icon: 'bag' },

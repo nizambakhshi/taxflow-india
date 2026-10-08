@@ -261,6 +261,17 @@ const P: Record<string, React.ReactNode> = {
     <path d="M8 21v-6.5h8V21" />
     <path d="M8 17.5h8" />
   </>),
+  repeat: (<>
+    <polyline points="17 2 21 6 17 10" />
+    <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+    <polyline points="7 22 3 18 7 14" />
+    <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+  </>),
+  pause: (<>
+    <rect x="6" y="4" width="4" height="16" rx="1.2" />
+    <rect x="14" y="4" width="4" height="16" rx="1.2" />
+  </>),
+  play: <polygon points="6 3 20 12 6 21" />,
 }
 
 export type IconName = keyof typeof P
