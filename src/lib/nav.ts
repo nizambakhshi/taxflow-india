@@ -26,6 +26,7 @@ export const NAV_ITEMS: NavSection[] = [
       { label: 'Invoices', href: '/invoices', icon: 'invoice' },
       { label: 'Counter Sale', href: '/pos', icon: 'pos' },
       { label: 'Quotations', href: '/quotations', icon: 'clipboard' },
+      { label: 'Delivery Challans', href: '/challans', icon: 'truck' },
       { label: 'Credit Notes', href: '/credit-notes', icon: 'credit-note' },
       { label: 'Debit Notes', href: '/debit-notes', icon: 'debit-note' },
     ]

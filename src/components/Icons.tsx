@@ -214,6 +214,16 @@ const P: Record<string, React.ReactNode> = {
     <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
     <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
   </>),
+  truck: (<>
+    <rect x="2" y="6" width="12" height="11" rx="1" />
+    <path d="M14 9h3.6l2.4 3v5h-6" />
+    <circle cx="7" cy="17.5" r="2" />
+    <circle cx="17" cy="17.5" r="2" />
+  </>),
+  edit: (<>
+    <path d="M12 20h9" />
+    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
+  </>),
 }
 
 export type IconName = keyof typeof P

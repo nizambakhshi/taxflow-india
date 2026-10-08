@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase'
 import { formatINR, numberToWords } from '@/lib/gst-engine'
 import { Button } from '@/components/ui'
 import Icon from '@/components/Icons'
+import { downloadElementAsPdf } from '@/lib/pdf-export'
 import {
   INVOICE_TEMPLATES, InvoiceDocument, loadInvoiceTemplate, saveInvoiceTemplate,
   type InvoiceTemplate,
@@ -103,55 +104,8 @@ export default function InvoiceDetailPage() {
   async function downloadPDF() {
     setDownloading(true)
     try {
-      const { default: jsPDF } = await import('jspdf')
-      const { default: html2canvas } = await import('html2canvas')
-
-      // We capture the padded wrapper so margins are baked in
-      const element = document.getElementById('invoice-capture')
-      if (!element) return
-
-      const canvas = await html2canvas(element, {
-        // 2x gives ~215 DPI at the printed width. Higher scales cost 16x the
-        // bytes for no visible gain, and a 36 MB PDF cannot be emailed.
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#ffffff',
-        windowWidth: element.scrollWidth,
-        windowHeight: element.scrollHeight,
-      })
-
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4',
-      })
-
-      const pageWidth = pdf.internal.pageSize.getWidth()   // 210mm
-      const pageHeight = pdf.internal.pageSize.getHeight() // 297mm
-      const margin = 15                                     // 15mm on all sides
-      const imgWidth = pageWidth - margin * 2              // 180mm usable
-      const usableHeight = pageHeight - margin * 2
-      const pxPerMm = canvas.width / imgWidth
-      const slicePx = Math.floor(pxPerMm * usableHeight)
-
-      // One canvas slice per page: embedding the whole image and clipping it
-      // would repeat every byte once per page.
-      for (let drawn = 0, page = 0; drawn < canvas.height; drawn += slicePx, page++) {
-        const h = Math.min(slicePx, canvas.height - drawn)
-        const slice = document.createElement('canvas')
-        slice.width = canvas.width
-        slice.height = h
-        const ctx = slice.getContext('2d')
-        if (!ctx) throw new Error('canvas unavailable')
-        ctx.fillStyle = '#ffffff'
-        ctx.fillRect(0, 0, slice.width, h)
-        ctx.drawImage(canvas, 0, drawn, canvas.width, h, 0, 0, canvas.width, h)
-
-        if (page > 0) pdf.addPage()
-        pdf.addImage(slice.toDataURL('image/jpeg', 0.94), 'JPEG', margin, margin, imgWidth, h / pxPerMm)
-      }
-
-      pdf.save(`${invoice.invoice_number}.pdf`)
+      // Captures the padded wrapper so margins are baked in — see pdf-export.ts.
+      await downloadElementAsPdf('invoice-capture', `${invoice.invoice_number}.pdf`)
     } catch (err) {
       console.error('PDF error:', err)
       alert('PDF download failed. Please try printing instead.')
