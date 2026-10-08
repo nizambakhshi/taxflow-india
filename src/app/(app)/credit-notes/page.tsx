@@ -11,6 +11,7 @@ import {
   formatINR, type LineItemResult
 } from '@/lib/gst-engine'
 import { INDIAN_STATES } from '@/lib/constants'
+import { GST_RATES } from '@/lib/gst-rates'
 
 const inputStyle = {
   width: '100%', padding: '8px 10px',
@@ -521,7 +522,7 @@ function CreditNotesPageInner() {
                     <div data-label="GST %">
                       <select style={{ ...inputStyle, fontSize: '12px', cursor: 'pointer' }} value={item.gst_rate}
                         onChange={e => { const u = [...lineItems]; u[index] = { ...u[index], gst_rate: e.target.value }; setLineItems(u) }}>
-                        {[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}
+                        {GST_RATES.map(r => <option key={r} value={r}>{r}%</option>)}
                       </select>
                     </div>
                     <div data-label="Amount" style={{

@@ -11,6 +11,7 @@ import {
   type LineItemResult,
 } from '@/lib/gst-engine'
 import { INDIAN_STATES } from '@/lib/constants'
+import { GST_RATES } from '@/lib/gst-rates'
 import { createPurchaseBill } from '@/lib/create-bill'
 import {
   extractBill,
@@ -722,7 +723,7 @@ export default function ScanBillPage() {
                 <div data-label="GST">
                   <select value={line.gst_rate} onChange={e => updateLine(line.key, 'gst_rate', e.target.value)}
                     style={{ ...inputStyle, fontSize: '12px' }}>
-                    {[0, 3, 5, 12, 18, 28].map(r => <option key={r} value={String(r)}>{r}%</option>)}
+                    {GST_RATES.map(r => <option key={r} value={String(r)}>{r}%</option>)}
                   </select>
                 </div>
                 <div data-label="Taxable" style={{ fontSize: '12.5px', color: '#334155', textAlign: 'right' }}>

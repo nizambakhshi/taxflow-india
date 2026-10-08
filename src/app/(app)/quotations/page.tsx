@@ -11,6 +11,7 @@ import {
   formatINR, numberToWords, type LineItemResult
 } from '@/lib/gst-engine'
 import { INDIAN_STATES } from '@/lib/constants'
+import { GST_RATES } from '@/lib/gst-rates'
 
 const inputStyle = {
   width: '100%', padding: '8px 10px',
@@ -795,7 +796,7 @@ function QuotationsPageInner() {
                     </div>
                     <div data-label="GST %">
                       <select style={{ ...inputStyle, fontSize: '12px', cursor: 'pointer' }} value={item.gst_rate} onChange={e => updateLine(index, 'gst_rate', e.target.value)}>
-                        {[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}
+                        {GST_RATES.map(r => <option key={r} value={r}>{r}%</option>)}
                       </select>
                     </div>
                     <div data-label="Amount" style={{ padding: '8px 10px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '12px', fontWeight: '500', textAlign: 'right' as const }}>

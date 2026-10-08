@@ -214,6 +214,15 @@ export function generateEvents(fyStart: number, profile: Profile = DEFAULT_PROFI
       href: '/gst/gstr4',
       penalty: { lateFeePerDay: 50, lateFeeCap: 5000, note: '₹50/day, and 18% interest on tax unpaid.' },
     })
+  } else {
+    push({
+      key: `cmp02-${nextYear}`, form: 'CMP-02', title: 'Composition scheme opt-in',
+      category: 'gst', due: iso(nextYear, 3, 31),
+      period: `to switch to composition for FY ${nextYear}-${String(nextYear + 1).slice(2)}`,
+      description: 'Only if you want to move to the composition scheme — goods up to ₹1.5 crore, services up to ₹50 lakh (₹75 lakh / ₹25 lakh in the special-category states). A composition dealer cannot collect GST or claim input credit.',
+      href: '/gst/gstr4',
+      penalty: { note: 'Miss 31 March and the scheme cannot start until the following year.' },
+    })
   }
 
   return events.sort((a, b) => a.due.localeCompare(b.due))

@@ -8,9 +8,9 @@ import { cameraScanSupported, validateBarcode } from '@/lib/barcode'
 import { Badge, Button, Card, EmptyState, PageHeader, SearchInput, Segmented, StatCard } from '@/components/ui'
 import Icon from '@/components/Icons'
 import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
+import { GST_RATES } from '@/lib/gst-rates'
 
 const UNITS = ['NOS', 'KGS', 'MTR', 'LTR', 'SQF', 'HRS', 'DYS', 'PCS', 'BOX', 'PKT', 'SET', 'PAI']
-const GST_RATES = [0, 5, 12, 18, 28]
 
 const whole = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 })
 const money = (v: number | string | null | undefined) => `₹${whole.format(Number(v ?? 0) || 0)}`

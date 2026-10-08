@@ -14,6 +14,7 @@ import {
 } from '@/lib/gst-engine'
 import { createPurchaseBill } from '@/lib/create-bill'
 import { INDIAN_STATES } from '@/lib/constants'
+import { GST_RATES } from '@/lib/gst-rates'
 
 const inputStyle = {
   width: '100%', padding: '8px 10px',
@@ -749,7 +750,7 @@ function BillsPageInner() {
                       <select style={{ ...inputStyle, fontSize: '12px', cursor: 'pointer' }}
                         value={item.gst_rate}
                         onChange={e => updateLine(index, 'gst_rate', e.target.value)}>
-                        {[0, 5, 12, 18, 28].map(r => (
+                        {GST_RATES.map(r => (
                           <option key={r} value={r}>{r}%</option>
                         ))}
                       </select>

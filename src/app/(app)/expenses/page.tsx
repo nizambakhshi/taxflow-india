@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { formatDateIN } from '@/lib/format'
+import { GST_RATES } from '@/lib/gst-rates'
 import { Badge, Button, Card, EmptyState, PageHeader, SearchInput, StatCard } from '@/components/ui'
 import Icon from '@/components/Icons'
 
@@ -33,7 +34,6 @@ const EXPENSE_CATEGORIES = [
 ]
 
 const PAYMENT_MODES = ['Cash', 'Bank Transfer', 'UPI', 'Credit Card', 'Debit Card', 'Cheque']
-const GST_RATES = [0, 5, 12, 18, 28]
 
 const num = (v: number | string | null | undefined) => Number(v ?? 0) || 0
 const whole = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 })

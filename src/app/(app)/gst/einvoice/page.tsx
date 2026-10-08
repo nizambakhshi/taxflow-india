@@ -451,8 +451,10 @@ export default function EInvoicePage() {
         <span>
           <strong>How this works:</strong> e-invoicing is mandatory for B2B invoices once aggregate turnover
           crosses ₹5 crore. Each row below builds the standard <code>Ctx 1.10</code> JSON exactly as NIC expects it.
-          Upload or paste that file into your GSP / the e-invoice portal to sign it; the portal returns the
-          <strong> IRN and QR code</strong> you print on the invoice. Nothing leaves this browser until you send it.
+          Above ₹10 crore turnover every invoice must be reported within <strong>30 days</strong> of its date
+          (since 1 April 2025) — miss that window and the IRN cannot be generated at all, which costs your buyer
+          the input credit. Upload or paste the file into your GSP / the e-invoice portal to sign it; the portal
+          returns the <strong>IRN and QR code</strong> you print on the invoice. Nothing leaves this browser until you send it.
         </span>
       </div>
 

@@ -383,6 +383,12 @@ export default function RegistersPage() {
           </div>
         )}
 
+        {tab === 'hsn' && (
+          <div style={{ padding: '0.7rem 1rem', fontSize: 12, color: 'var(--ink-2)', background: 'var(--surface-2)', borderTop: '1px solid var(--line-soft)' }}>
+            GSTR-1 Table 12 takes 4-digit HSN codes up to ₹5 crore turnover and 6 digits above it; exports and imports go in at 8 digits.
+          </div>
+        )}
+
         {truncated && (
           <div style={{ padding: '0.7rem 1rem', fontSize: 12, color: 'var(--amber)', background: 'var(--amber-soft)', borderTop: '1px solid #fde68a' }}>
             Over 2,000 documents matched — figures cover the newest 2,000 only. Narrow the period for a complete register.

@@ -13,6 +13,8 @@
 // pre-fill instead of a guess.
 // =============================================
 
+// Detection list, not a picker list — see src/lib/gst-rates.ts for why this one
+// omits the 0.25% rough-diamond rate (it is inside our rounding tolerance).
 export const GST_RATES = [0, 3, 5, 12, 18, 28, 40]
 
 const INDIAN_STATES: Record<string, string> = {

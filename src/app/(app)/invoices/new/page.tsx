@@ -13,6 +13,7 @@ import {
   type LineItemResult
 } from '@/lib/gst-engine'
 import { INDIAN_STATES } from '@/lib/constants'
+import { GST_RATES } from '@/lib/gst-rates'
 import { queueOfflineInvoice, isNetworkError } from '@/lib/outbox'
 import { createInvoice } from '@/lib/create-invoice'
 
@@ -591,7 +592,7 @@ export default function NewInvoicePage() {
               <div data-label="GST %">
                 <select style={{ ...inputStyle, cursor: 'pointer' }} value={item.gst_rate}
                   onChange={e => updateLineItem(index, 'gst_rate', e.target.value)}>
-                  {[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}
+                  {GST_RATES.map(r => <option key={r} value={r}>{r}%</option>)}
                 </select>
               </div>
 
