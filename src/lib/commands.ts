@@ -403,6 +403,16 @@ export function buildActionCommands(): Command[] {
       badge: 'Action',
       keywords: 'create add batch lot expiry stock receive inventory',
     },
+    {
+      id: 'action:new-serial',
+      kind: 'action',
+      label: 'Add serial numbers',
+      sublabel: 'Register units by their serials',
+      href: '/inventory/serials?new=1',
+      icon: 'hash',
+      badge: 'Action',
+      keywords: 'create add serial number imei unit register inventory warranty',
+    },
   ]
 }
 

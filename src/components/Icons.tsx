@@ -234,6 +234,19 @@ const P: Record<string, React.ReactNode> = {
     <rect x="8" y="2" width="8" height="4" rx="1" />
     <path d="M9 13l2 2 4-4" />
   </>),
+  hash: (<>
+    <line x1="4" y1="9" x2="20" y2="9" />
+    <line x1="4" y1="15" x2="20" y2="15" />
+    <line x1="10" y1="3" x2="8" y2="21" />
+    <line x1="16" y1="3" x2="14" y2="21" />
+  </>),
+  undo: (<>
+    <path d="M3 7v6h6" />
+    <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6.5 2.8L3 13" />
+  </>),
+  shield: (<>
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+  </>),
 }
 
 export type IconName = keyof typeof P
