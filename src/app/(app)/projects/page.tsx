@@ -850,7 +850,7 @@ function ProjectsPageInner() {
                         </div>
                         {open && (
                           <div className="pj2-detail">
-                            <p className="pj2-said"><Icon name="clock" size={13} />{watchSentence(g)}</p>
+                            <p className={`pj2-said is-${w.tone}`}><Icon name="clock" size={13} />{watchSentence(g)}</p>
                             {g.unpriced_hours > 0 && (
                               <p className="pj2-said is-flat"><Icon name="compare" size={13} />{hours(g.unpriced_hours)} of this month have no rate recorded anywhere, so no rupee figure is stated for them.</p>
                             )}
@@ -1176,20 +1176,22 @@ function ProjectsPageInner() {
 
         .pj-notice, .pj-alert, .pj-note { display: flex; align-items: flex-start; gap: 8px; border-radius: 12px;
           padding: 10px 12px; font-size: 12.5px; line-height: 1.55; margin-bottom: 12px; }
-        .pj-notice { background: var(--green-soft); color: #065f46; border: 1px solid #a7f3d0; }
-        .pj-notice.is-bad { background: var(--red-soft); color: #991b1b; border-color: #fecaca; }
+        .pj-notice { background: var(--green-soft); color: var(--green); border: 1px solid color-mix(in srgb, var(--green) 22%, white); }
+        .pj-notice.is-bad { background: var(--red-soft); color: var(--red); border-color: color-mix(in srgb, var(--red) 22%, white); }
         .pj-notice-x { margin-left: auto; background: none; border: none; color: inherit; cursor: pointer; padding: 2px; min-height: 0; opacity: .7; }
         .pj-notice-x:hover { opacity: 1; }
-        .pj-alert { background: var(--red-soft); color: #991b1b; border: 1px solid #fecaca; }
-        .pj-note { background: var(--brand-soft); color: var(--ink-2); border: 1px solid #dbeafe; }
-        .pj-note.is-hot { background: var(--amber-soft); color: #b45309; border-color: #fde68a; }
+        .pj-alert { background: var(--red-soft); color: var(--red); border: 1px solid color-mix(in srgb, var(--red) 22%, white); }
+        .pj-note { background: var(--brand-soft); color: var(--ink-2); border: 1px solid color-mix(in srgb, var(--brand) 22%, white); }
+        .pj-note.is-hot { background: var(--amber-soft); color: var(--amber); border-color: color-mix(in srgb, var(--amber) 25%, white); }
+        .pj-note a { color: var(--brand); }
+        .pj-note.is-hot a, .pj-note.is-hot strong { color: inherit; }
         .pj-note em { font-style: normal; font-weight: 650; }
         .pj-inline { background: none; border: none; color: var(--brand); cursor: pointer; font-size: inherit; padding: 0; text-decoration: underline; min-height: 0; }
 
         .pj-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 14px; }
         .pj-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px;
           box-shadow: var(--shadow-xs); display: flex; flex-direction: column; gap: 11px; }
-        .pj-card.is-flagged { border-color: #fdba74; }
+        .pj-card.is-flagged { border-color: color-mix(in srgb, var(--amber) 55%, white); }
         .pj-card.is-archived { opacity: .72; }
         .pj-card-head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
         .pj-card-title { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
@@ -1207,8 +1209,8 @@ function ProjectsPageInner() {
         .pj-findings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
         .pj-finding { display: flex; gap: 7px; font-size: 12px; line-height: 1.5; border-radius: 9px; padding: 7px 9px; align-items: flex-start; }
         .pj-finding svg { flex-shrink: 0; margin-top: 2px; }
-        .pj-finding.is-red { background: var(--red-soft); color: #991b1b; }
-        .pj-finding.is-amber { background: var(--amber-soft); color: #b45309; }
+        .pj-finding.is-red { background: var(--red-soft); color: var(--red); }
+        .pj-finding.is-amber { background: var(--amber-soft); color: var(--amber); }
         .pj-finding.is-grey { background: var(--slate-soft); color: var(--muted); }
 
         .pj-card-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; }
@@ -1257,16 +1259,19 @@ function ProjectsPageInner() {
           color: var(--faint); border-bottom: 1px solid var(--line); min-width: 860px; }
         .pj2-wrap { border-bottom: 1px solid var(--line-soft); }
         .pj2-wrap:last-child { border-bottom: none; }
-        .pj2-wrap.is-hot { background: #fff9f2; }
+        .pj2-wrap.is-hot { background: color-mix(in srgb, var(--amber) 5%, white); }
         .pj2-tr { display: grid; grid-template-columns: subgrid; padding: 10px 12px; min-width: 860px; }
         .pj2-cols span { font-size: 12.5px; color: var(--ink-2); }
         .pj2-lead strong { display: block; font-size: 12.5px; color: var(--ink); }
         .pj2-lead em { font-style: normal; font-size: 11px; color: var(--muted); }
         .pj2-detail { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 9px; }
-        .pj2-said { display: flex; gap: 7px; align-items: flex-start; font-size: 12px; line-height: 1.55; color: #b45309;
-          background: var(--amber-soft); border-left: 3px solid var(--amber); border-radius: 8px; padding: 8px 11px; margin: 0; }
+        .pj2-said { display: flex; gap: 7px; align-items: flex-start; font-size: 12px; line-height: 1.55; color: var(--ink-2);
+          background: var(--surface-2); border-left: 3px solid var(--faint); border-radius: 8px; padding: 8px 11px; margin: 0; }
         .pj2-said svg { flex-shrink: 0; margin-top: 2px; }
-        .pj2-said.is-flat { color: var(--muted); background: var(--slate-soft); border-left-color: var(--faint); }
+        .pj2-said.is-green { color: var(--green); background: var(--green-soft); border-left-color: var(--green); }
+        .pj2-said.is-amber { color: var(--amber); background: var(--amber-soft); border-left-color: var(--amber); }
+        .pj2-said.is-red { color: var(--red); background: var(--red-soft); border-left-color: var(--red); }
+        .pj2-said.is-grey, .pj2-said.is-flat { color: var(--muted); background: var(--slate-soft); border-left-color: var(--faint); }
         .pj2-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px;
           background: var(--surface-2); border-radius: 9px; padding: 9px 11px; }
         .pj2-rows li { display: flex; gap: 10px; align-items: center; font-size: 12px; color: var(--ink-2); }
