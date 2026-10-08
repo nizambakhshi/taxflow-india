@@ -388,7 +388,26 @@ E-invoice threshold, e-way bill requirement, filing profile (monthly/QRMP) and T
 
 **Commit:** `9b7a4c6`.
 
-### Routes — 47 pages
+### Session 36 — 2026-10-08 (R2-15 B2 — serial-number register, derived warranty)
+**Built:** `src/lib/serials.ts` (`e2a94d4`) — the second half of competitor gap #3 that ships without schema work, again on ADR-013: a serial is an identity, so the model is one row per physical unit (`taxflow:serials:<orgId>`) plus its event log (`taxflow:serialevents:<orgId>`). The counter-intuitive decisions, all enforced in one place: the same number never enters twice (case-insensitive `duplicateSerials`, checked against the register and within the pasted list); status is derived from the **latest recorded** event, never stored — corrections are new events (Return → Restock reuses the same row), so the log is append-only and the UI offers no edit of a movement; warranty is derived too — sale date + `warranty_months` through a day-clamped `addMonths` (31 Jan + 1 → 28/29 Feb), recomputed from the **latest** sale so a resale restarts the window; `deleteUnit` refuses once any non-`received` event exists (scrap is the honest exit — a sale is the record of who had the unit); and identity freezes with history (`validateUnit` refuses re-pointing the item once `hasHistory`). Unlike batches there is **no invoice hook**: FEFO can name a lot, but nothing in an invoice can name the physical unit, so units attach to bills through the Issue action that carries the invoice number. `receiveUnits` writes units + arrival events in one call (SSR-guarded); `NEXT`/`canMove` is the state machine (in_stock → sold | scrapped, sold → returned, returned → restocked | scrapped).
+
+**Wired:** `/inventory/serials` on the kit (0 hex) — five views (On the shelf default / Returned / With customers / Scrapped / All), four stat cards (in stock + recorded value, with customers + how many still inside warranty, returned, on warranty), status badge with the latest-event history line, a "Where" narrative column (vendor + bill ref on the shelf; customer + invoice when sold; return date; write-off), derived warranty dates with a red past-end state. Three modals: **Receive** (bulk textarea, one serial per line, live preview of what will be added and which numbers already exist — save blocked on collisions), **Editor** (single unit; item + serial lock once the unit has history, hintlines explain why), **Movement** (Issue carries Sold-to + Invoice + date; Return prefills the customer; Scrap carries a reason) plus confirm-fast Restock. Delete is offered only on fresh rows, and `deleteUnit` guards even then. CSV of the visible rows; nav under Masters ("Serial Numbers"); ⌘K "Add serial numbers" deep-links `?new=1`; new icons `hash`, `undo`, `shield`.
+
+**Traps recorded:**
+- A serial is an identity, not a quantity. The same number never gets a second row — a return restocks the existing row instead of forking its history, or the register answers "which unit is this" with two rows.
+- Status is the latest *recorded* event, not the latest-dated. The log is append-only by design; a correction is a new event (Restock after Return), never an edit of the past.
+- Warranty is derived, never stored. Recompute from the latest sale with a day-clamped month add — a 31 Jan sale with 1 month ends 28/29 Feb; editing the warranty length moves every open window automatically.
+- Delete is refused after history, not merely hidden. `deleteUnit` returns `null` once the unit has moved; the UI names the reason and points at Scrap. Erasing a sale would erase who had the unit.
+- No automatic hook — deliberately unlike FEFO. Batch drawdown can guess because the allocator names the lot; serials cannot, because only the human saw which unit left. The Issue modal is where the invoice number lands on the right row.
+- `receiveUnits` needed the SSR guard the batches engine taught (B1): build-and-return without a store would report units that were never saved.
+
+**Method:** 84 assertions in `/tmp/serials-test.mjs` (addMonths month-end clamp + bad input, the status machine + `canMove` table, storage tolerance + unknown-kind fallback + SSR guard, bulk receive trim/dedupe/arrival-dated, delete refusal after history, log-order status incl. a resale restarting warranty, tier sort, `duplicateSerials` case-insensitivity + self-exclusion, `validateUnit` identity freeze, summary buckets, CSV shape); `batches-test` 77, `orderflow-test` 111, `commands-test` 34, `gst-rates` 22 all still green; `tsc` 0; eslint clean on every touched file; `npm run build` 50/50 with `○ /inventory/serials` in the route table.
+
+**Ledger:** **40 pages on the kit, 4 partial, 0 pre-kit** (+3 auth). Gap #3 now carries batch/expiry (B1) + serials (B2); only **multi-godown** remains — the one third that genuinely needs columns → the Phase 14 schema window. Browser pass still blocked by the expired Supabase dev session.
+
+**Commit:** `e2a94d4`.
+
+### Routes — 48 pages
 ```
 src/app/
 ├── layout.tsx, page.tsx (→ /login), manifest.ts, globals.css, favicon.ico
@@ -402,7 +421,7 @@ src/app/
     ├── sales-orders/{page,[id]}/    purchase-orders/{page,[id]}/  ← order register + document (R2-14 B2)
     ├── bills/  expenses/  credit-notes/  debit-notes/
     ├── payments/page  payments/links/  bank/
-    ├── inventory/{page,reorder,batches}/  ← reorder planner + batch/expiry register (R2-15 B1)
+    ├── inventory/{page,reorder,batches,serials}/  ← reorder planner + batch/expiry + serial registers (R2-15)
     ├── ledger/  accounting/
     ├── tds/                         ← withholding workpaper
     ├── gst/{page,gstr1,gstr3b,gstr9,gstr4,reconciliation,einvoice,calendar}/
@@ -412,7 +431,7 @@ src/app/
 public/sw.js  public/offline.html
 ```
 
-### Libraries — 33 modules in `src/lib/` + `src/lib/gsp/`
+### Libraries — 34 modules in `src/lib/` + `src/lib/gsp/`
 ```
 supabase.ts  constants.ts  gst-engine.ts  format.ts  words.ts  reports.ts
 gst-rates.ts                                 ← the one GST rate table every picker imports
@@ -425,6 +444,7 @@ tds.ts                                        ← withholding sections, workpape
 gstr4.ts                                      ← composition slabs, CMP-08 quarters, deemed debit
 orderflow.ts                                  ← challans / sales orders / purchase orders (localStorage)
 batches.ts                                    ← lots, FEFO drawdown, expiry watch (localStorage)
+serials.ts                                    ← one row per unit, append-only event log, derived warranty (localStorage)
 pdf-export.ts                                 ← shared html2canvas → jsPDF slice pipeline
 gsp/{index.ts, types.ts, mock.ts}            ← provider adapter, mock transport
 ```
@@ -493,6 +513,7 @@ anything here is either reconstructible from documents or already exported.
 | `taxflow:gstr4:` | declared CMP-08 deposits and stock-transfer value for the year | `/gst/gstr4` |
 | `taxflow:challan:` · `taxflow:sorder:` · `taxflow:porder:` | order-flow documents + numbering per kind (`challan` / `sales_order` / `purchase_order`) | `/challans`, `/sales-orders`, `/purchase-orders` |
 | `taxflow:batches:` · `taxflow:batchmoves:` | batch lots and their signed movements (FEFO drawdown) | `/inventory/batches`, `create-invoice.ts` |
+| `taxflow:serials:` · `taxflow:serialevents:` | serial units and their append-only event log (issue / return / restock / scrap) | `/inventory/serials` |
 | `taxflow:palette-recents:` | recent ⌘K hits | `CommandPalette.tsx` |
 
 ---
@@ -613,7 +634,7 @@ node --version
 
 ## Next Steps (Priority Order)
 
-1. **R2-15 — gap #3, batch/expiry + serial tracking, multi-godown — is open, with the batch/expiry half shipped.** B1 (`9b7a4c6`) added the batch & expiry register with FEFO consumption wired into `create-invoice.ts`; the schema decision closed on ADR-013 — a batch is owner bookkeeping, the statutory paper never carries the lot, so no tables were needed for this half. What remains of the gap: **serials** (same localStorage pattern — likely R2-15 B2), and **multi-godown**, which does need real columns and therefore waits for the Phase 14 schema window instead of being faked. Then gaps #4–#12 by rank. R2-14 is complete (B1 `f982aed`, B2 `b851818`, B3 `94b3c1c` — gap #2 closed end-to-end), and R2-12's design-system pass is complete — 4 lists (`bills`, `credit-notes`, `debit-notes`, `quotations`) still hand-code their chrome and get migrated when next touched.
+1. **R2-15 — gap #3 — is nearly closed: batch/expiry and serials are shipped; only multi-godown remains.** B1 (`9b7a4c6`) added the batch & expiry register with FEFO consumption wired into `create-invoice.ts`; B2 (`e2a94d4`) added the serial-number register — one row per unit, append-only event log, warranty derived from the latest sale, Issue carrying the invoice number because no invoice can name a physical unit. Both closed on ADR-013 (owner bookkeeping → localStorage, no tables). What remains of the gap is **multi-godown only**, which does need real columns and therefore waits for the Phase 14 schema window instead of being faked. Then gaps #4–#12 by rank. R2-14 is complete (B1 `f982aed`, B2 `b851818`, B3 `94b3c1c` — gap #2 closed end-to-end), and R2-12's design-system pass is complete — 4 lists (`bills`, `credit-notes`, `debit-notes`, `quotations`) still hand-code their chrome and get migrated when next touched.
 2. **The unfinished browser pass** — GST batch 6 (`dd7d449`) and `gst/gstr4` (`da672a2`) were verified statically only; the Supabase dev session is expired, so nothing was measured at 355px or 1440px. Needs the user to sign in at `localhost:3000`.
 3. **Phase 14 — Security**: generated Supabase types, tightened dashboard RLS policies, audit log, multi-account isolation test. Do this before onboarding a real customer.
 4. **Real GSP integration** once a provider is chosen (ADR-016) — plus email invoices and multi-user, which need the pending decisions above.
