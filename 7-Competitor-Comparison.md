@@ -1,6 +1,6 @@
 # 7 — Competitor Comparison
 
-**Built:** 2026-10-08 · **TaxFlow column:** read out of this codebase (50 routes, 34 libraries — not marketing copy) · **Competitor columns:** each vendor's own public pages, fetched 2026-10-08 over plain HTTP.
+**Built:** 2026-10-08 · **TaxFlow column:** read out of this codebase (51 routes, 35 libraries — not marketing copy) · **Competitor columns:** each vendor's own public pages, fetched 2026-10-08 over plain HTTP.
 
 ## Legend — read this before the table
 
@@ -87,7 +87,7 @@ Everything below is "what the vendor advertises", which is exactly the thing Tax
 | Mobile app | ~ (installable PWA) | · | ✔ | ✔ (Android/iOS) | ✔ | · | · | · | · |
 | Offline mode | ✔ (outbox replays real save path) | ✔ (desktop) | · | ✔ (offline-first) | · | ✔ | · | · | · |
 | Multi-user roles / permissions | · (auth only, no roles) | · | ~ (Professional) | · | · | ✔ | ✔ | · | · |
-| Customer portal | · | ✔ | ✔ (free tier) | · | · | ✔ | ✔ | ✔ | · |
+| Customer portal | ~ (v1 — statement share links, R2-16) | ✔ | ✔ (free tier) | · | · | ✔ | ✔ | ✔ | · |
 | API access | · | ✔ | · | · | · | · | ✔ | ✔ | ✔ |
 | Document attachments | · | · | · | · | · | · | ✔ | · | · |
 | AI / OCR bill capture | ✔ (in-browser, nothing uploaded) | ✔ | ✔ (+ paid OCR addon) | · | · | · | · | ✔ | ✔ |
@@ -103,7 +103,7 @@ Everything below is "what the vendor advertises", which is exactly the thing Tax
 3. **GSTR-4 / CMP-08 composition workpaper** — line-level HSN/SAC slab split, the ten Notification 17/2020 states, the service provider's 10%-and-₹50L goods cap, the 2.5% deemed debit. No competitor page fetched advertises composition depth at all.
 4. **TDS / 194Q workpaper read out of the purchase books** — section table, whole-vs-excess thresholds, deduction on the earlier of credit or payment, 26Q late fee. The billing apps don't do it; the ERP-class tools do it inside a module you pay several times more for.
 5. **Bank matching without a paid bank feed** — any statement layout pasted or dropped in, each line scored against documents with the score explained. Zoho, Tally, Busy, Marg and ClearTax all do reconciliation; none advertise working from an arbitrary pasted statement with no feed.
-6. **Craft-level things nobody advertises**: ⌘K palette over pages *and* live records — now including the local order book (challans, sales and purchase orders search synchronously, in the same groups as everything else) — offline invoices that replay through the real save path with a real sequence number, party ageing, festival-weighted targets judged on a prorated pace, an (s, S) reorder planner, a FEFO batch register whose allocator names the expired lot it would draw — before anything is written, and a serial register whose warranty window is recomputed from the latest sale (a resale restarts it; a return never forks the unit's history).
+6. **Craft-level things nobody advertises**: ⌘K palette over pages *and* live records — now including the local order book (challans, sales and purchase orders search synchronously, in the same groups as everything else) — offline invoices that replay through the real save path with a real sequence number, party ageing, festival-weighted targets judged on a prorated pace, an (s, S) reorder planner, a FEFO batch register whose allocator names the expired lot it would draw — before anything is written, a serial register whose warranty window is recomputed from the latest sale (a resale restarts it; a return never forks the unit's history), and a customer statement link that carries the entire statement inside the URL's fragment itself — nothing stored, nothing to revoke, and the numbers identical to the ledger's by construction.
 
 ## 8. The gap list, ranked
 
@@ -112,7 +112,7 @@ Everything below is "what the vendor advertises", which is exactly the thing Tax
 | 1 | **Actual return filing / GSP submission** — we stop at workpaper + JSON | everyone | Blocked: needs a contracted GSP (see ADR-016) |
 | 2 | **Delivery challan + purchase/sales orders + order-to-invoice flow** — **closed** (R2-14): `/challans` register and printable document (B1, `f982aed`), then sales and purchase orders on the same engine (B2, `b851818`) — confirm → close → convert to invoice, place → receive → convert to bill through the real write paths; then the book joins the discovery surfaces (B3, `94b3c1c`): an Order flow tab in `/reports/registers` and synchronous ⌘K search over the three stores | Zoho, Marg, Refrens, myBillBook, Busy | Done — the PO-to-bill conversion asks for the vendor's own bill number (GSTR-2B matches it) instead of inventing one |
 | 3 | **Batch/expiry + serial tracking, multi-godown** | Marg, Zoho (Elite), Vyapar, Refrens | **Closed except multi-godown** (R2-15): the batch/expiry register with FEFO consumption wired into the invoice write path (B1, `9b7a4c6`), then the serial-number register — one row per unit, append-only event log, warranty derived from the latest sale, units attached to invoices through the Issue action (B2, `e2a94d4`). Both client-side under ADR-013, because a batch and a serial are owner bookkeeping and the statutory paper never carries either. Multi-godown needs real columns, so it waits for the Phase 14 schema window rather than being faked |
-| 4 | **Customer portal** | Zoho (free), Busy, Marg, ClearTax | Medium — share links first, auth'd portal later |
+| 4 | **Customer portal** | Zoho (free), Busy, Marg, ClearTax | **v1 shipped** (R2-16 B1, `ccea4d5`): the statement travels inside its own link — JSON → deflate → base64url in the URL **fragment**, so nothing is stored server-side and there is nothing to revoke; each open invoice row carries a UPI deep link with its own due amount (VPA baked at share time), and the figures are the ledger's own by construction. Auth'd customer logins remain |
 | 5 | **Multi-user roles / permissions** | Zoho (Professional), Busy, Marg | Auth + schema; belongs with Phase 14 security |
 | 6 | **Payroll** | Tally (₹750/mo), Zoho (Premium), ClearTax | Large; consider partnering rather than building |
 | 7 | **E-commerce integrations (Amazon/Flipkart/Shopify)** | Marg | Medium per channel; high perceived value for retail |

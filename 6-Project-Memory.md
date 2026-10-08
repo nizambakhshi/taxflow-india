@@ -35,7 +35,7 @@ the repository as it exists today.
 | API routes | 2 only — `/api/gsp/ewaybill` (mock GSP transport), `/api/pdf-worker` (serves the pdf.js worker asset) |
 | Developer OS | Mac Mini M4 (macOS) |
 | Code editor | Qoder (was Cursor) |
-| History | 70 commits on `main`; MVP landed 2026-09-19, rounds ran 2026-10-05 → 2026-10-08 |
+| History | 82 commits on `main`; MVP landed 2026-09-19, rounds ran 2026-10-05 → 2026-10-08 |
 
 ---
 
@@ -407,11 +407,30 @@ E-invoice threshold, e-way bill requirement, filing profile (monthly/QRMP) and T
 
 **Commit:** `e2a94d4`.
 
-### Routes — 48 pages
+### Session 37 — 2026-10-08 (R2-16 B1 — customer portal, the statement travels inside its own link)
+**Built:** `src/lib/portal.ts` (`ccea4d5`) — gap #4's v1, and the schema decision is that there is no schema: the share link **is** the document. The payload is the same `buildStatement()` output the ledger shows, so the numbers agree by construction; it rides as JSON → `deflate-raw` → base64url with a `1.` version prefix in the URL **fragment** (`/portal#d=…`). A fragment never reaches the server, so there is no token table, nothing stored, nothing to revoke, and no server route. Two decisions enforced in one place: the 120-document cap **folds** (`PORTAL_MAX_DOCS`) — rows beyond it have their net folded into the opening balance so the arithmetic stays closed, and the page says how many older entries were folded in — and the UPI VPA is baked at share time (`payLinkFor` / `payAllLink` build deep links from the stored VPA and the row's own due; a settled row or a missing VPA returns `''` so the page shows plain text, never a dead pay chip). `decodePortal` returns typed refusals instead of throwing — not-a-link, damaged, or "made with a different version" (the version prefix is what makes a future format change safe). `portalRunning` recomputes the running balance round2-per-step and lands exactly on the stored closing.
+
+**Wired:** the public `/portal` page + layout (noindex) with four phases — decoding shimmer, empty, error (the library's own message), and ok: identity header, brand-gradient hero with the closing figure and a white "Pay ₹X via UPI" button, the statement in the same `.responsive-table` anatomy as the ledger (opening row, per-row pay chips, totals), the folded-entries strip in amber, print block. `/ledger` gained a **Portal link** action on every customer — one modal: busy skeleton, stats strip, copy field, WhatsApp share carrying the closing figure, open-preview — reading the org VPA from the same `loadUpiSettings` the payment pages use.
+
+**Traps recorded:**
+- The fragment is the transport *and* the privacy story. Anything in the query string would hit the server and its logs; `#d=` never leaves the device. The cost is stated, not hidden: the link is as sensitive as the statement, and nothing is revocable — a fresh link is a fresh snapshot.
+- The cap folds, never truncates. Dropped rows would leave opening + rows ≠ closing — the first arithmetic a customer checks. Folding keeps every statement self-consistent; `dropped` renders as a note, not a silent loss.
+- A hash-only navigation is a same-document navigation — no remount. Pasting a second link into an open tab changes only the fragment, so the page listens to `hashchange` and re-decodes; verified in the browser with two different tokens in one tab.
+- `CompressionStream('deflate-raw')` + `Blob` are Node globals too — the whole encode/decode path runs under the same test harness as every other library, no browser required.
+- The pay chip is a link, not a button — UPI deep links open the payer's own app; its `title` carries the VPA so a desktop hover still says where the money goes.
+
+**Method:** 82 assertions in `/tmp/portal-test.mjs` (payload mapping incl. no-href and invoice-only dues, the 130-row fold, at-cap no-op, `portalRunning` landing on closing, `payLinkFor`/`payAllLink` guards, lossless encode→decode round trip, a 120-row token at 1,042 chars, all ten decode refusals incl. valid-deflate-wrong-payload and an inner version mismatch, URL/hash helpers); `serials-test` 84, `batches-test` 77, `orderflow-test` 111, `commands-test` 34 and `gst-rates` 22 all still green (6 suites); `tsc` 0; eslint clean on every new file — `ledger/page.tsx` keeps only its one pre-existing exhaustive-deps warning; `npm run build` 51/51 with `○ /portal` (static) in the route table. Browser-verified end-to-end with a Node-generated token: hero, pay links, running balance, title, error/empty states, and the hash-only swap.
+
+**Ledger:** **40 pages on the kit inside the shell, 4 partial, 0 pre-kit** (+3 auth) — plus the public `portal`, on the kit outside the shell, counted like the auth surfaces. R2-16 B1 opens competitor gap #4: share-link statements ship; auth'd customer logins remain. Browser pass for the authenticated pages still blocked by the expired Supabase dev session.
+
+**Commit:** `ccea4d5`.
+
+### Routes — 49 pages
 ```
 src/app/
 ├── layout.tsx, page.tsx (→ /login), manifest.ts, globals.css, favicon.ico
 ├── login/  signup/  setup/
+├── portal/                          ← public statement link — no shell, no auth (R2-16 B1)
 ├── api/gsp/ewaybill/route.ts        ← mock GSP transport
 ├── api/pdf-worker/route.ts          ← version-locked pdf.js worker asset
 └── (app)/                           ← shell: layout.tsx + nav.ts data
@@ -431,7 +450,7 @@ src/app/
 public/sw.js  public/offline.html
 ```
 
-### Libraries — 34 modules in `src/lib/` + `src/lib/gsp/`
+### Libraries — 35 modules in `src/lib/` + `src/lib/gsp/`
 ```
 supabase.ts  constants.ts  gst-engine.ts  format.ts  words.ts  reports.ts
 gst-rates.ts                                 ← the one GST rate table every picker imports
@@ -445,6 +464,7 @@ gstr4.ts                                      ← composition slabs, CMP-08 quar
 orderflow.ts                                  ← challans / sales orders / purchase orders (localStorage)
 batches.ts                                    ← lots, FEFO drawdown, expiry watch (localStorage)
 serials.ts                                    ← one row per unit, append-only event log, derived warranty (localStorage)
+portal.ts                                     ← share-link statements: deflate + base64url in the URL fragment, nothing stored
 pdf-export.ts                                 ← shared html2canvas → jsPDF slice pipeline
 gsp/{index.ts, types.ts, mock.ts}            ← provider adapter, mock transport
 ```
