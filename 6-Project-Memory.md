@@ -265,11 +265,17 @@ E-invoice threshold, e-way bill requirement, filing profile (monthly/QRMP) and T
 **Outstanding — the next session must do this:** the *visual* pass never ran. The Supabase dev session expired mid-batch and the `(app)` layout bounces every GST route back to `/login`, so nothing was measured in a browser: upload a sample 2B CSV *and* JSON, exercise all four buckets plus the export, open the inspect / IRN JSON / e-way-bill modals, check the console, and measure both pages at ~355px and inside a same-origin 1440×900 `#probe` iframe asserting `scrollWidth − clientWidth === 0`. The login password is deliberately not recorded and `.env` must not be read, so this needs the user to sign in at `localhost:3000`. Fix forward from the commit below if the pass finds anything.  
 **Commits:** `dd7d449`.
 
+### Session 26 — 2026-10-08 (R2-13 GSTR-4 / CMP-08)
+**Built:** the composition-scheme workpaper — `src/lib/gstr4.ts` (744 lines) + `/gst/gstr4` (628 lines), written *on* the kit rather than migrated onto it, which takes the ledger to 24 pages. Four tabs over one `Segmented`: overview (aggregate turnover, the slab test, eligibility verdict), CMP-08 (three quarters against deposits the owner declares), deemed debit (the 2.5% reversal in lieu of ITC), risks (the documents that end the scheme). Turnover is split by the HSN/SAC on each *line*, not by the rate on the invoice, because the slab follows the goods/service mix; the ₹1.5 crore / ₹50 lakh limits swap to ₹75L / ₹25L for the ten Notification 17/2020 states, and a service provider's goods leg is capped at 10% of turnover and ₹50 lakh. Nothing is filed and no rate is editable — portal-only gaps are labelled as portal-only. Also fixed the calendar, which generated GSTR-4 a year late and pointed CMP-08 at `/gst/gstr3b`; the GST hub went to four cards and `nav.ts` gained the entry, which the ⌘K palette picks up for free.  
+**Resolved:** trap #24 — non-GST supplies were excluded from slab turnover in one place and counted in two others, so a quarter's taxable value, its implied percentage and the exempt figure disagreed with each other; the rule moved into `gstr4.ts` (`isNonGst`, `exemptTurnover`) and the page's duplicate local helper was deleted. Then four things the compiler and the linter caught on a fresh file: the typed Supabase client **parses** `.select()` strings, so a `credit_note_id as invoice_id` alias is a TS2352 at build time, not at runtime; `react-hooks/purity` rejects `Date.now()` during render, so "days until due" reads a `useState(() => new Date())` snapshot like `/tds` already does; `<Icon name="info">` does not exist (silent dashboard glyph — trap #16 again, on a page I had just written); and there is no `--slate` token, only `--slate-soft`. The duplicated localStorage writer in the page was replaced by the library's own `saveFy`.  
+**Method:** the browser pass still could not run — the Supabase session is expired and the `(app)` layout bounces `/gst/gstr4` to `/login` — so verification was static and is recorded as such in the commit message: `tsc` 0, `eslint` 0 errors, `npm run build` 0 with the route present in both `prerender-manifest.json` and `routes-manifest.json`, 53/53 assertions in `/tmp/gstr4-test.mjs`, plus `/tmp/gst-b7-audit.cjs` cross-checking every `className` token, icon name and `var(--*)` against the kit for both GST pages. Six of those assertions failed first and **all six were my fixture maths, not the code** (a 0.6% slab written as 6%, a declared-gross variance legitimately moving CGST+SGST too, `assert.equal` on an object, a ragged CSV row, and a "special state" fixture that never actually crossed its ₹25 lakh slab) — which is the argument for writing the expected numbers by hand before running anything.  
+**Commits:** `da672a2`.
+
 ---
 
 ## Files Created (Complete List)
 
-### Routes — 38 pages
+### Routes — 40 pages
 ```
 src/app/
 ├── layout.tsx, page.tsx (→ /login), manifest.ts, globals.css, favicon.ico
@@ -284,14 +290,14 @@ src/app/
     ├── inventory/page  inventory/reorder/
     ├── ledger/  accounting/
     ├── tds/                         ← withholding workpaper
-    ├── gst/{page,gstr1,gstr3b,gstr9,reconciliation,einvoice,calendar}/
+    ├── gst/{page,gstr1,gstr3b,gstr9,gstr4,reconciliation,einvoice,calendar}/
     ├── reports/{page,registers,targets}/
     ├── ai/{ask,scan-bill}/
     └── settings/
 public/sw.js  public/offline.html
 ```
 
-### Libraries — 28 modules in `src/lib/` + `src/lib/gsp/`
+### Libraries — 29 modules in `src/lib/` + `src/lib/gsp/`
 ```
 supabase.ts  constants.ts  gst-engine.ts  format.ts  words.ts  reports.ts
 create-invoice.ts  create-bill.ts            ← the only document write paths
@@ -300,6 +306,7 @@ ledger.ts  party-ledger.ts  targets.ts  reorder.ts  barcode.ts  outbox.ts
 bill-text.ts  ocr.ts  ask.ts  commands.ts  nav.ts  deep-link-search.ts
 bank-statement.ts                             ← statement parser + match scorer
 tds.ts                                        ← withholding sections, workpaper, deposits
+gstr4.ts                                      ← composition slabs, CMP-08 quarters, deemed debit
 gsp/{index.ts, types.ts, mock.ts}            ← provider adapter, mock transport
 ```
 (`gst-engine.ts` also still exports the legacy `numberToWords()` that the classic
@@ -362,6 +369,7 @@ anything here is either reconstructible from documents or already exported.
 | `taxflow:gstr9:` | declared 3B figures and Table 8/9 input | `/gst/gstr9` |
 | `taxflow:bank:` | imported statements and confirm/set-aside decisions | `/bank` |
 | `taxflow:tds:` | section overrides, payer type and monthly challan details for withholding | `/tds` |
+| `taxflow:gstr4:` | declared CMP-08 deposits and stock-transfer value for the year | `/gst/gstr4` |
 | `taxflow:palette-recents:` | recent ⌘K hits | `CommandPalette.tsx` |
 
 ---
@@ -373,7 +381,7 @@ Recorded so the next session does not rediscover them.
 1. **CSS specificity across breakpoints** — a desktop `.cols > .is-right` rule outranks the mobile `.cols > span` rule; override with equal or higher specificity, not with `!important`.
 2. **Rupee strings have no break opportunity** — one figure per line on mobile, and assert `scrollWidth − clientWidth === 0` rather than eyeballing.
 3. **`node --experimental-strip-types --loader /tmp/ts-loader.mjs`** registers the ESM hook; `--import` does not, and the test file then fails to parse TypeScript.
-4. **Library test suites live in `/tmp`** and are not committed. Recorded counts at R2-11: gstr2b + compliance 30, registers 20, words 29, targets 38, commands 26, gstr9 35, tds 70; batch 6 added 46 over the 2B reconciliation and e-invoice builders — rewrite them when a library changes.
+4. **Library test suites live in `/tmp`** and are not committed. Recorded counts at R2-11: gstr2b + compliance 30, registers 20, words 29, targets 38, commands 26, gstr9 35, tds 70; batch 6 added 46 over the 2B reconciliation and e-invoice builders, R2-13 another 53 over `gstr4.ts` — rewrite them when a library changes. `/tmp` gets wiped mid-project (it happened once here, taking the loader with it), so `ts-loader.mjs` may need recreating before a suite can run at all.
 5. **`1-based` vs `0-based` months** — `iso(y, m, d)` vs `fyMonth()`; off-by-one shifts a whole quarter.
 6. **`Math.abs()` on a signed document** — turns a credit note into extra sales.
 7. **Unbounded `in=(...)`** — Supabase 400s; chunk at 500 ids.
@@ -393,6 +401,7 @@ Recorded so the next session does not rediscover them.
 21. **Place of supply `01` is Jammu & Kashmir, not an export** — only `99` ("Other Countries") is outside India. `einvoice.ts` was treating `01` as foreign, so a J&K supply built as `Country: "OTHER COUNTRY"` with the six-digit pincode dropped and `InvoiceType: EXP` instead of `RGC`. Any POS comparison in this codebase is `=== '99'` and nothing else.
 22. **A document-type union that only knows INV/CRN/DBN mislabels a bill of supply** — a composition-registered seller (`RR`/`RSRG`) issues a *bill of supply*, which NIC carries as `BIL`. Worse: the validation guard was `documentType !== 'INV' → require a reference invoice/number/date`, so a bill of supply was rejected for missing a document it never had. Only **notes** (CRN/DBN) point back at an invoice; `BIL` is a standalone document.
 23. **`StatCard` renders a numeric `value` through `formatCompactINR`** — so a count passed as a number prints `₹12`, not `12`. Pass every non-money value as a string (`` value={`${ready.length}` ``) and leave the prop numeric only for rupee figures.
+24. **A rule applied in one caller but not in the function that owns it** — GSTR-4 excluded non-GST supplies from slab turnover while `quarterlyLiability` and the liability sum still counted them, so the same quarter read ₹1,40,000 on one card and ₹1,70,000 on another, and the page's own local "exempt" helper quietly re-added them. The page had a *second* implementation of the rule. Filter inside the function that owns it (`isNonGst` in `gstr4.ts`), export the derived figure (`exemptTurnover`), and never let a page recompute what the library already knows.
 
 ---
 
@@ -480,8 +489,8 @@ node --version
 
 ## Next Steps (Priority Order)
 
-1. **R2-12 — Design-system migration pass** (next up) — 13 pages in the shell plus the 3 auth pages still carry inline styles; §16 of `4-Design-System.md` fixes the order, and the money tier is finished, so the next one is GST (`gst` hub, `gstr1`, `gstr3b`, `reconciliation`, `einvoice`).
-2. **GSTR-4 (Composition)** workpaper for the smaller registrants.
+1. **R2-12 — Design-system migration pass** (next up) — 8 pages in the shell plus the 3 auth pages still carry inline styles; §16 of `4-Design-System.md` fixes the order. The GST tier is closed and `gst/gstr4` was written on the kit, so the next block is counter and AI (`pos`, `inventory`, `ai/ask`, `ai/scan-bill`), then reports/settings, then auth, then the document pages last.
+2. **The unfinished browser pass** — GST batch 6 (`dd7d449`) and `gst/gstr4` (`da672a2`) were verified statically only; the Supabase dev session is expired, so nothing was measured at 355px or 1440px. Needs the user to sign in at `localhost:3000`.
 3. **Phase 14 — Security**: generated Supabase types, tightened dashboard RLS policies, audit log, multi-account isolation test. Do this before onboarding a real customer.
 4. **Real GSP integration** once a provider is chosen (ADR-016) — plus email invoices and multi-user, which need the pending decisions above.
 

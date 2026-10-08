@@ -394,8 +394,9 @@ Features ranked against Tally, Zoho, Vyapar, myBillBook, Marg, Busy, Refrens, Cl
 
 ## ROUND 2 — Backlog ⏳
 
-- 🔄 **R2-12 Design-system migration pass** (in progress) — counted from the code: **23** pages fully on the kit, **4** import only `SearchInput`, **8** still pre-kit (+3 auth pages). `4-Design-System.md` §16 is the ledger and the order. Done so far: `invoices` (list), `expenses`, the whole masters tier — `vendors`, `customers`, `products` — the whole money tier: `payments`, `payments/links`, `accounting`, `offline`, and the whole GST tier: `gst` hub, `gstr1`, `gstr3b`, `gstr9`, `calendar`, `reconciliation`, `einvoice`. Next: counter and AI (`pos`, `inventory`, `ai/ask`, `ai/scan-bill`)
-- ⏳ GSTR-4 (Composition) workpaper
+- 🔄 **R2-12 Design-system migration pass** (in progress) — counted from the code: **24** pages fully on the kit, **4** import only `SearchInput`, **8** still pre-kit (+3 auth pages). `4-Design-System.md` §16 is the ledger and the order. Done so far: `invoices` (list), `expenses`, the whole masters tier — `vendors`, `customers`, `products` — the whole money tier: `payments`, `payments/links`, `accounting`, `offline`, and the whole GST tier: `gst` hub, `gstr1`, `gstr3b`, `gstr9`, `gstr4`, `calendar`, `reconciliation`, `einvoice`. Next: counter and AI (`pos`, `inventory`, `ai/ask`, `ai/scan-bill`)
+- ✅ **R2-13 GSTR-4 / CMP-08 composition workpaper** — `/gst/gstr4` + `src/lib/gstr4.ts` (53 assertions). Turnover split by the HSN/SAC on each line, the slab test with the ten Notification 17/2020 states, CMP-08 quarters against declared deposits, the 2.5% deemed debit, and the documents that bar the scheme. Also fixes the calendar: GSTR-4 was generated a year late and CMP-08 linked to GSTR-3B.
+- ⏳ TDS/TCS return filing (26Q/24Q upload, 206C collection)
 - ⏳ Real GSP submission for e-invoice / e-way bill (blocked: no free government API; needs a contracted provider)
 
 ---
@@ -427,9 +428,9 @@ Features ranked against Tally, Zoho, Vyapar, myBillBook, Marg, Busy, Refrens, Cl
 
 ## VERSION 2 — Future ⏳
 
-Shipped: ✅ e-invoice IRN payload builder · ✅ e-way bill payload + register · ✅ GSTR-9/9C workpaper · ✅ bank statement matching · ✅ TDS / 194Q withholding workpaper · ✅ WhatsApp reminders · ✅ payment links · ✅ OCR bill scanning · ✅ installable PWA (a web-first "mobile app")
+Shipped: ✅ e-invoice IRN payload builder · ✅ e-way bill payload + register · ✅ GSTR-9/9C workpaper · ✅ GSTR-4 / CMP-08 composition workpaper · ✅ bank statement matching · ✅ TDS / 194Q withholding workpaper · ✅ WhatsApp reminders · ✅ payment links · ✅ OCR bill scanning · ✅ installable PWA (a web-first "mobile app")
 
-Remaining: ⏳ GSTR-4 (Composition) · ⏳ TDS/TCS return filing (26Q/24Q upload, 206C collection) · ⏳ design-system migration pass (R2-12) · ⏳ native mobile app · ⏳ accountant portal · ⏳ API access · ⏳ payroll
+Remaining: ⏳ TDS/TCS return filing (26Q/24Q upload, 206C collection) · ⏳ GSTR-4/3B actual submission (needs a contracted GSP) · ⏳ design-system migration pass (R2-12) · ⏳ native mobile app · ⏳ accountant portal · ⏳ API access · ⏳ payroll
 
 ---
 
