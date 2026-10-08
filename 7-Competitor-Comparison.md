@@ -122,14 +122,14 @@ Everything below is "what the vendor advertises", which is exactly the thing Tax
 | 11 | **Native mobile app** | Vyapar, myBillBook, Zoho | The PWA covers install; a native shell is a distribution decision, not a feature |
 | 12 | **Attachments on documents** | Marg | Small-medium — Supabase Storage + a viewer; makes RLS work first |
 
-## 9. Rule drift found while researching — fix these
+## 9. Rule drift found while researching — fixed 2026-10-08 (`5d92515`)
 
-1. **GST 2.0 (56th Council meeting, 3 Sep 2025; effective 22 Sep 2025) removed the 12% and 28% slabs and introduced a 40% demerit slab.** The structure is now 0 / 5 / 18 / 40 (plus the special rates: 3% gold, 0.25% rough diamonds, etc.).
-   Our state: `bill-text.ts` already includes 40 in `GST_RATES`, but **seven rate dropdowns still offer `[0, 5, 12, 18, 28]`** — `products`, `expenses`, `invoices/new`, `bills`, `credit-notes`, `debit-notes`, `quotations`, and `ai/scan-bill` offers `[0, 3, 5, 12, 18, 28]`. A shop selling a demerit-rate item cannot bill it correctly today. Keep 12/28 for legacy documents; add 40.
-2. **E-invoicing threshold: ₹5 crore AATO** — our `einvoice` and `gstr9` pages state this correctly. Proposals to lower it further have circulated, but no notification has taken effect.
-3. **30-day IRN reporting for AATO above ₹10 crore** (effective 1 Apr 2025) — not surfaced anywhere in our e-invoice page; worth a warning line for larger users.
-4. **Composition limits for FY 2026-27: ₹1.5 crore goods / ₹75 lakh services, opt in via CMP-02 by 31 March** — our `gstr4.ts` constants match; confirm the compliance calendar carries the CMP-02 opt-in event.
-5. **HSN reporting in GSTR-1 is 4/6/8 digits** by turnover band; our HSN register already groups by code, so this is a hint-line change at most.
+1. **GST 2.0 (56th Council meeting, 3 Sep 2025; effective 22 Sep 2025) removed the 12% and 28% slabs and introduced a 40% demerit slab.** The structure is now 0 / 5 / 18 / 40 (plus the special rates: 0.25% rough diamonds, 3% gold).
+   **Fixed.** The list moved into `src/lib/gst-rates.ts` — 0 · 0.25 · 3 · 5 · 12 · 18 · 28 · 40 — and all eight pickers (`products`, `expenses`, `invoices/new`, `bills`, `credit-notes`, `debit-notes`, `quotations`, `ai/scan-bill`) import it instead of restating `[0,5,12,18,28]`. 12% and 28% stay in the list so a credit note against a pre-reform invoice can repeat its original rate. `bill-text.ts` keeps its own detection list deliberately — see the note in both files.
+2. **E-invoicing threshold: ₹5 crore AATO** — our `einvoice` and `gstr9` pages already stated this correctly. No change.
+3. **30-day IRN reporting for AATO above ₹10 crore** (effective 1 Apr 2025) — **fixed**: the e-invoice page now states the window and what missing it costs the buyer (they lose the input credit, because an invoice without a valid IRN is not a legal invoice).
+4. **Composition limits for FY 2026-27: ₹1.5 crore goods / ₹75 lakh services in the special-category states, opt in via CMP-02 by 31 March** — `gstr4.ts` constants already matched. **Fixed** in the calendar: a non-composition filer now gets the 31 March CMP-02 opt-in as an event; a composition dealer gets the GSTR-4 annual instead, and nobody sees both.
+5. **HSN reporting in GSTR-1 is 4 digits up to ₹5 crore turnover, 6 above, 8 for exports and imports** — **fixed**: the HSN register now carries that line under the table.
 
 ## 10. Sources
 

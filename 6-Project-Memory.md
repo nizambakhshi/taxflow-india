@@ -271,6 +271,12 @@ E-invoice threshold, e-way bill requirement, filing profile (monthly/QRMP) and T
 **Method:** the browser pass still could not run — the Supabase session is expired and the `(app)` layout bounces `/gst/gstr4` to `/login` — so verification was static and is recorded as such in the commit message: `tsc` 0, `eslint` 0 errors, `npm run build` 0 with the route present in both `prerender-manifest.json` and `routes-manifest.json`, 53/53 assertions in `/tmp/gstr4-test.mjs`, plus `/tmp/gst-b7-audit.cjs` cross-checking every `className` token, icon name and `var(--*)` against the kit for both GST pages. Six of those assertions failed first and **all six were my fixture maths, not the code** (a 0.6% slab written as 6%, a declared-gross variance legitimately moving CGST+SGST too, `assert.equal` on an object, a ragged CSV row, and a "special state" fixture that never actually crossed its ₹25 lakh slab) — which is the argument for writing the expected numbers by hand before running anything.  
 **Commits:** `da672a2`.
 
+### Session 27 — 2026-10-08 (GST 2.0 rate table + competitor scan)
+**Built:** `src/lib/gst-rates.ts` — the one list every rate picker now imports (0 · 0.25 · 3 · 5 · 12 · 18 · 28 · 40). Eight pickers had each restated `[0,5,12,18,28]` inline, so after GST 2.0 (56th Council, effective 22 Sep 2025 — 12% and 28% removed, 40% demerit slab introduced) the app could not bill a demerit-rate item at all. The legacy rates stay in the list on purpose: a credit note against a pre-reform invoice has to repeat the original rate. Same rule check, three smaller things: the e-invoice page states the 30-day IRN window above ₹10 crore turnover and what missing it costs the buyer, the HSN register carries the GSTR-1 Table 12 digit rule, and the compliance calendar gained the 31 March CMP-02 opt-in for non-composition filers. Plus `7-Competitor-Comparison.md` — the source-grounded scan of TallyPrime, Zoho Books, Vyapar, myBillBook, Busy, Marg, ClearTax and Refrens (CaptainBiz and Swipez unreachable, excluded rather than guessed), with the ranked gap list that now feeds the next round.  
+**Resolved:** trap #25. `bill-text.ts` deliberately keeps its own copy of the rate list — it *detects* the rate printed on a supplier bill within a 0.75-point tolerance, where 0.25% is indistinguishable from rounding noise on a no-tax row — and both files now say so, so the difference is a documented decision rather than the drift that caused this session.  
+**Method:** `tsc` 0; `eslint` 0 on the two libraries and the new module, with the touched pages carrying only their pre-existing baseline (96 `no-explicit-any` across nine pre-kit files, none added); `npm run build` 0 with the route table unchanged; 22/22 assertions in `/tmp/gst-rates-test.mjs` over the rate set and the calendar for all three filing profiles (CMP-02 exactly once, due 2027-03-31, absent for a composition dealer, four CMP-08 quarters, no GSTR-1/3B under composition). The browser pass did not run — the Supabase dev session is still expired, same as sessions 25 and 26.  
+**Commits:** `c663f78` (competitor doc), `5d92515` (the fix).
+
 ---
 
 ## Files Created (Complete List)
@@ -297,9 +303,10 @@ src/app/
 public/sw.js  public/offline.html
 ```
 
-### Libraries — 29 modules in `src/lib/` + `src/lib/gsp/`
+### Libraries — 30 modules in `src/lib/` + `src/lib/gsp/`
 ```
 supabase.ts  constants.ts  gst-engine.ts  format.ts  words.ts  reports.ts
+gst-rates.ts                                 ← the one GST rate table every picker imports
 create-invoice.ts  create-bill.ts            ← the only document write paths
 einvoice.ts  gstr2b.ts  gstr9.ts  compliance.ts  registers.ts  payments.ts
 ledger.ts  party-ledger.ts  targets.ts  reorder.ts  barcode.ts  outbox.ts
@@ -381,7 +388,7 @@ Recorded so the next session does not rediscover them.
 1. **CSS specificity across breakpoints** — a desktop `.cols > .is-right` rule outranks the mobile `.cols > span` rule; override with equal or higher specificity, not with `!important`.
 2. **Rupee strings have no break opportunity** — one figure per line on mobile, and assert `scrollWidth − clientWidth === 0` rather than eyeballing.
 3. **`node --experimental-strip-types --loader /tmp/ts-loader.mjs`** registers the ESM hook; `--import` does not, and the test file then fails to parse TypeScript.
-4. **Library test suites live in `/tmp`** and are not committed. Recorded counts at R2-11: gstr2b + compliance 30, registers 20, words 29, targets 38, commands 26, gstr9 35, tds 70; batch 6 added 46 over the 2B reconciliation and e-invoice builders, R2-13 another 53 over `gstr4.ts` — rewrite them when a library changes. `/tmp` gets wiped mid-project (it happened once here, taking the loader with it), so `ts-loader.mjs` may need recreating before a suite can run at all.
+4. **Library test suites live in `/tmp`** and are not committed. Recorded counts at R2-11: gstr2b + compliance 30, registers 20, words 29, targets 38, commands 26, gstr9 35, tds 70; batch 6 added 46 over the 2B reconciliation and e-invoice builders, R2-13 another 53 over `gstr4.ts` — rewrite them when a library changes. `/tmp` gets wiped mid-project (it happened once here, taking the loader with it), so `ts-loader.mjs` may need recreating before a suite can run at all; it was rebuilt on 2026-10-08, when `/tmp/gst-rates-test.mjs` added 22 assertions over the rate table and the calendar.
 5. **`1-based` vs `0-based` months** — `iso(y, m, d)` vs `fyMonth()`; off-by-one shifts a whole quarter.
 6. **`Math.abs()` on a signed document** — turns a credit note into extra sales.
 7. **Unbounded `in=(...)`** — Supabase 400s; chunk at 500 ids.
@@ -402,6 +409,7 @@ Recorded so the next session does not rediscover them.
 22. **A document-type union that only knows INV/CRN/DBN mislabels a bill of supply** — a composition-registered seller (`RR`/`RSRG`) issues a *bill of supply*, which NIC carries as `BIL`. Worse: the validation guard was `documentType !== 'INV' → require a reference invoice/number/date`, so a bill of supply was rejected for missing a document it never had. Only **notes** (CRN/DBN) point back at an invoice; `BIL` is a standalone document.
 23. **`StatCard` renders a numeric `value` through `formatCompactINR`** — so a count passed as a number prints `₹12`, not `12`. Pass every non-money value as a string (`` value={`${ready.length}` ``) and leave the prop numeric only for rupee figures.
 24. **A rule applied in one caller but not in the function that owns it** — GSTR-4 excluded non-GST supplies from slab turnover while `quarterlyLiability` and the liability sum still counted them, so the same quarter read ₹1,40,000 on one card and ₹1,70,000 on another, and the page's own local "exempt" helper quietly re-added them. The page had a *second* implementation of the rule. Filter inside the function that owns it (`isNonGst` in `gstr4.ts`), export the derived figure (`exemptTurnover`), and never let a page recompute what the library already knows.
+25. **A legal rate is a domain rule and cannot live in eight places** — GST 2.0 removed the 12% and 28% slabs and introduced 40% (22 Sep 2025), and eight pickers still offered `[0,5,12,18,28]`, so the app could not bill a demerit-rate item at all. Legal lists belong in one module (`src/lib/gst-rates.ts`) and callers import them. The one deliberate exception is `bill-text.ts`: it *detects* a rate printed on a supplier bill inside a 0.75-point tolerance, where 0.25% cannot be told apart from rounding noise on a no-tax row, so its list omits 0.25% and says why. Different jobs, documented — not drift.
 
 ---
 
@@ -489,7 +497,7 @@ node --version
 
 ## Next Steps (Priority Order)
 
-1. **R2-12 — Design-system migration pass** (next up) — 8 pages in the shell plus the 3 auth pages still carry inline styles; §16 of `4-Design-System.md` fixes the order. The GST tier is closed and `gst/gstr4` was written on the kit, so the next block is counter and AI (`pos`, `inventory`, `ai/ask`, `ai/scan-bill`), then reports/settings, then auth, then the document pages last.
+1. **R2-12 — Design-system migration pass** (next up) — 8 pages in the shell plus the 3 auth pages still carry inline styles; §16 of `4-Design-System.md` fixes the order. The GST tier is closed and `gst/gstr4` was written on the kit, so the next block is counter and AI (`pos`, `inventory`, `ai/ask`, `ai/scan-bill`), then reports/settings, then auth, then the document pages last. When the pass ends, the next round comes out of `7-Competitor-Comparison.md` §8 — delivery challan and order flow first (build-only), then batch/serial/multi-godown (the one gap that needs a schema decision).
 2. **The unfinished browser pass** — GST batch 6 (`dd7d449`) and `gst/gstr4` (`da672a2`) were verified statically only; the Supabase dev session is expired, so nothing was measured at 355px or 1440px. Needs the user to sign in at `localhost:3000`.
 3. **Phase 14 — Security**: generated Supabase types, tightened dashboard RLS policies, audit log, multi-account isolation test. Do this before onboarding a real customer.
 4. **Real GSP integration** once a provider is chosen (ADR-016) — plus email invoices and multi-user, which need the pending decisions above.
@@ -505,7 +513,7 @@ node --version
 5. **Schema is hand-managed** — ship the feature client-side (ADR-013) unless a new column is genuinely unavoidable.
 6. **Documents are signed** — credit notes reduce, they never invert.
 7. **Stock changes only through `record_stock_movement`**, and a product edit must never reset `current_stock`.
-8. **GST rates come from the database**, never hard-coded, and a rate change must not touch historical invoices.
+8. **GST rates come from the database**, never hard-coded, and a rate change must not touch historical invoices. The only static list is the picker in `src/lib/gst-rates.ts` — add a rate there when a notification changes one, and check `bill-text.ts`'s detection list at the same time.
 9. **Profit figures are indicative**, not a certified P&L.
 10. **New pages must be in `nav.ts`** or they do not exist for the user or ⌘K.
 11. **Test GSTIN** — `27AABCU9603R1ZX` (valid format, not a real registration).
