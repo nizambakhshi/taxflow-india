@@ -437,6 +437,16 @@ Still to come:
 - The bridge runs backwards as well: chosen invoices and bills become the XML TallyPrime imports, with the tax ledgers a voucher names written beside it and the rupees counted and printed before the file downloads
 - v1 reads sales and purchase vouchers; credit/debit notes, receipts, payments, journals and challans inside a file are listed as skipped, because their write paths live on other pages
 
+### 3.41 Projects & Time Tracking (R2-23)
+- `/projects` keeps a job, the hours spent on it, and the whole invoices and bills that belong to it — attached **by id**, never retyped — in `taxflow:projects:<orgId>`
+- **The register stores measurements, not money.** Revenue, spend, ITC, contribution and every unbilled month are re-read from the books on load, so amending or cancelling an invoice changes a project's figures by itself and nothing saved here can rot
+- **Hours are priced, not costed.** An hour carries the rate you would bill it at. There is no payroll, so contribution is billed revenue less attached spend and the hour value sits beside that number rather than inside it — a margin that charged you your own billing rate would be double counting
+- **Marking hours billed is a reference stamp.** It records the invoice you raised at `/invoices/new` (the only path that allocates a number and moves stock); it neither creates that invoice nor receives the money, which still arrives only through `/payments`
+- **The unbilled register is per project-month** and carries the invoice date rule 47 asks for — 30 days from the supply of a service, printed with its source and treated as *cited, not settled*. Internal work has no recipient, so no supply and no window to miss. A late row yields a date, a rule and a link to the GSTR-3B workpaper, never a tax figure
+- Hours with no rate anywhere yield **no rupee figure rather than a ₹0 one**, a document deleted from the books leaves its tag as an orphan that says so and contributes nothing, and an invoice number the books do not have is accepted but reported as unmatched
+- The cost-centre boundary is printed on both pages: **a centre splits one document by percentage; a project collects whole documents and adds the hours a centre cannot express**
+- v1 has no timesheet approval, no expense claim, and no calendar sync; the scanned *paper* behind a document still needs Storage (gap #12), so a project attaches the document, not a file
+
 ---
 
 ## 4. Non-Functional Requirements
@@ -476,6 +486,7 @@ Still to come:
 - Live IRP/GSP submission (e-invoice and e-way bill ship as build → download → paste-back)
 - Bank feeds / account aggregation — statement *import* shipped in R2-10 (`/bank` reads any pasted or uploaded layout), but there is still no live connection to a bank
 - Payroll
+- The *cost* of an hour — `/projects` (R2-23) prices labour at the rate you would bill it and never at what it took to do the work, because costing needs payroll and this register has no salary data to read
 - TDS / TCS return filing — `/tds` builds the withholding workpaper and deposit calendar, but no Form 26Q or 24Q is filed, and TCS under 206C is not covered
 - Revaluing a statutory invoice in a foreign currency — `/fx` (R2-19) keeps a dated rate ledger *beside* the rupee books; the invoice a return reads stays in rupees
 - Authenticated customer logins — the portal (R2-16) is a share link that carries its own statement, not an account per party (Phase 14)

@@ -595,11 +595,22 @@ Features that need somewhere to put information the schema does not have use one
 | `taxflow:gstr9:<orgId>` | Annual return | Per-FY declared 3B figures, Rule 42/43 reversals, 9C inputs |
 | `taxflow:bank:<orgId>` | Bank matching | Imported statements (rows are reconstructible from the source text) and confirm/set-aside decisions |
 | `taxflow:tds:<orgId>` | TDS workpaper | Payer type, section per supplier, per-bill override, challans by deduction month |
+| `taxflow:gstr4:<orgId>` | Composition return | Declared CMP-08 deposits and the stock-transfer value for the year |
+| `taxflow:challan:<orgId>` · `taxflow:sorder:<orgId>` · `taxflow:porder:<orgId>` | Order flow | Delivery challans, sales orders and purchase orders, each with its own per-FY numbering (`DC-<FY>-NNNN`) |
+| `taxflow:batches:<orgId>` · `taxflow:batchmoves:<orgId>` | Batch & expiry | Lots (with the godown they sit in) and their signed movements — the FEFO drawdown writes here from `create-invoice.ts` |
+| `taxflow:serials:<orgId>` · `taxflow:serialevents:<orgId>` | Serial numbers | One row per physical unit and an **append-only** event log; status and warranty come from the latest recorded event, never from an edit |
+| `taxflow:godowns:<orgId>` | Godowns | Named places stock is kept in, with a virtual `Main` that holds unplaced lots and cannot be archived |
+| `taxflow:rec:<orgId>` | Recurring invoices | Schedule rule + template lines + the trail of what was billed — **never the due dates**, those are derived (ADR-025) |
+| `taxflow:fx:<orgId>` | Foreign currency | Dated, source-stamped rate ledger + per-invoice deals and remittances, joined to the books by invoice number (ADR-026) |
+| `taxflow:jobwork:<orgId>` | Job work | Lots sent out on a rule 55 challan and their dispositions; the section 143 deadline and the four ITC-04 grids are derived, and the calendar reads this register rather than a tick-box (ADR-027) |
+| `taxflow:ccentres:<orgId>` | Cost centres | The centre list and, per document, one `{centre → share}` — **percentages only**; the rupees are re-read from five document tables on every load (ADR-028) |
+| `taxflow:projects:<orgId>` | Projects & time | Projects, hour rows, and whole documents attached **by id** — **measurements only**; revenue, spend, contribution and the unbilled months are re-read through the same `bookDocs()` the cost centres use, and an hour carries the rate you would bill it at, not what it cost (ADR-030) |
+| `taxflow:tally:<orgId>` | Tally bridge | **Only the log** of an import — which file, when, how many of each kind. The parsed dump, the plan and the exported XML live in memory and on disk, never here (ADR-029) |
 | `taxflow:palette-recents:<orgId>` | ⌘K | Recently opened records |
 
 Rules that make this safe:
 - The key is namespaced by `orgId`, so a shared browser cannot leak one business's plan into another.
-- Money records are never stored here. If a number belongs on a return, it comes from the database; local storage holds opinions, settings and declarations.
+- Money records are never stored here. If a number belongs on a return, it comes from the database; local storage holds opinions, settings and declarations. Two registers are held to a stricter reading of that rule because their whole subject is money: a cost centre stores a **share** and a project stores **measurements**, and both re-read their rupees from the documents on load — through one shared reader (`costcentres.bookDocs`), so a cancelled row or a signed credit note cannot have two opinions about what they mean.
 - Every writer keeps a `version` field and a `updatedAt`, so a future shape change can migrate instead of crash.
 - Clearing browser storage is a real user risk, so anything a user would grieve losing is either reconstructible from documents (registers, ledger, statements) or surfaced as an export they can keep (CSV, `.ics`, JSON).
 
@@ -636,6 +647,7 @@ Because replay uses the production write path, an offline invoice cannot diverge
 | `/gst/einvoice` | `einvoice.ts`, `gsp/*` | NIC v1.10 JSON shape, validation, GSP payload |
 | `/gst/calendar` | `compliance.ts` | Filing profile → FY of due dates → late-fee estimate |
 | `/gst/gstr9` | `gstr9.ts` | Annual tables from documents + declared 3B, 180-day watch, 9C recon |
+| `/gst/gstr4` | `gstr4.ts`, `gstr9.ts` | Quarterly CMP-08 grids from documents, composition rate ceilings |
 | `/reports/registers` | `registers.ts` | Party-wise, HSN/SAC, B2B, state-wise, e-way bill registers |
 | `/reports/targets` | `targets.ts` | Festival-weighted split, prorated pace, product goals |
 | `/ledger` | `party-ledger.ts` | Document-first payment linking, running balance, statements |
@@ -644,6 +656,18 @@ Because replay uses the production write path, an offline invoice cannot diverge
 | `/bank` | `bank-statement.ts` | Statement layout, line direction, scored candidates and confidence tier |
 | `/tds` | `tds.ts` | Section table, threshold modes, deposit calendar, interest and 26Q fee |
 | `/inventory/reorder` | `reorder.ts` | Demand window, (s, S) policy, supplier grouping |
+| `/challans` | `orderflow.ts` | Rule 55 reason sets, delivery Challan → invoice on the same flow |
+| `/sales-orders`, `/purchase-orders` | `orderflow.ts` (via `components/OrderRegister`) | One register, both directions; conversion writes a real invoice or bill |
+| `/inventory/batches` | `batches.ts`, `godowns.ts` | Lot-level in/out, FEFO draw order, expiry watch |
+| `/inventory/serials` | `serials.ts` | One row per unit; warranty read from the latest sale |
+| `/inventory/godowns` | `godowns.ts`, `batches.ts` | A transfer is a lot split, never a second stock ledger |
+| `/recurring` | `recurring.ts`, `orderflow.ts` | Cadence → a real invoice, billed back into the FY it belonged to |
+| `/fx` | `fx.ts` | Dated rate ledger; realised and unrealised kept beside, not inside, the rupee books |
+| `/gst/job-work` | `jobwork.ts` | Section 143 return clock and the four ITC-04 grids |
+| `/cost-centres` | `costcentres.ts` | Stores a **share**; rupees re-read from documents through `bookDocs` |
+| `/projects` | `projects.ts`, `costcentres.ts` (`bookDocs`) | Stores hours and document ids; labour priced not costed, rule 47 window cited not settled |
+| `/tally` | `tally.ts`, `create-invoice.ts`, `create-bill.ts` | Parse → plan with blocked rows and reasons → replay through the normal write path; export builds the XML envelope |
+| `/portal` (public) | `portal.ts` | The whole statement encoded in the URL fragment — nothing stored server-side |
 | `/pos` | `barcode.ts`, `create-invoice.ts` | GS1 check digits, EAN/UPC variants, cash sale write |
 | `/offline` | `outbox.ts`, `create-invoice.ts` | Queue, replay, sequence numbering |
 | `/ai/scan-bill` | `bill-text.ts`, `ocr.ts`, `create-bill.ts` | Field extraction, GST cross-validation, confidence |
