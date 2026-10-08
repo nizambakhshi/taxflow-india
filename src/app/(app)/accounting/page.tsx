@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { formatDateIN } from '@/lib/format'
@@ -338,6 +339,13 @@ export default function FinancialStatementsPage() {
         differ from a bank statement. “Capital account (derived)” is a balancing figure covering owner
         contributions and any money movement TaxFlow isn’t tracking as a document. For statutory books,
         reconcile with your accountant.
+      </p>
+
+      <p className="ac-foot-note">
+        The statements answer how much the business made.{' '}
+        <Link href="/cost-centres">Cost centres</Link> answer which part of it made that much — the same invoices,
+        bills and expenses split by depot, department, project or branch. Shares live in this browser too, and no
+        centre changes a figure on this page.
       </p>
 
       {showOpening && (

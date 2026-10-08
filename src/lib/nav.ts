@@ -86,6 +86,7 @@ export const NAV_ITEMS: NavSection[] = [
       { label: 'Statutory Registers', href: '/reports/registers', icon: 'clipboard' },
       { label: 'Account Ledger', href: '/ledger', icon: 'book' },
       { label: 'Financial Statements', href: '/accounting', icon: 'scale' },
+      { label: 'Cost Centres', href: '/cost-centres', icon: 'layers' },
       { label: 'Scan Bill', href: '/ai/scan-bill', icon: 'scan' },
       { label: 'Ask My Books', href: '/ai/ask', icon: 'chat' },
     ]

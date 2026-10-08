@@ -261,6 +261,16 @@ const P: Record<string, React.ReactNode> = {
     <path d="M8 21v-6.5h8V21" />
     <path d="M8 17.5h8" />
   </>),
+  // A cost centre: the same document read in layers — which part of the business it belongs to.
+  layers: (<>
+    <polygon points="12 3 3 7.5 12 12 21 7.5 12 3" />
+    <polyline points="3 12.5 12 17 21 12.5" />
+    <polyline points="3 17 12 21.5 21 17" />
+  </>),
+  tag: (<>
+    <path d="M3 12.5V5a2 2 0 0 1 2-2h7.5L21 11.5 12.5 20 3 12.5z" />
+    <circle cx="7.8" cy="7.8" r="1.4" />
+  </>),
   repeat: (<>
     <polyline points="17 2 21 6 17 10" />
     <path d="M3 11V9a4 4 0 0 1 4-4h14" />

@@ -453,6 +453,16 @@ export function buildActionCommands(): Command[] {
       badge: 'Action',
       keywords: 'create add job work itc04 itc-04 sent to job worker processing inputs capital goods moulds dies tools rule 45 section 143 bring back deemed supply challan',
     },
+    {
+      id: 'action:new-cost-centre',
+      kind: 'action',
+      label: 'New cost centre',
+      sublabel: 'Split a bill or invoice across centres',
+      href: '/cost-centres?new=1',
+      icon: 'layers',
+      badge: 'Action',
+      keywords: 'create add cost centre department project branch allocation split revenue expense contribution management account margin tag document part of business',
+    },
   ]
 }
 
