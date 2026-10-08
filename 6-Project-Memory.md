@@ -323,7 +323,23 @@ E-invoice threshold, e-way bill requirement, filing profile (monthly/QRMP) and T
 
 **Commits:** `b933bea`, `a9c9e45`.
 
-### Routes — 40 pages
+### Session 32 — 2026-10-08 (R2-14 B1 — delivery challans + order-flow engine)
+**Built:** `src/lib/orderflow.ts` (`f982aed`) — one localStorage document engine for three kinds (`challan`, `sales_order`, `purchase_order`), one store per kind per org (`taxflow:challan|sorder|porder:<orgId>`, ADR-013: no new tables). Numbering is high-water per `kind:fy` — `peekNumber` previews for the editor without allocating, `takeNumber` never reuses a number after a delete and recovers the watermark from the documents themselves. Totals run through the GST engine per line; `ADVANCE` walks draft → active → closed with kind-appropriate labels (challan: "Mark dispatched" / "Mark delivered"). `/challans` is the register + create/edit editor: party select fills GSTIN, place of supply and supply type; the reason field carries the Rule 55(4) six-month note; products fill HSN, unit, rate, GST and cess. `/challans/[id]` is the printable document — entirely token-drawn (0 hex; `var(--faint)` rules, `var(--brand-soft)` fills), "not a tax invoice" stated on the sheet, and printable at A4 with 15mm margins. Conversion to invoice runs through `createInvoice`: the real INV number is allocated, a `customers` row is created on the fly when the party was free-typed (`invoices.customer_id` never null), and the challan is marked `converted` with `converted_to_id` / `converted_to_number`. `pdf-export.ts` extracted from `invoices/[id]` so both documents share the slice pipeline; new `truck`/`edit` icons; `Delivery Challans` in the Sales nav.
+
+**Traps recorded:**
+- `challans/[id]` uses `useParams()`, not the `window.location.pathname`-splitting effect `invoices/[id]` carries. The old pattern trips the React-compiler "setState synchronously within an effect" lint error; the new page has no such debt and `invoices/[id]` keeps its legacy pattern untouched.
+- The `?edit=<id>` deep link is handled *inside* the async load effect, not a second effect — a second effect calling `openEditor` declared below it trips "Cannot access variable before it is declared".
+- `buildInvoicePayload` resolves state codes to names via `stateNameFor()` — matching what `invoices/new` sends. Without it the converted invoice would print a bare state code where the document layout expects a name.
+- The full invoice payload must never carry `invoice_number` — `createInvoice` allocates and stamps it.
+- Line-item grids on new pages use the global `.line-item-row` recipe; the mobile stacking rules in `globals.css` carry `!important`, so page-scoped grid styles cannot break the ≤768px layout.
+
+**Method:** 89 assertions in `/tmp/orderflow-test.mjs` (numbering, store tolerance, totals, validation, status table, conversion payload, helpers); `tsc` 0; eslint zero on every new file except `challans/[id]`'s 3 problems — the deliberate same-shape parity with the `invoices/[id]` accepted baseline — and `invoices/[id]` verified back at baseline parity after its PDF refactor; `npm run build` 46/46 with `○ /challans` and `ƒ /challans/[id]` in the route table.
+
+**Ledger:** **34 pages on the kit, 4 partial, 0 pre-kit** (+3 auth). R2-14 B1 closes the delivery-challan half of competitor gap #2; B2 (sales + purchase orders on the same engine) is next. Browser pass still blocked by the expired Supabase dev session.
+
+**Commit:** `f982aed`.
+
+### Routes — 42 pages
 ```
 src/app/
 ├── layout.tsx, page.tsx (→ /login), manifest.ts, globals.css, favicon.ico
@@ -333,6 +349,7 @@ src/app/
 └── (app)/                           ← shell: layout.tsx + nav.ts data
     ├── dashboard/                   pos/            offline/
     ├── invoices/{page,new,[id]}/    quotations/     customers/  vendors/  products/
+    ├── challans/{page,[id]}/        ← delivery challan register + printable document
     ├── bills/  expenses/  credit-notes/  debit-notes/
     ├── payments/page  payments/links/  bank/
     ├── inventory/page  inventory/reorder/
@@ -345,7 +362,7 @@ src/app/
 public/sw.js  public/offline.html
 ```
 
-### Libraries — 30 modules in `src/lib/` + `src/lib/gsp/`
+### Libraries — 32 modules in `src/lib/` + `src/lib/gsp/`
 ```
 supabase.ts  constants.ts  gst-engine.ts  format.ts  words.ts  reports.ts
 gst-rates.ts                                 ← the one GST rate table every picker imports
@@ -356,6 +373,8 @@ bill-text.ts  ocr.ts  ask.ts  commands.ts  nav.ts  deep-link-search.ts
 bank-statement.ts                             ← statement parser + match scorer
 tds.ts                                        ← withholding sections, workpaper, deposits
 gstr4.ts                                      ← composition slabs, CMP-08 quarters, deemed debit
+orderflow.ts                                  ← challans / sales orders / purchase orders (localStorage)
+pdf-export.ts                                 ← shared html2canvas → jsPDF slice pipeline
 gsp/{index.ts, types.ts, mock.ts}            ← provider adapter, mock transport
 ```
 (`gst-engine.ts` also still exports the legacy `numberToWords()` that the classic
@@ -539,7 +558,7 @@ node --version
 
 ## Next Steps (Priority Order)
 
-1. **R2-12 — the design-system migration pass — COMPLETE** (ten batches, closed with the documents in B10). Every page inside the shell is on the kit; 4 lists (`bills`, `credit-notes`, `debit-notes`, `quotations`) still hand-code their chrome and get migrated when next touched, and the printable document inside `invoices/[id]` stays pre-kit by design. The next round comes out of `7-Competitor-Comparison.md` §8 — delivery challan and order flow first (build-only), then batch/serial/multi-godown (the one gap that needs a schema decision).
+1. **R2-14 — the order-flow round from `7-Competitor-Comparison.md` §8 — is in flight.** B1 (delivery challans + the `orderflow.ts` engine) shipped in `f982aed`. Next: **B2 — sales orders and purchase orders** on the same engine (the `sales_order` / `purchase_order` kinds, statuses and numbering already exist; PO conversion will write through `create-bill.ts` the way challan conversion writes through `createInvoice`). Then batch/serial/multi-godown (the one gap that needs a schema decision). The design-system pass (R2-12) is complete — 4 lists (`bills`, `credit-notes`, `debit-notes`, `quotations`) still hand-code their chrome and get migrated when next touched.
 2. **The unfinished browser pass** — GST batch 6 (`dd7d449`) and `gst/gstr4` (`da672a2`) were verified statically only; the Supabase dev session is expired, so nothing was measured at 355px or 1440px. Needs the user to sign in at `localhost:3000`.
 3. **Phase 14 — Security**: generated Supabase types, tightened dashboard RLS policies, audit log, multi-account isolation test. Do this before onboarding a real customer.
 4. **Real GSP integration** once a provider is chosen (ADR-016) — plus email invoices and multi-user, which need the pending decisions above.
