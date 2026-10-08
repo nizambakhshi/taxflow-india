@@ -3,19 +3,15 @@
 import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
+import { Button, Card, PageHeader, SectionTitle, Segmented } from '@/components/ui'
+import Icon from '@/components/Icons'
 
-const inputStyle = {
-  width: '100%', padding: '9px 12px',
-  border: '1px solid #d1d5db', borderRadius: '8px',
-  fontSize: '14px', outline: 'none',
-  color: '#1e293b', background: 'white',
-}
-
-const labelStyle = {
-  display: 'block' as const,
-  fontSize: '13px', fontWeight: '500' as const,
-  color: '#374151', marginBottom: '6px',
-}
+const TAB_OPTIONS = [
+  { value: 'company', label: 'Company' },
+  { value: 'logo', label: 'Logo' },
+  { value: 'invoice', label: 'Invoice' },
+  { value: 'bank', label: 'Bank details' },
+]
 
 export default function SettingsPage() {
   const supabase = createClient()
@@ -185,230 +181,160 @@ export default function SettingsPage() {
     }
   }
 
-  const tabStyle = (key: string) => ({
-    padding: '9px 20px', background: 'none', border: 'none',
-    cursor: 'pointer' as const, fontSize: '13px',
-    fontWeight: activeTab === key ? '600' : '400',
-    color: activeTab === key ? '#2563eb' : '#64748b',
-    borderBottom: activeTab === key ? '2px solid #2563eb' : '2px solid transparent',
-    marginBottom: '-1px'
-  })
-
   if (loading) return (
-    <div style={{ padding: '2rem', color: '#64748b', fontSize: '14px' }}>Loading...</div>
+    <div className="page-container" style={{ color: 'var(--muted)', fontSize: 13 }}>
+      Loading your business profile…
+    </div>
   )
 
   return (
-    <div className="page-container" style={{ padding: '2rem', maxWidth: '800px' }}>
-      <div className="page-header" style={{
-        display: 'flex', justifyContent: 'space-between',
-        alignItems: 'center', marginBottom: '1.5rem'
-      }}>
-        <div>
-          <h1 style={{ fontSize: '22px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
-            Settings
-          </h1>
-          <p style={{ fontSize: '14px', color: '#64748b' }}>
-            Manage your business profile and invoice settings
-          </p>
-        </div>
-        <button onClick={handleSave} disabled={saving} style={{
-          padding: '9px 24px',
-          background: saved ? '#059669' : saving ? '#93c5fd' : '#2563eb',
-          color: 'white', border: 'none', borderRadius: '8px',
-          fontSize: '14px', fontWeight: '600',
-          cursor: saving ? 'not-allowed' : 'pointer',
-          transition: 'background 0.2s'
-        }}>
-          {saved ? '✓ Saved!' : saving ? 'Saving...' : 'Save Changes'}
-        </button>
-      </div>
+    <div className="page-container st" style={{ maxWidth: 860 }}>
+      <PageHeader
+        eyebrow="Workspace"
+        title="Settings"
+        subtitle="Manage your business profile and invoice settings"
+        actions={
+          <Button
+            onClick={handleSave}
+            disabled={saving}
+            icon={saved ? 'check' : undefined}
+          >
+            {saved ? 'Saved' : saving ? 'Saving…' : 'Save changes'}
+          </Button>
+        }
+      />
 
-      {/* Tabs */}
-      <div className="tab-bar" style={{ borderBottom: '1px solid #e2e8f0', marginBottom: '1.5rem', display: 'flex', gap: '4px' }}>
-        <button style={tabStyle('company')} onClick={() => setActiveTab('company')}>🏢 Company</button>
-        <button style={tabStyle('logo')} onClick={() => setActiveTab('logo')}>🖼️ Logo</button>
-        <button style={tabStyle('invoice')} onClick={() => setActiveTab('invoice')}>🧾 Invoice</button>
-        <button style={tabStyle('bank')} onClick={() => setActiveTab('bank')}>🏦 Bank Details</button>
+      <div style={{ marginBottom: '1rem' }}>
+        <Segmented options={TAB_OPTIONS} value={activeTab} onChange={setActiveTab} />
       </div>
 
       {/* COMPANY TAB */}
       {activeTab === 'company' && (
-        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.5rem' }}>
-          <h2 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
-            Company Information
-          </h2>
-          <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '1.5rem' }}>
-            This appears on all your invoices and documents
-          </p>
+        <Card>
+          <SectionTitle icon="building">Company information</SectionTitle>
+          <p className="st-sub">This appears on all your invoices and documents</p>
 
-          <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-            <div>
-              <label style={labelStyle}>Legal Business Name *</label>
-              <input style={inputStyle} value={form.name}
+          <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <label className="st-field">
+              <span>Legal business name *</span>
+              <input className="tf-input" value={form.name}
                 onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
                 placeholder="ABC Traders Pvt Ltd" />
-            </div>
-            <div>
-              <label style={labelStyle}>Trade Name</label>
-              <input style={inputStyle} value={form.trade_name}
+            </label>
+            <label className="st-field">
+              <span>Trade name</span>
+              <input className="tf-input" value={form.trade_name}
                 onChange={e => setForm(p => ({ ...p, trade_name: e.target.value }))}
                 placeholder="ABC Traders" />
-            </div>
+            </label>
           </div>
 
-          <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-            <div>
-              <label style={labelStyle}>PAN</label>
-              <input style={inputStyle} value={form.pan}
+          <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <label className="st-field">
+              <span>PAN</span>
+              <input className="tf-input" value={form.pan}
                 onChange={e => setForm(p => ({ ...p, pan: e.target.value.toUpperCase() }))}
                 placeholder="AABCU9603R" maxLength={10} />
-            </div>
-            <div>
-              <label style={labelStyle}>Business Type</label>
-              <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.business_type}
+            </label>
+            <label className="st-field">
+              <span>Business type</span>
+              <select className="tf-input" style={{ cursor: 'pointer' }} value={form.business_type}
                 onChange={e => setForm(p => ({ ...p, business_type: e.target.value }))}>
                 <option value="">Select type...</option>
                 {['Proprietorship', 'Partnership', 'LLP', 'Private Limited', 'Public Limited', 'OPC', 'Other'].map(t => (
                   <option key={t} value={t}>{t}</option>
                 ))}
               </select>
-            </div>
+            </label>
           </div>
 
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={labelStyle}>Address Line 1</label>
-            <input style={inputStyle} value={form.address_line1}
-              onChange={e => setForm(p => ({ ...p, address_line1: e.target.value }))}
-              placeholder="Shop No / Building / Street" />
+          <div style={{ marginBottom: 12 }}>
+            <label className="st-field">
+              <span>Address line 1</span>
+              <input className="tf-input" value={form.address_line1}
+                onChange={e => setForm(p => ({ ...p, address_line1: e.target.value }))}
+                placeholder="Shop No / Building / Street" />
+            </label>
           </div>
 
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={labelStyle}>Address Line 2</label>
-            <input style={inputStyle} value={form.address_line2}
-              onChange={e => setForm(p => ({ ...p, address_line2: e.target.value }))}
-              placeholder="Area / Locality" />
+          <div style={{ marginBottom: 12 }}>
+            <label className="st-field">
+              <span>Address line 2</span>
+              <input className="tf-input" value={form.address_line2}
+                onChange={e => setForm(p => ({ ...p, address_line2: e.target.value }))}
+                placeholder="Area / Locality" />
+            </label>
           </div>
 
-          <div className="form-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-            <div>
-              <label style={labelStyle}>City</label>
-              <input style={inputStyle} value={form.city}
+          <div className="form-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <label className="st-field">
+              <span>City</span>
+              <input className="tf-input" value={form.city}
                 onChange={e => setForm(p => ({ ...p, city: e.target.value }))}
                 placeholder="Mumbai" />
-            </div>
-            <div>
-              <label style={labelStyle}>State</label>
-              <input style={inputStyle} value={form.state}
+            </label>
+            <label className="st-field">
+              <span>State</span>
+              <input className="tf-input" value={form.state}
                 onChange={e => setForm(p => ({ ...p, state: e.target.value }))}
                 placeholder="Maharashtra" />
-            </div>
-            <div>
-              <label style={labelStyle}>Pincode</label>
-              <input style={inputStyle} value={form.pincode}
+            </label>
+            <label className="st-field">
+              <span>Pincode</span>
+              <input className="tf-input" value={form.pincode}
                 onChange={e => setForm(p => ({ ...p, pincode: e.target.value }))}
                 placeholder="400001" maxLength={6} />
-            </div>
+            </label>
           </div>
 
-          <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-            <div>
-              <label style={labelStyle}>Phone</label>
-              <input style={inputStyle} value={form.phone}
+          <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <label className="st-field">
+              <span>Phone</span>
+              <input className="tf-input" value={form.phone}
                 onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}
                 placeholder="+91 98765 43210" />
-            </div>
-            <div>
-              <label style={labelStyle}>Email</label>
-              <input style={inputStyle} value={form.email}
+            </label>
+            <label className="st-field">
+              <span>Email</span>
+              <input className="tf-input" value={form.email}
                 onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
                 placeholder="accounts@business.com" />
-            </div>
+            </label>
           </div>
-        </div>
+        </Card>
       )}
 
       {/* LOGO TAB */}
       {activeTab === 'logo' && (
-        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.5rem' }}>
-          <h2 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
-            Company Logo
-          </h2>
-          <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '1.5rem' }}>
-            Your logo appears on all invoices, quotations and documents. PNG or JPG, max 2MB.
-          </p>
+        <Card>
+          <SectionTitle icon="upload">Company logo</SectionTitle>
+          <p className="st-sub">Your logo appears on all invoices, quotations and documents. PNG or JPG, max 2MB.</p>
 
           {/* Current logo */}
           {logoPreview ? (
-            <div style={{
-              background: '#f8fafc', border: '1px solid #e2e8f0',
-              borderRadius: '12px', padding: '1.5rem',
-              display: 'flex', alignItems: 'center', gap: '1.5rem',
-              marginBottom: '1.5rem', flexWrap: 'wrap'
-            }}>
-              <img
-                src={logoPreview}
-                alt="Company logo"
-                style={{
-                  width: '120px', height: '80px',
-                  objectFit: 'contain', borderRadius: '8px',
-                  border: '1px solid #e2e8f0', background: 'white',
-                  padding: '8px'
-                }}
-              />
+            <div className="st-logo-box">
+              <img src={logoPreview} alt="Company logo" className="st-logo-img" />
               <div>
-                <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
-                  Logo uploaded ✓
+                <div className="st-logo-status">
+                  Logo uploaded <Icon name="check" size={14} />
                 </div>
-                <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '12px' }}>
-                  This logo will appear on your invoices
-                </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    style={{
-                      padding: '7px 14px', background: '#2563eb',
-                      color: 'white', border: 'none', borderRadius: '6px',
-                      fontSize: '13px', cursor: 'pointer'
-                    }}
-                  >
-                    Change Logo
-                  </button>
-                  <button
-                    onClick={handleRemoveLogo}
-                    style={{
-                      padding: '7px 14px', background: '#fef2f2',
-                      color: '#dc2626', border: '1px solid #fecaca',
-                      borderRadius: '6px', fontSize: '13px', cursor: 'pointer'
-                    }}
-                  >
+                <div className="st-logo-hint">This logo will appear on your invoices</div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Button size="sm" onClick={() => fileInputRef.current?.click()}>
+                    Change logo
+                  </Button>
+                  <Button size="sm" variant="danger" onClick={handleRemoveLogo}>
                     Remove
-                  </button>
+                  </Button>
                 </div>
               </div>
             </div>
           ) : (
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              style={{
-                border: '2px dashed #cbd5e1', borderRadius: '12px',
-                padding: '3rem', textAlign: 'center' as const,
-                cursor: 'pointer', marginBottom: '1.5rem',
-                background: '#f8fafc'
-              }}
-            >
-              <div style={{ fontSize: '48px', marginBottom: '1rem' }}>🖼️</div>
-              <div style={{ fontWeight: '600', color: '#374151', marginBottom: '4px' }}>
-                Click to upload your logo
-              </div>
-              <div style={{ fontSize: '13px', color: '#64748b' }}>
-                PNG, JPG or SVG — max 2MB — recommended 200×200px
-              </div>
-              {uploadingLogo && (
-                <div style={{ marginTop: '1rem', color: '#2563eb', fontSize: '13px' }}>
-                  Uploading...
-                </div>
-              )}
+            <div className="st-drop" onClick={() => fileInputRef.current?.click()}>
+              <span className="st-drop-chip"><Icon name="upload" size={22} /></span>
+              <div className="st-drop-title">Click to upload your logo</div>
+              <div className="st-drop-sub">PNG, JPG or SVG — max 2MB — recommended 200×200px</div>
+              {uploadingLogo && <div className="st-uploading">Uploading…</div>}
             </div>
           )}
 
@@ -421,140 +347,128 @@ export default function SettingsPage() {
           />
 
           {/* Preview how it looks on invoice */}
-          <div style={{
-            background: '#f0f9ff', border: '1px solid #bae6fd',
-            borderRadius: '8px', padding: '1rem',
-            fontSize: '12px', color: '#0369a1'
-          }}>
-            💡 <strong>Tip:</strong> Use a white or transparent background logo for best results on invoices.
-            Recommended size: 200×80px (landscape).
+          <div className="st-tip">
+            <Icon name="sparkles" size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+            <span>
+              <strong>Tip:</strong> Use a white or transparent background logo for best results on
+              invoices. Recommended size: 200×80px (landscape).
+            </span>
           </div>
-        </div>
+        </Card>
       )}
 
       {/* INVOICE TAB */}
       {activeTab === 'invoice' && (
-        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.5rem' }}>
-          <h2 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
-            Invoice Settings
-          </h2>
-          <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '1.5rem' }}>
-            Customize how your invoices look and are numbered
-          </p>
+        <Card>
+          <SectionTitle icon="invoice">Invoice settings</SectionTitle>
+          <p className="st-sub">Customize how your invoices look and are numbered</p>
 
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={labelStyle}>Invoice Number Prefix</label>
-            <input style={{ ...inputStyle, maxWidth: '200px' }}
-              value={form.invoice_prefix}
-              onChange={e => setForm(p => ({ ...p, invoice_prefix: e.target.value.toUpperCase() }))}
-              placeholder="INV" maxLength={10} />
-            <p style={{ fontSize: '12px', color: '#64748b', marginTop: '6px' }}>
+          <div style={{ marginBottom: 12 }}>
+            <label className="st-field">
+              <span>Invoice number prefix</span>
+              <input className="tf-input" style={{ maxWidth: 200 }}
+                value={form.invoice_prefix}
+                onChange={e => setForm(p => ({ ...p, invoice_prefix: e.target.value.toUpperCase() }))}
+                placeholder="INV" maxLength={10} />
+            </label>
+            <p className="st-hint">
               Your invoices will be numbered:{' '}
               <strong>{form.invoice_prefix || 'INV'}-2026-27-0001</strong>
             </p>
-            <p style={{ fontSize: '12px', color: '#dc2626', marginTop: '4px' }}>
-              ⚠️ Changing this only affects new invoices.
+            <p className="st-warn">
+              <Icon name="alert" size={13} /> Changing this only affects new invoices.
             </p>
           </div>
 
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={labelStyle}>Invoice Footer Message</label>
-            <input style={inputStyle}
-              value={form.invoice_footer}
-              onChange={e => setForm(p => ({ ...p, invoice_footer: e.target.value }))}
-              placeholder="Thank You For Your Business!" />
+          <div style={{ marginBottom: 12 }}>
+            <label className="st-field">
+              <span>Invoice footer message</span>
+              <input className="tf-input"
+                value={form.invoice_footer}
+                onChange={e => setForm(p => ({ ...p, invoice_footer: e.target.value }))}
+                placeholder="Thank You For Your Business!" />
+            </label>
           </div>
 
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={labelStyle}>Declaration / Terms (shown on invoice)</label>
-            <textarea
-              style={{ ...inputStyle, height: '100px', resize: 'vertical' as const }}
-              value={form.invoice_declaration}
-              onChange={e => setForm(p => ({ ...p, invoice_declaration: e.target.value }))}
-              placeholder={`1. Subject to local jurisdiction.\n2. Terms & conditions subject to trade policy.\n3. E. & O.E.`}
-            />
+          <div style={{ marginBottom: 12 }}>
+            <label className="st-field">
+              <span>Declaration / terms (shown on invoice)</span>
+              <textarea
+                className="tf-input"
+                style={{ minHeight: 100, resize: 'vertical' }}
+                value={form.invoice_declaration}
+                onChange={e => setForm(p => ({ ...p, invoice_declaration: e.target.value }))}
+                placeholder={`1. Subject to local jurisdiction.\n2. Terms & conditions subject to trade policy.\n3. E. & O.E.`}
+              />
+            </label>
           </div>
 
           {/* Preview */}
-          <div style={{
-            background: '#f8fafc', border: '1px solid #e2e8f0',
-            borderRadius: '8px', padding: '1rem'
-          }}>
-            <div style={{ fontSize: '11px', fontWeight: '700', color: '#94a3b8', marginBottom: '8px', textTransform: 'uppercase' as const }}>
-              Preview
-            </div>
-            <div style={{ fontSize: '12px', color: '#374151' }}>
+          <div className="st-preview">
+            <div className="st-preview-label">Preview</div>
+            <div className="st-preview-body">
               {form.invoice_declaration
                 ? form.invoice_declaration.split('\n').map((line, i) => (
                     <div key={i}>{line}</div>
                   ))
-                : <div style={{ color: '#94a3b8' }}>No declaration set</div>
+                : <div style={{ color: 'var(--faint)' }}>No declaration set</div>
               }
-              <div style={{ marginTop: '8px', textAlign: 'center' as const, fontStyle: 'italic', color: '#64748b' }}>
-                {form.invoice_footer}
-              </div>
+              <div className="st-preview-foot">{form.invoice_footer}</div>
             </div>
           </div>
-        </div>
+        </Card>
       )}
 
       {/* BANK TAB */}
       {activeTab === 'bank' && (
-        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.5rem' }}>
-          <h2 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
-            Bank Details
-          </h2>
-          <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '1.5rem' }}>
-            These appear on your invoices so customers can make payments
-          </p>
+        <Card>
+          <SectionTitle icon="landmark">Bank details</SectionTitle>
+          <p className="st-sub">These appear on your invoices so customers can make payments</p>
 
-          <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-            <div>
-              <label style={labelStyle}>Bank Name</label>
-              <input style={inputStyle} value={form.bank_name}
+          <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <label className="st-field">
+              <span>Bank name</span>
+              <input className="tf-input" value={form.bank_name}
                 onChange={e => setForm(p => ({ ...p, bank_name: e.target.value }))}
                 placeholder="State Bank of India" />
-            </div>
-            <div>
-              <label style={labelStyle}>Branch</label>
-              <input style={inputStyle} value={form.bank_branch}
+            </label>
+            <label className="st-field">
+              <span>Branch</span>
+              <input className="tf-input" value={form.bank_branch}
                 onChange={e => setForm(p => ({ ...p, bank_branch: e.target.value }))}
                 placeholder="Mumbai Main Branch" />
-            </div>
+            </label>
           </div>
 
-          <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-            <div>
-              <label style={labelStyle}>Account Number</label>
-              <input style={inputStyle} value={form.bank_account_number}
+          <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <label className="st-field">
+              <span>Account number</span>
+              <input className="tf-input" value={form.bank_account_number}
                 onChange={e => setForm(p => ({ ...p, bank_account_number: e.target.value }))}
                 placeholder="20412XXXX05" />
-            </div>
-            <div>
-              <label style={labelStyle}>IFSC Code</label>
-              <input style={inputStyle} value={form.bank_ifsc}
+            </label>
+            <label className="st-field">
+              <span>IFSC code</span>
+              <input className="tf-input" value={form.bank_ifsc}
                 onChange={e => setForm(p => ({ ...p, bank_ifsc: e.target.value.toUpperCase() }))}
                 placeholder="SBIN0003XXXX" />
-            </div>
+            </label>
           </div>
 
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={labelStyle}>UPI ID</label>
-            <input style={inputStyle} value={form.bank_upi_id}
-              onChange={e => setForm(p => ({ ...p, bank_upi_id: e.target.value }))}
-              placeholder="yourid@upi" />
+          <div style={{ marginBottom: 12 }}>
+            <label className="st-field">
+              <span>UPI ID</span>
+              <input className="tf-input" value={form.bank_upi_id}
+                onChange={e => setForm(p => ({ ...p, bank_upi_id: e.target.value }))}
+                placeholder="yourid@upi" />
+            </label>
           </div>
 
           {(form.bank_name || form.bank_account_number) && (
-            <div style={{
-              background: '#f8fafc', border: '1px solid #e2e8f0',
-              borderRadius: '8px', padding: '1rem'
-            }}>
-              <div style={{ fontSize: '11px', fontWeight: '700', color: '#94a3b8', marginBottom: '8px', textTransform: 'uppercase' as const }}>
-                Preview on invoice
-              </div>
-              <div style={{ fontSize: '13px', color: '#374151' }}>
-                <div style={{ fontWeight: '600', marginBottom: '6px' }}>Our Bank Details</div>
+            <div className="st-preview">
+              <div className="st-preview-label">Preview on invoice</div>
+              <div className="st-preview-body">
+                <div style={{ fontWeight: 600, marginBottom: 6 }}>Our Bank Details</div>
                 {form.bank_name && <div>Bank Name: <strong>{form.bank_name}</strong></div>}
                 {form.bank_branch && <div>Branch: <strong>{form.bank_branch}</strong></div>}
                 {form.bank_account_number && <div>Account No: <strong>{form.bank_account_number}</strong></div>}
@@ -563,8 +477,52 @@ export default function SettingsPage() {
               </div>
             </div>
           )}
-        </div>
+        </Card>
       )}
+
+      <style>{`
+        .st-sub { font-size: 13px; color: var(--muted); margin: -4px 0 1.25rem; }
+        .st-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+        .st-field > span { font-size: 12px; font-weight: 550; color: var(--ink-2); }
+        .st-hint { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
+        .st-warn { display: flex; align-items: center; gap: 6px; font-size: 12px;
+          color: var(--red); margin: 4px 0 0; }
+
+        .st-logo-box { background: var(--surface-2); border: 1px solid var(--line);
+          border-radius: var(--radius); padding: 1.25rem; display: flex; align-items: center;
+          gap: 1.25rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
+        .st-logo-img { width: 120px; height: 80px; object-fit: contain; border-radius: var(--radius-sm);
+          border: 1px solid var(--line); background: white; padding: 8px; }
+        .st-logo-status { display: flex; align-items: center; gap: 6px; font-weight: 600;
+          color: var(--ink); margin-bottom: 4px; }
+        .st-logo-status svg { color: var(--green); }
+        .st-logo-hint { font-size: 12.5px; color: var(--muted); margin-bottom: 12px; }
+
+        .st-drop { border: 2px dashed var(--line); border-radius: var(--radius); padding: 2.5rem 1rem;
+          text-align: center; cursor: pointer; margin-bottom: 1.25rem; background: var(--surface-2);
+          transition: border-color 0.15s, background 0.15s; }
+        .st-drop:hover { border-color: var(--brand); background: var(--brand-soft); }
+        .st-drop-chip { display: inline-flex; align-items: center; justify-content: center;
+          width: 46px; height: 46px; border-radius: 999px; background: var(--slate-soft);
+          color: var(--faint); margin-bottom: 12px; }
+        .st-drop-title { font-weight: 600; color: var(--ink-2); margin-bottom: 4px; }
+        .st-drop-sub { font-size: 12.5px; color: var(--muted); }
+        .st-uploading { margin-top: 1rem; color: var(--brand); font-size: 13px; }
+
+        .st-tip { display: flex; gap: 8px; background: var(--cyan-soft); color: var(--cyan);
+          border-radius: var(--radius-sm); padding: 10px 14px; font-size: 12px; line-height: 1.5; }
+
+        .st-preview { background: var(--surface-2); border: 1px solid var(--line);
+          border-radius: var(--radius-sm); padding: 1rem; }
+        .st-preview-label { font-size: 11px; font-weight: 700; color: var(--faint);
+          text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px; }
+        .st-preview-body { font-size: 12.5px; color: var(--ink-2); }
+        .st-preview-foot { margin-top: 8px; text-align: center; font-style: italic; color: var(--muted); }
+
+        @media (max-width: 768px) {
+          .st-logo-box { gap: 1rem; }
+        }
+      `}</style>
     </div>
   )
 }

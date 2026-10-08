@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { formatINR } from '@/lib/gst-engine'
+import { Button, Card, PageHeader, SectionTitle, Segmented, StatCard } from '@/components/ui'
 
 function getDateRange(type: string) {
   const now = new Date()
@@ -47,6 +48,20 @@ function getDateRange(type: string) {
       }
   }
 }
+
+const PERIOD_OPTIONS = [
+  { value: 'this_month', label: 'This month' },
+  { value: 'last_month', label: 'Last month' },
+  { value: 'this_quarter', label: 'This quarter' },
+  { value: 'this_fy', label: 'This financial year' },
+]
+
+const REPORT_OPTIONS = [
+  { value: 'sales', label: 'Sales' },
+  { value: 'purchase', label: 'Purchases' },
+  { value: 'gst', label: 'GST summary' },
+  { value: 'profit', label: 'Profit' },
+]
 
 export default function ReportsPage() {
   const supabase = createClient()
@@ -206,7 +221,7 @@ export default function ReportsPage() {
   }
 
   function exportCurrentReport() {
-    const { start, end, label } = getDateRange(period)
+    const { label } = getDateRange(period)
     let rows: any[] = []
 
     if (activeReport === 'sales') {
@@ -261,437 +276,298 @@ export default function ReportsPage() {
     a.click()
   }
 
-  const tabStyle = (key: string) => ({
-    padding: '8px 18px', background: 'none', border: 'none',
-    cursor: 'pointer' as const, fontSize: '13px',
-    fontWeight: activeReport === key ? '600' : '400',
-    color: activeReport === key ? '#2563eb' : '#64748b',
-    borderBottom: activeReport === key ? '2px solid #2563eb' : '2px solid transparent',
-    marginBottom: '-1px'
-  })
-
   const { label } = getDateRange(period)
 
   if (loading) return (
-    <div style={{ padding: '2rem', color: '#64748b', fontSize: '14px' }}>Loading...</div>
+    <div className="page-container" style={{ color: 'var(--muted)', fontSize: 13 }}>
+      Crunching the numbers…
+    </div>
   )
 
   return (
-    <div className="page-container" style={{ padding: '2rem', maxWidth: '1100px' }}>
-      {/* Header */}
-      <div className="page-header" style={{
-        display: 'flex', justifyContent: 'space-between',
-        alignItems: 'center', marginBottom: '1.5rem'
-      }}>
-        <div>
-          <h1 style={{ fontSize: '22px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
-            Reports
-          </h1>
-          <p style={{ fontSize: '14px', color: '#64748b' }}>{label}</p>
-        </div>
-        <div className="toolbar" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <select
-            style={{
-              padding: '8px 14px', border: '1px solid #e2e8f0',
-              borderRadius: '8px', fontSize: '13px', cursor: 'pointer',
-              background: 'white', color: '#1e293b', outline: 'none'
-            }}
-            value={period}
-            onChange={e => setPeriod(e.target.value)}
-          >
-            <option value="this_month">This Month</option>
-            <option value="last_month">Last Month</option>
-            <option value="this_quarter">This Quarter</option>
-            <option value="this_fy">This Financial Year</option>
-          </select>
-          <button onClick={exportCurrentReport} style={{
-            padding: '8px 16px', background: '#f1f5f9',
-            color: '#374151', border: '1px solid #e2e8f0',
-            borderRadius: '8px', fontSize: '13px', cursor: 'pointer'
-          }}>
-            ↓ Export CSV
-          </button>
-        </div>
-      </div>
+    <div className="page-container rp" style={{ maxWidth: 1100 }}>
+      <PageHeader
+        eyebrow="Insights"
+        title="Reports"
+        subtitle={label}
+        actions={
+          <div className="tf-row tf-wrap" style={{ gap: 8 }}>
+            <Segmented options={PERIOD_OPTIONS} value={period} onChange={setPeriod} />
+            <Button variant="ghost" icon="download" onClick={exportCurrentReport}>
+              Export CSV
+            </Button>
+          </div>
+        }
+      />
 
-      {/* Report tabs */}
-      <div className="tab-bar" style={{
-        borderBottom: '1px solid #e2e8f0',
-        marginBottom: '1.5rem', display: 'flex', gap: '4px'
-      }}>
-        <button style={tabStyle('sales')} onClick={() => setActiveReport('sales')}>
-          📈 Sales
-        </button>
-        <button style={tabStyle('purchase')} onClick={() => setActiveReport('purchase')}>
-          🛒 Purchases
-        </button>
-        <button style={tabStyle('gst')} onClick={() => setActiveReport('gst')}>
-          🏛️ GST Summary
-        </button>
-        <button style={tabStyle('profit')} onClick={() => setActiveReport('profit')}>
-          💰 Profit Overview
-        </button>
+      <div style={{ marginBottom: '1rem' }}>
+        <Segmented options={REPORT_OPTIONS} value={activeReport} onChange={setActiveReport} />
       </div>
 
       {/* SALES REPORT */}
       {activeReport === 'sales' && (
-        <div>
-          {/* Summary cards */}
-          <div className="metric-grid" style={{
-            display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
-            gap: '1rem', marginBottom: '1.5rem'
-          }}>
-            {[
-              { label: 'Total Sales', value: salesData.total },
-              { label: 'Taxable Value', value: salesData.taxable },
-              { label: 'Tax Collected', value: salesData.tax },
-              { label: 'Invoices', value: salesData.invoiceCount, isCount: true },
-            ].map(card => (
-              <div key={card.label} style={{
-                background: 'white', border: '1px solid #e2e8f0',
-                borderRadius: '12px', padding: '1rem'
-              }}>
-                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>
-                  {card.label}
-                </div>
-                <div style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>
-                  {card.isCount ? card.value : `₹${formatINR(card.value as number)}`}
-                </div>
-              </div>
-            ))}
+        <>
+          <div className="rp-stats">
+            <StatCard label="Total sales" value={salesData.total} icon="trend" tone="blue"
+              sub={`${salesData.invoiceCount} invoice${salesData.invoiceCount !== 1 ? 's' : ''}`} />
+            <StatCard label="Taxable value" value={salesData.taxable} icon="scale" tone="blue"
+              sub="GST excluded" delay={40} />
+            <StatCard label="Tax collected" value={salesData.tax} icon="percent" tone="amber"
+              sub="CGST + SGST + IGST" delay={80} />
+            <StatCard label="Invoices" value={String(salesData.invoiceCount)} icon="invoice" tone="green"
+              sub="in this period" delay={120} />
           </div>
 
-          <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-            {/* By Customer */}
-            <div style={{
-              background: 'white', border: '1px solid #e2e8f0',
-              borderRadius: '12px', overflow: 'hidden'
-            }}>
-              <div style={{
-                padding: '12px 16px', fontWeight: '600', fontSize: '13px',
-                color: '#374151', borderBottom: '1px solid #f1f5f9'
-              }}>
-                Sales by Customer
+          <div className="rp-split">
+            <Card pad={false}>
+              <div className="rp-card-head">
+                <SectionTitle icon="users">Sales by customer</SectionTitle>
               </div>
               {salesData.byCustomer.length === 0 ? (
-                <div style={{ padding: '2rem', textAlign: 'center' as const, color: '#94a3b8', fontSize: '13px' }}>
-                  No data
-                </div>
+                <div className="rp-none">No sales in this period</div>
               ) : salesData.byCustomer.slice(0, 8).map((c: any) => (
-                <div key={c.name} style={{
-                  display: 'flex', justifyContent: 'space-between',
-                  padding: '10px 16px', borderBottom: '1px solid #f8fafc',
-                  fontSize: '13px', alignItems: 'center'
-                }}>
-                  <div>
-                    <div style={{ color: '#1e293b', fontWeight: '500' }}>{c.name}</div>
-                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>
-                      {c.count} invoice{c.count !== 1 ? 's' : ''}
-                    </div>
+                <div key={c.name} className="rp-line">
+                  <div style={{ minWidth: 0 }}>
+                    <div className="rp-line-name">{c.name}</div>
+                    <div className="rp-line-sub">{c.count} invoice{c.count !== 1 ? 's' : ''}</div>
                   </div>
-                  <div style={{ fontWeight: '600', color: '#2563eb' }}>
-                    ₹{formatINR(c.total)}
-                  </div>
+                  <div className="rp-line-amt tf-num">₹{formatINR(c.total)}</div>
                 </div>
               ))}
-            </div>
+            </Card>
 
-            {/* By Product */}
-            <div style={{
-              background: 'white', border: '1px solid #e2e8f0',
-              borderRadius: '12px', overflow: 'hidden'
-            }}>
-              <div style={{
-                padding: '12px 16px', fontWeight: '600', fontSize: '13px',
-                color: '#374151', borderBottom: '1px solid #f1f5f9'
-              }}>
-                Sales by Product
+            <Card pad={false}>
+              <div className="rp-card-head">
+                <SectionTitle icon="box">Sales by product</SectionTitle>
               </div>
               {salesData.byProduct.length === 0 ? (
-                <div style={{ padding: '2rem', textAlign: 'center' as const, color: '#94a3b8', fontSize: '13px' }}>
-                  No data
-                </div>
+                <div className="rp-none">No sales in this period</div>
               ) : salesData.byProduct.slice(0, 8).map((p: any) => (
-                <div key={p.name} style={{
-                  display: 'flex', justifyContent: 'space-between',
-                  padding: '10px 16px', borderBottom: '1px solid #f8fafc',
-                  fontSize: '13px', alignItems: 'center'
-                }}>
-                  <div>
-                    <div style={{ color: '#1e293b', fontWeight: '500' }}>{p.name}</div>
-                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>
-                      Qty: {Number(p.qty).toFixed(2)}
-                    </div>
+                <div key={p.name} className="rp-line">
+                  <div style={{ minWidth: 0 }}>
+                    <div className="rp-line-name">{p.name}</div>
+                    <div className="rp-line-sub">Qty: {Number(p.qty).toFixed(2)}</div>
                   </div>
-                  <div style={{ fontWeight: '600', color: '#2563eb' }}>
-                    ₹{formatINR(p.total)}
-                  </div>
+                  <div className="rp-line-amt tf-num">₹{formatINR(p.total)}</div>
                 </div>
               ))}
-            </div>
+            </Card>
           </div>
 
-          {/* By State */}
           {salesData.byState.length > 0 && (
-            <div style={{
-              background: 'white', border: '1px solid #e2e8f0',
-              borderRadius: '12px', overflow: 'hidden', marginTop: '1rem'
-            }}>
-              <div style={{
-                padding: '12px 16px', fontWeight: '600', fontSize: '13px',
-                color: '#374151', borderBottom: '1px solid #f1f5f9'
-              }}>
-                Sales by State (Place of Supply)
+            <Card pad={false} style={{ marginTop: '1rem' }}>
+              <div className="rp-card-head">
+                <SectionTitle icon="landmark">Sales by state (place of supply)</SectionTitle>
               </div>
-              <div className="metric-grid" style={{
-                display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0'
-              }}>
-                {salesData.byState.map((s: any, i: number) => (
-                  <div key={s.name} style={{
-                    display: 'flex', justifyContent: 'space-between',
-                    padding: '10px 16px',
-                    borderBottom: '1px solid #f8fafc',
-                    borderRight: i % 3 !== 2 ? '1px solid #f8fafc' : 'none',
-                    fontSize: '13px'
-                  }}>
-                    <span style={{ color: '#374151' }}>{s.name}</span>
-                    <span style={{ fontWeight: '600', color: '#1e293b' }}>
-                      ₹{formatINR(s.total)}
-                    </span>
+              <div className="rp-states">
+                {salesData.byState.map((s: any) => (
+                  <div key={s.name} className="rp-state">
+                    <span className="rp-state-name">{s.name}</span>
+                    <span className="rp-state-amt tf-num">₹{formatINR(s.total)}</span>
                   </div>
                 ))}
               </div>
-            </div>
+            </Card>
           )}
-        </div>
+        </>
       )}
 
       {/* PURCHASE REPORT */}
       {activeReport === 'purchase' && (
-        <div>
-          <div className="metric-grid" style={{
-            display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
-            gap: '1rem', marginBottom: '1.5rem'
-          }}>
-            {[
-              { label: 'Total Purchases', value: purchaseData.total },
-              { label: 'ITC Available', value: purchaseData.itc },
-              { label: 'Bills', value: purchaseData.billCount, isCount: true },
-            ].map(card => (
-              <div key={card.label} style={{
-                background: 'white', border: '1px solid #e2e8f0',
-                borderRadius: '12px', padding: '1rem'
-              }}>
-                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>
-                  {card.label}
-                </div>
-                <div style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>
-                  {card.isCount ? card.value : `₹${formatINR(card.value as number)}`}
-                </div>
-              </div>
-            ))}
+        <>
+          <div className="rp-stats rp-stats-3">
+            <StatCard label="Total purchases" value={purchaseData.total} icon="cart" tone="blue"
+              sub={`${purchaseData.billCount} bill${purchaseData.billCount !== 1 ? 's' : ''}`} />
+            <StatCard label="ITC available" value={purchaseData.itc} icon="check" tone="green"
+              sub="from eligible bills" delay={40} />
+            <StatCard label="Bills" value={String(purchaseData.billCount)} icon="invoice" tone="blue"
+              sub="in this period" delay={80} />
           </div>
 
-          <div className="responsive-table" style={{
-            background: 'white', border: '1px solid #e2e8f0',
-            borderRadius: '12px', overflow: 'hidden'
-          }}>
-            <div style={{
-              padding: '12px 16px', fontWeight: '600', fontSize: '13px',
-              color: '#374151', borderBottom: '1px solid #f1f5f9'
-            }}>
-              Purchases by Vendor
-            </div>
-            {purchaseData.byVendor.length === 0 ? (
-              <div style={{ padding: '2rem', textAlign: 'center' as const, color: '#94a3b8', fontSize: '13px' }}>
-                No purchase data for this period
-              </div>
-            ) : (
-              <>
-                <div className="table-header" style={{
-                  display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr',
-                  gap: '12px', padding: '8px 16px',
-                  fontSize: '11px', fontWeight: '600', color: '#94a3b8',
-                  borderBottom: '1px solid #f1f5f9'
-                }}>
-                  <span>Vendor</span>
-                  <span>Bills</span>
-                  <span>Total</span>
-                  <span>ITC</span>
-                </div>
-                {purchaseData.byVendor.map((v: any) => (
-                  <div key={v.name} className="table-row" style={{
-                    display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr',
-                    gap: '12px', padding: '10px 16px',
-                    borderBottom: '1px solid #f8fafc', fontSize: '13px'
-                  }}>
-                    <span data-label="Vendor" style={{ fontWeight: '500', color: '#1e293b' }}>{v.name}</span>
-                    <span data-label="Bills" style={{ color: '#64748b' }}>{v.count}</span>
-                    <span data-label="Total" style={{ fontWeight: '600' }}>₹{formatINR(v.total)}</span>
-                    <span data-label="ITC" style={{ color: '#059669', fontWeight: '500' }}>
-                      ₹{formatINR(v.itc)}
-                    </span>
+          <div className="table-frame">
+            <div className="rp-rows">
+              <div className="rp-eyebrow" style={{ marginBottom: 10 }}>Purchases by vendor</div>
+              {purchaseData.byVendor.length === 0 ? (
+                <div className="rp-none">No purchase data for this period</div>
+              ) : (
+                <div className="responsive-table">
+                  <div className="table-header rp-row rp-row-v rp-row-head">
+                    <span>Vendor</span>
+                    <span className="rp-right">Bills</span>
+                    <span className="rp-right">Total</span>
+                    <span className="rp-right">ITC</span>
                   </div>
-                ))}
-              </>
-            )}
+                  {purchaseData.byVendor.map((v: any) => (
+                    <div key={v.name} className="table-row rp-row rp-row-v">
+                      <span data-label="Vendor" className="rp-strong">{v.name}</span>
+                      <span data-label="Bills" className="rp-muted rp-right tf-num">{v.count}</span>
+                      <span data-label="Total" className="rp-num rp-right tf-num">₹{formatINR(v.total)}</span>
+                      <span data-label="ITC" className="rp-itc rp-right tf-num">₹{formatINR(v.itc)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        </>
       )}
 
       {/* GST SUMMARY REPORT */}
       {activeReport === 'gst' && (
-        <div>
-          <div className="responsive-table" style={{
-            background: 'white', border: '1px solid #e2e8f0',
-            borderRadius: '12px', overflow: 'hidden', marginBottom: '1rem'
-          }}>
-            <div style={{
-              padding: '12px 16px', fontWeight: '600', fontSize: '13px',
-              color: '#374151', borderBottom: '1px solid #f1f5f9'
-            }}>
-              GST Summary — {label}
-            </div>
-            <div className="table-header" style={{
-              display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr',
-              gap: '8px', padding: '10px 16px',
-              fontSize: '12px', fontWeight: '600', color: '#94a3b8',
-              borderBottom: '1px solid #f1f5f9'
-            }}>
-              <span>Category</span>
-              <span style={{ textAlign: 'right' as const }}>CGST</span>
-              <span style={{ textAlign: 'right' as const }}>SGST</span>
-              <span style={{ textAlign: 'right' as const }}>IGST</span>
-              <span style={{ textAlign: 'right' as const }}>Total</span>
-            </div>
-
-            {[
-              {
-                label: 'Output Tax (Sales)', bold: false,
-                cgst: gstData.outputCGST, sgst: gstData.outputSGST,
-                igst: gstData.outputIGST,
-                total: gstData.outputCGST + gstData.outputSGST + gstData.outputIGST,
-                color: '#dc2626'
-              },
-              {
-                label: 'Input Tax Credit (ITC)', bold: false,
-                cgst: gstData.itcCGST, sgst: gstData.itcSGST,
-                igst: gstData.itcIGST,
-                total: gstData.itcCGST + gstData.itcSGST + gstData.itcIGST,
-                color: '#059669'
-              },
-              {
-                label: 'Net GST Payable', bold: true,
-                cgst: gstData.netCGST, sgst: gstData.netSGST,
-                igst: gstData.netIGST, total: gstData.netTotal,
-                color: '#d97706'
-              },
-            ].map(row => (
-              <div key={row.label} className="table-row" style={{
-                display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr',
-                gap: '8px', padding: '12px 16px',
-                borderBottom: '1px solid #f8fafc',
-                fontWeight: row.bold ? '700' : '400',
-                background: row.bold ? '#fffbeb' : 'white'
-              }}>
-                <span data-label="Category" style={{ color: '#374151', fontSize: '13px' }}>{row.label}</span>
-                <span data-label="CGST" style={{ textAlign: 'right' as const, fontSize: '13px', color: row.color }}>
-                  ₹{formatINR(row.cgst)}
-                </span>
-                <span data-label="SGST" style={{ textAlign: 'right' as const, fontSize: '13px', color: row.color }}>
-                  ₹{formatINR(row.sgst)}
-                </span>
-                <span data-label="IGST" style={{ textAlign: 'right' as const, fontSize: '13px', color: row.color }}>
-                  ₹{formatINR(row.igst)}
-                </span>
-                <span data-label="Total" style={{ textAlign: 'right' as const, fontSize: '14px', fontWeight: '700', color: row.color }}>
-                  ₹{formatINR(row.total)}
-                </span>
+        <div className="table-frame">
+          <div className="rp-rows">
+            <div className="rp-eyebrow" style={{ marginBottom: 10 }}>GST summary — {label}</div>
+            <div className="responsive-table">
+              <div className="table-header rp-row rp-row-g rp-row-head">
+                <span>Category</span>
+                <span className="rp-right">CGST</span>
+                <span className="rp-right">SGST</span>
+                <span className="rp-right">IGST</span>
+                <span className="rp-right">Total</span>
               </div>
-            ))}
+
+              {[
+                {
+                  label: 'Output tax (sales)', cls: 'is-output',
+                  cgst: gstData.outputCGST, sgst: gstData.outputSGST,
+                  igst: gstData.outputIGST,
+                  total: gstData.outputCGST + gstData.outputSGST + gstData.outputIGST,
+                },
+                {
+                  label: 'Input tax credit (ITC)', cls: 'is-itc',
+                  cgst: gstData.itcCGST, sgst: gstData.itcSGST,
+                  igst: gstData.itcIGST,
+                  total: gstData.itcCGST + gstData.itcSGST + gstData.itcIGST,
+                },
+                {
+                  label: 'Net GST payable', cls: 'is-net',
+                  cgst: gstData.netCGST, sgst: gstData.netSGST,
+                  igst: gstData.netIGST, total: gstData.netTotal,
+                },
+              ].map(row => (
+                <div key={row.label} className={`table-row rp-row rp-row-g ${row.cls}`}>
+                  <span data-label="Category" className="rp-strong">{row.label}</span>
+                  <span data-label="CGST" className="rp-right rp-amt tf-num">₹{formatINR(row.cgst)}</span>
+                  <span data-label="SGST" className="rp-right rp-amt tf-num">₹{formatINR(row.sgst)}</span>
+                  <span data-label="IGST" className="rp-right rp-amt tf-num">₹{formatINR(row.igst)}</span>
+                  <span data-label="Total" className="rp-right rp-amt rp-total tf-num">₹{formatINR(row.total)}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
 
       {/* PROFIT OVERVIEW */}
       {activeReport === 'profit' && (
-        <div>
-          <div style={{
-            background: 'white', border: '1px solid #e2e8f0',
-            borderRadius: '12px', padding: '1.5rem', marginBottom: '1rem'
-          }}>
-            <div style={{
-              fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '1rem'
-            }}>
-              Profit & Loss Overview — {label}
-            </div>
-            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '1rem', fontStyle: 'italic' }}>
-              Note: Based on taxable values (excluding GST). This is an indicative overview,
-              not a formal P&L statement. Consult your accountant for certified accounts.
-            </div>
+        <>
+          <div className="table-frame" style={{ marginBottom: '1rem' }}>
+            <div className="rp-rows">
+              <div className="rp-eyebrow" style={{ marginBottom: 10 }}>Profit &amp; loss overview — {label}</div>
+              <p className="rp-note">
+                Note: Based on taxable values (excluding GST). This is an indicative overview,
+                not a formal P&L statement. Consult your accountant for certified accounts.
+              </p>
 
-            {[
-              { label: 'Revenue (Sales — Taxable Value)', value: profitData.revenue, color: '#059669', sign: '+' },
-              { label: 'Cost of Purchases', value: profitData.purchases, color: '#dc2626', sign: '−' },
-              { label: 'Gross Profit', value: profitData.grossProfit, color: profitData.grossProfit >= 0 ? '#059669' : '#dc2626', bold: true, border: true },
-              { label: 'Expenses', value: profitData.expenses, color: '#dc2626', sign: '−' },
-              { label: 'Net Profit / (Loss)', value: profitData.netProfit, color: profitData.netProfit >= 0 ? '#059669' : '#dc2626', bold: true, border: true },
-            ].map(row => (
-              <div key={row.label} style={{
-                display: 'flex', justifyContent: 'space-between',
-                padding: row.border ? '14px 0' : '10px 0',
-                borderTop: row.border ? '2px solid #e2e8f0' : '1px solid #f8fafc',
-                marginTop: row.border ? '8px' : '0'
-              }}>
-                <span style={{
-                  fontSize: '14px', fontWeight: row.bold ? '700' : '400',
-                  color: row.bold ? '#1e293b' : '#374151'
-                }}>
-                  {row.label}
-                </span>
-                <span style={{
-                  fontSize: '16px', fontWeight: '700', color: row.color
-                }}>
-                  {row.sign && `${row.sign} `}₹{formatINR(Math.abs(row.value))}
-                </span>
-              </div>
-            ))}
+              {[
+                { label: 'Revenue (Sales — Taxable Value)', value: profitData.revenue, sign: '+', pos: true },
+                { label: 'Cost of Purchases', value: profitData.purchases, sign: '−', pos: false },
+                { label: 'Gross Profit', value: profitData.grossProfit, pos: profitData.grossProfit >= 0, isTotal: true },
+                { label: 'Expenses', value: profitData.expenses, sign: '−', pos: false },
+                { label: 'Net Profit / (Loss)', value: profitData.netProfit, pos: profitData.netProfit >= 0, isTotal: true },
+              ].map(row => (
+                <div key={row.label} className={`rp-pl-row${row.isTotal ? ' is-total' : ''}`}>
+                  <span className="rp-pl-label">{row.label}</span>
+                  <span className={`rp-pl-val tf-num ${row.pos ? 'is-pos' : 'is-neg'}`}>
+                    {row.sign && `${row.sign} `}₹{formatINR(Math.abs(row.value))}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
 
-          <div className="metric-grid" style={{
-            display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
-            gap: '1rem'
-          }}>
-            {[
-              { label: 'Revenue', value: profitData.revenue, color: '#2563eb' },
-              { label: 'Total Costs', value: profitData.purchases + profitData.expenses, color: '#dc2626' },
-              {
-                label: 'Net Profit Margin',
-                value: profitData.revenue > 0
-                  ? Math.round((profitData.netProfit / profitData.revenue) * 100)
-                  : 0,
-                isPercent: true,
-                color: profitData.netProfit >= 0 ? '#059669' : '#dc2626'
-              },
-            ].map(card => (
-              <div key={card.label} style={{
-                background: 'white', border: '1px solid #e2e8f0',
-                borderRadius: '12px', padding: '1.25rem',
-                borderTop: `3px solid ${card.color}`
-              }}>
-                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>
-                  {card.label}
-                </div>
-                <div style={{ fontSize: '22px', fontWeight: '700', color: card.color }}>
-                  {(card as any).isPercent
-                    ? `${card.value}%`
-                    : `₹${formatINR(card.value as number)}`}
-                </div>
-              </div>
-            ))}
+          <div className="rp-stats rp-stats-3">
+            <StatCard label="Revenue" value={profitData.revenue} icon="trend" tone="blue"
+              sub="taxable value, GST excluded" />
+            <StatCard label="Total costs" value={profitData.purchases + profitData.expenses} icon="cart" tone="red"
+              sub="purchases + expenses" delay={40} />
+            <StatCard
+              label="Net profit margin"
+              value={`${profitData.revenue > 0 ? Math.round((profitData.netProfit / profitData.revenue) * 100) : 0}%`}
+              icon="percent"
+              tone={profitData.netProfit >= 0 ? 'green' : 'red'}
+              sub={profitData.netProfit >= 0 ? 'in profit' : 'running a loss'}
+              delay={80}
+            />
           </div>
-        </div>
+        </>
       )}
+
+      <style>{`
+        .rp-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 1rem; }
+        .rp-stats-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+        .rp-split { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+        .rp-card-head { padding: 1.15rem 1.5rem 0; }
+        .rp-none { padding: 2rem 1.5rem; text-align: center; color: var(--faint); font-size: 13px; }
+
+        .rp-line { display: flex; justify-content: space-between; align-items: center; gap: 12px;
+          padding: 10px 1.5rem; border-top: 1px solid var(--line-soft); }
+        .rp-line-name { color: var(--ink); font-weight: 550; font-size: 13px; overflow-wrap: anywhere; }
+        .rp-line-sub { font-size: 11px; color: var(--faint); margin-top: 2px; }
+        .rp-line-amt { font-weight: 650; color: var(--brand); font-size: 13px; white-space: nowrap; }
+
+        .rp-states { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px;
+          background: var(--line-soft); border-top: 1px solid var(--line-soft); }
+        .rp-state { background: var(--surface); display: flex; justify-content: space-between; gap: 10px;
+          padding: 10px 16px; font-size: 12.5px; }
+        .rp-state-name { color: var(--ink-2); overflow-wrap: anywhere; }
+        .rp-state-amt { font-weight: 650; color: var(--ink); white-space: nowrap; }
+
+        .rp-rows { padding: 1.5rem; }
+        .rp-eyebrow { font-size: 11px; font-weight: 650; color: var(--muted);
+          text-transform: uppercase; letter-spacing: 0.05em; }
+        .rp-note { font-size: 12px; color: var(--muted); font-style: italic; margin: 0 0 1rem; line-height: 1.55; }
+
+        .rp-row { display: grid; gap: 8px; align-items: center; padding: 9px 0;
+          border-bottom: 1px solid var(--line-soft); font-size: 12.5px; }
+        .rp-row-v { grid-template-columns: minmax(0, 2fr) 70px minmax(0, 1fr) minmax(0, 1fr); }
+        .rp-row-g { grid-template-columns: minmax(0, 1.6fr) repeat(4, minmax(0, 1fr)); }
+        .rp-row:last-child { border-bottom: none; }
+        .rp-row-head { font-size: 11px; font-weight: 650; color: var(--faint);
+          text-transform: uppercase; letter-spacing: 0.05em; }
+        .rp-right { text-align: right; }
+        .rp-strong { color: var(--ink); font-weight: 550; overflow-wrap: anywhere; }
+        .rp-muted { color: var(--muted); }
+        .rp-num { color: var(--ink); }
+        .rp-itc { color: var(--green); }
+        .rp-amt { font-size: 13px; }
+        .rp-total { font-weight: 700; font-size: 13.5px; }
+        .rp-row.is-output .rp-amt { color: var(--red); }
+        .rp-row.is-itc .rp-amt { color: var(--green); }
+        .rp-row.is-net .rp-amt { color: var(--amber); }
+        .rp-row.is-net { background: var(--amber-soft); font-weight: 650; }
+
+        .rp-pl-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+          padding: 10px 0; border-top: 1px solid var(--line-soft); }
+        .rp-pl-row.is-total { border-top: 2px solid var(--line); margin-top: 8px; padding: 14px 0; }
+        .rp-pl-label { font-size: 13.5px; color: var(--ink-2); }
+        .rp-pl-row.is-total .rp-pl-label { font-weight: 650; color: var(--ink); }
+        .rp-pl-val { font-size: 15px; font-weight: 700; white-space: nowrap; }
+        .rp-pl-val.is-pos { color: var(--green); }
+        .rp-pl-val.is-neg { color: var(--red); }
+
+        @media (max-width: 1024px) {
+          .rp-stats, .rp-stats-3 { grid-template-columns: 1fr 1fr; }
+          .rp-states { grid-template-columns: 1fr 1fr; }
+        }
+        @media (max-width: 768px) {
+          .rp-split { grid-template-columns: 1fr; }
+          .rp-stats, .rp-stats-3 { grid-template-columns: 1fr 1fr; }
+          .rp-states { grid-template-columns: 1fr; }
+          .rp-right { text-align: left; }
+        }
+      `}</style>
     </div>
   )
 }
