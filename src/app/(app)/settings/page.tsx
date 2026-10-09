@@ -319,6 +319,21 @@ export default function SettingsPage() {
             stays the only writer of money here.
           </p>
         </Card>
+
+        <Card style={{ marginTop: 12 }}>
+          <SectionTitle icon="shield">Your registers and this browser</SectionTitle>
+          <p className="st-sub">
+            Invoices, bills, customers and products are rows in the database and come back with the login. The registers
+            — batches, serial numbers, godowns, LUTs, cost-centre splits, job-work lots, workpaper figures, targets,
+            reorder lead times, this page&apos;s own settings — are kept on the device (ADR-013), which is what lets them
+            work offline and what makes them vulnerable to a cleared browser or a new laptop.
+          </p>
+          <p className="st-sub">
+            <Link href="/vault" style={{ color: 'var(--brand)', textDecoration: 'none', margin: '0 3px' }}>The books vault</Link>
+            writes all of them into one readable file and puts them back through the pages that own them, so a restore is
+            proved by what those pages can read rather than by a write that returned no error.
+          </p>
+        </Card>
         </>
       )}
 

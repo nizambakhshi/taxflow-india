@@ -98,6 +98,7 @@ export const NAV_ITEMS: NavSection[] = [
     section: 'Account',
     items: [
       { label: 'Tally Bridge', href: '/tally', icon: 'tally' },
+      { label: 'Books Vault', href: '/vault', icon: 'shield' },
       { label: 'Settings', href: '/settings', icon: 'settings' },
     ]
   },

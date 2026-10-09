@@ -1,6 +1,7 @@
 'use client'
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { formatDateIN } from '@/lib/format'
@@ -218,6 +219,17 @@ function OfflinePageInner() {
         </div>
       )}
 
+      <div className="of-vault">
+        <Icon name="shield" size={15} />
+        <span>
+          This queue is not the only device-only data — the batch, serial, godown, LUT and workpaper registers sit on this
+          browser too. <Link href="/vault" className="of-vault-link">The books vault</Link> writes those into one file you
+          can keep somewhere the browser is not. The queue itself travels as <em>evidence only</em>: putting a pending
+          invoice back would replay a sync and bill the same sale twice, so the vault prints this queue and never restores
+          it.
+        </span>
+      </div>
+
       <div className="of-foot">
         <span>Queued here: {entries.length} · {money(summary.value)}</span>
         <span>The queue lives in this browser only — clearing site data before a sync discards these invoices, and they cannot be recovered from the server.</span>
@@ -253,6 +265,13 @@ function OfflinePageInner() {
 
         .of-foot { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 11.5px;
           color: var(--faint); margin-top: 12px; }
+
+        .of-vault { display: flex; align-items: flex-start; gap: 8px; margin-top: 14px; padding: 10px 12px;
+          border-radius: var(--radius-sm); font-size: 12px; line-height: 1.6; color: var(--muted);
+          background: var(--brand-soft); border: 1px solid color-mix(in srgb, var(--brand) 18%, transparent); }
+        .of-vault svg { flex-shrink: 0; margin-top: 2px; color: var(--brand); }
+        .of-vault-link { color: var(--brand); font-weight: 650; text-decoration: none; }
+        .of-vault-link:hover { text-decoration: underline; }
 
         @media (max-width: 1100px) { .of-stats { grid-template-columns: 1fr 1fr; } }
         @media (max-width: 768px) {

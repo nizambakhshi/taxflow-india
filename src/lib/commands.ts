@@ -553,6 +553,26 @@ export function buildActionCommands(): Command[] {
       badge: 'Action',
       keywords: 'tally sample demo example try test bridge import xml plan practice learn what it does',
     },
+    {
+      id: 'action:vault-backup',
+      kind: 'action',
+      label: 'Back up my books',
+      sublabel: 'Write every device-side register into one vault file',
+      href: '/vault?tab=backup',
+      icon: 'shield',
+      badge: 'Action',
+      keywords: 'backup back up vault safe copy download file json registers portable save protect browser wipe clear cache change laptop device new computer handover ca accountant transfer migrate restore point batches serials godowns lut workpapers targets splits settings export data my books are safe',
+    },
+    {
+      id: 'action:vault-restore',
+      kind: 'action',
+      label: 'Restore from a vault file',
+      sublabel: 'Put registers back through the pages that own them',
+      href: '/vault?tab=restore',
+      icon: 'undo',
+      badge: 'Action',
+      keywords: 'restore put back recover vault file json upload pick import another device new laptop browser wiped lost data undo replace registers batches serials godowns lut workpapers targets splits settings checksum damaged truncated plan',
+    },
   ]
 }
 
