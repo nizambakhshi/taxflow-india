@@ -250,6 +250,28 @@ export default function InvoiceDetailPage() {
         </div>
       )}
 
+      {/*
+        Export banner — a zero-rated invoice carries two clocks the ledger cannot see: the LUT that
+        keeps it tax-free, and the FEMA window the proceeds have to arrive inside. Both live on the
+        export register, so this page points there instead of repeating the dates.
+      */}
+      {invoice.supply_type === 'export' && (
+        <div id="export-banner" className="id-export">
+          <Icon name="ship" size={15} strokeWidth={2.0} />
+          <span>
+            Export invoice — its LUT and the realisation window are tracked on the export register,
+            not here.
+          </span>
+          <Button
+            size="sm"
+            variant="ghost"
+            href={`/gst/exports?file=${encodeURIComponent(invoice.invoice_number)}`}
+          >
+            Open on the export register
+          </Button>
+        </div>
+      )}
+
       {/* ── PAGE WRAPPER ── */}
       <div className="page-container">
 
@@ -745,8 +767,21 @@ export default function InvoiceDetailPage() {
         }
         .id-cancelled svg { flex-shrink: 0; }
 
+        /* The export banner: a route to the register, not a second copy of its dates. */
+        .id-export {
+          display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+          margin: 1rem 2rem 0;
+          background: var(--brand-soft); color: var(--brand-dark);
+          border-left: 3px solid var(--brand);
+          padding: 9px 14px; border-radius: 8px;
+          font-size: 12.5px; font-weight: 600; line-height: 1.5;
+        }
+        .id-export svg { flex-shrink: 0; color: var(--brand); }
+        .id-export span { min-width: 0; }
+
         @media (max-width: 768px) {
           .id-cancelled { margin: 10px 1rem 0; }
+          .id-export { margin: 10px 1rem 0; }
         }
       `}</style>
 

@@ -454,6 +454,16 @@ export function buildActionCommands(): Command[] {
       keywords: 'create add job work itc04 itc-04 sent to job worker processing inputs capital goods moulds dies tools rule 45 section 143 bring back deemed supply challan',
     },
     {
+      id: 'action:new-export-file',
+      kind: 'action',
+      label: 'Record export file',
+      sublabel: 'A consignment that left India',
+      href: '/gst/exports?new=1',
+      icon: 'ship',
+      badge: 'Action',
+      keywords: 'create add export overseas foreign buyer shipping bill lut letter of undertaking rfd-11 rfd-1 zero rated igst refund realisation firc e-brc fema proceeds window advance grace period',
+    },
+    {
       id: 'action:new-cost-centre',
       kind: 'action',
       label: 'New cost centre',

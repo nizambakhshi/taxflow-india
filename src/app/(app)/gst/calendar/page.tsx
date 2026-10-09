@@ -10,6 +10,8 @@ import {
 } from '@/lib/compliance'
 import { download } from '@/lib/party-ledger'
 import { itc04Cadence, itc04Periods, loadJob } from '@/lib/jobwork'
+import { isExportDoc, loadExp, todayISO, watchRows, type ExportBookInvoice, type FxDealLite, type WatchRow } from '@/lib/exports'
+import { loadFx } from '@/lib/fx'
 import { formatINR } from '@/lib/gst-engine'
 import { formatCompactINR, formatDateIN } from '@/lib/format'
 import { Badge, Button, Card, EmptyState, PageHeader, Segmented, StatRow } from '@/components/ui'
@@ -54,6 +56,61 @@ function jobWorkEvents(orgId: string, fy: number): ComplianceEvent[] {
   }))
 }
 
+/**
+ * The export register owns its dates: next year's undertaking, each consignment's realisation
+ * window, each refund limitation, each advance still waiting to be shipped. The calendar calls
+ * `watchRows()` instead of recomputing any of them, so the two screens cannot disagree — and a
+ * file that is settled or shipped stops appearing here without anyone clearing a checkbox.
+ *
+ * The ₹-per-day estimator stays silent on these rows on purpose. A missing LUT is not a late
+ * filing, it is a supply that becomes taxable; a missed realisation window is FEMA, not GST. Each
+ * row therefore carries a note that says what waiting actually costs instead of a number.
+ */
+const EXPORT_KIND_NOTE: Record<WatchRow['kind'], string> = {
+  lut: 'Nothing is charged for a late LUT — an export without one in force simply becomes taxable, so IGST has to be paid on the invoice and refunded afterwards.',
+  realisation: 'A FEMA matter, not a GST default, so no late fee is computed here. Past the window the AD bank can hold further exports until the contravention is condoned.',
+  refund: 'The department charges nothing for waiting — the two years in section 54(1) run out and the IGST paid on the invoice stays where it is.',
+  advance: 'Goods taken against an advance have to leave India inside the window. A late dispatch goes to the AD bank for condonation with the shipping bill as proof.',
+}
+
+function watchToEvent(r: WatchRow): ComplianceEvent {
+  return {
+    id: r.id,
+    title: r.label,
+    form: r.form,
+    // LUT and refund are GST filings; the money-in rows are FEMA and belong to the bank, not the
+    // GST portal, so they sit under "Other" rather than borrowing a GST late-fee rule.
+    category: r.kind === 'lut' || r.kind === 'refund' ? 'gst' : 'other',
+    due: r.date,
+    period: r.party || 'Export register',
+    description: r.detail,
+    href: r.href,
+    penalty: { note: EXPORT_KIND_NOTE[r.kind] },
+  }
+}
+
+/**
+ * A business with no export paperwork has nothing to watch here, so the register has to say so
+ * before any row is built — otherwise every calendar would suddenly grow an RFD-11 deadline.
+ */
+function exportEvents(orgId: string, books: ExportBookInvoice[], fy: number): ComplianceEvent[] {
+  if (!orgId) return []
+  const store = loadExp(orgId)
+  if (store.files.length === 0 && store.luts.length === 0) return []
+  const deals: FxDealLite[] = loadFx(orgId).entries.map(e => ({
+    invoice_number: e.invoice_number,
+    currency: e.currency,
+    foreign_value: e.foreign_value,
+    booked_inr: e.booked_inr,
+    receipts: e.receipts.map(r => ({ date: r.date, foreign: r.foreign, inr: r.inr, reference: r.reference })),
+  }))
+  const from = `${fy}-04-01`
+  const to = `${fy + 1}-03-31`
+  return watchRows(store, books, deals, todayISO())
+    .filter(r => r.date >= from && r.date <= to)
+    .map(watchToEvent)
+}
+
 export default function ComplianceCalendarPage() {
   const supabase = createClient()
   const router = useRouter()
@@ -65,6 +122,8 @@ export default function ComplianceCalendarPage() {
   const [statuses, setStatuses] = useState<StatusMap>({})
   const [fy, setFy] = useState(currentFyStart())
   const [monthFilter, setMonthFilter] = useState<string>('all')
+  /** Export invoices from the books — the rupee half of the watch list the register also reads. */
+  const [expBooks, setExpBooks] = useState<ExportBookInvoice[]>([])
 
   useEffect(() => {
     async function load() {
@@ -83,6 +142,18 @@ export default function ComplianceCalendarPage() {
         const saved = localStorage.getItem(PROFILE_KEY + oid)
         if (saved) setProfile({ ...DEFAULT_PROFILE, ...JSON.parse(saved) })
       } catch { /* fall back to defaults */ }
+
+      // The export watch list is invoices plus paperwork, so the calendar reads the same book rows
+      // the register does — same columns, same 800-row cap — rather than a summary that could drift.
+      const { data: bookRows } = await supabase
+        .from('invoices')
+        .select('id, invoice_number, invoice_date, customer_name, customer_gstin, supply_type, place_of_supply, taxable_amount, igst_amount, total_tax, grand_total, balance_due, status')
+        .eq('organization_id', oid)
+        .neq('status', 'cancelled')
+        .order('invoice_date', { ascending: false })
+        .limit(800)
+      setExpBooks(((bookRows || []) as unknown as ExportBookInvoice[]).filter(isExportDoc))
+
       const now = new Date()
       setMonthFilter(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`)
       setLoading(false)
@@ -98,8 +169,9 @@ export default function ComplianceCalendarPage() {
   }
 
   const events = useMemo(
-    () => [...generateEvents(fy, profile), ...jobWorkEvents(orgId, fy)].sort((a, b) => a.due.localeCompare(b.due)),
-    [fy, profile, orgId],
+    () => [...generateEvents(fy, profile), ...jobWorkEvents(orgId, fy), ...exportEvents(orgId, expBooks, fy)]
+      .sort((a, b) => a.due.localeCompare(b.due)),
+    [fy, profile, orgId, expBooks],
   )
 
   const today = new Date()

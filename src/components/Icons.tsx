@@ -304,6 +304,21 @@ const P: Record<string, React.ReactNode> = {
     <line x1="2.5" y1="12.5" x2="21.5" y2="12.5" />
     <line x1="12" y1="15" x2="12" y2="17" />
   </>),
+  // The consignment itself on the water: hull, cargo house and the mast above it. Export files use
+  // this glyph because the register is about goods that physically left India.
+  ship: (<>
+    <path d="M2 21c.6.5 1.2 1 2.5 1 2.5 0 2.5-1.5 5-1.5s2.5 1.5 5 1.5 2.5-1.5 5-1.5c1.3 0 1.9-.5 2.5-1" />
+    <path d="M19.38 20A11.6 11.6 0 0 0 21 14l-9-4-9 4c0 2.9.94 5.34 2.81 7.76" />
+    <path d="M19 13V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6" />
+    <path d="M12 10v4" />
+    <path d="M12 2v3" />
+  </>),
+  // The RFD-11A acknowledgement: a document that only counts once it carries the portal's tick.
+  'doc-check': (<>
+    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+    <path d="M14 3v5h5" />
+    <path d="m9.5 14.5 2 2 3.5-3.5" />
+  </>),
   // The measure jar: what a run is mixed in. A recipe is quantities, so the glyph carries a fill
   // line and a graduation rather than a coin — the rupee on the card is read from the catalogue.
   recipe: (<>

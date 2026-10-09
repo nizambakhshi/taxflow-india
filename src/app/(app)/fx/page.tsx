@@ -810,6 +810,7 @@ function FxPageInner() {
           <Link href="/invoices">Invoices →</Link>
           <Link href="/payments">Receivables →</Link>
           <Link href="/gst/gstr1">GSTR-1 →</Link>
+          <Link href="/gst/exports">Export register →</Link>
         </span>
       </div>
 
