@@ -42,19 +42,40 @@
 //    This page makes things out of things you own.
 //
 // What v1 deliberately does NOT claim: no production plan, no scheduling, no work-in-progress
-// account, no labour or overhead absorption (the roll-up is *material* value and the page says
-// so), no batch or serial issuance into a build (a build draws quantities; lots and units are
+// account, no batch or serial issuance into a build (a build draws quantities; lots and units are
 // drawn at the counter by `/inventory/batches` and `/inventory/serials`), no scrap *sale* —
-// offcuts sold are an ordinary invoice — and no back-flush: nothing here consumes materials
-// automatically when an invoice is raised, because a finished unit may equally have come from
-// opening stock or from a purchase, and guessing which is exactly how stock books get cooked.
+// offcuts sold are an ordinary invoice — and no back-flush. The ERP habit called back-flushing
+// consumes materials automatically when a finished unit is sold or received; this register refuses
+// it on purpose, because a unit on the shelf may equally have come from opening stock or a
+// purchase, and guessing which is exactly how stock books get cooked. The build form fills its
+// draws from the recipe as a convenience and the shop corrects them — the drum, not the hope,
+// is what gets recorded.
+//
+// What R2-28 added: **labour and overhead, as minutes priced by dated shop rates.** The recipe
+// stores `labour_minutes` and `overhead_minutes` per run — quantities, like everything else here —
+// and the register holds a small table of dated rates (`rates`, `CostRate`): ₹ per labour hour and
+// ₹ per overhead hour, each row stamped with the day it starts applying, the way `/fx` keeps its
+// quotes. The cost of a run is read on every load as parts (from the catalogue's `purchase_price`)
+// plus minutes × the rate **in force on the run's own date** — so a run from last quarter costs at
+// last quarter's rate, which is more history than the material leg can offer (there is no price
+// history on `products`, so a past build's material figure is a *reading of today*; the page says
+// so and never adds the two bases into one sum). A rate of ₹0 is refused: absence of a rate prints
+// a dash and a reason, because ₹0 claims the work costs nothing and a dash admits nobody recorded
+// it.
 
 import { newId, todayISO } from '@/lib/batches'
 import { round2 } from '@/lib/costcentres'
 import { fyLabel, fyStartYear } from '@/lib/targets'
 
 const KEY_BOM = 'taxflow:bom:'
-/** Today's shape. A stored envelope with a different version is read as empty, not guessed at. */
+/**
+ * Today's shape. A stored envelope with a different version is read as empty, not guessed at —
+ * which is why an *additive* field (`rates`, the recipe's minutes) ships under the same version:
+ * an old app reading a new envelope drops the fields it never knew, a new app reading an old
+ * envelope reads zero minutes and no rates, and neither side invents a figure. Bumping the version
+ * for an additive change would read every existing register as empty, which is the one outcome
+ * the stamp exists to prevent.
+ */
 const BOM_VERSION = 1
 
 /** A run is a batch of the recipe. Ten thousand batches of one item is a typo, not a plan. */
@@ -67,6 +88,10 @@ export const MAX_QTY_PER_COMPONENT = 1000000
 export const MAX_EXPLODE_DEPTH = 12
 /** A recipe longer than this is not a recipe, it is a price list pretending to be one. */
 export const MAX_COMPONENTS = 200
+/** Minutes of one kind in a run. A run that takes 69 days of labour is a decimal point astray. */
+export const MAX_MINUTES_PER_RUN = 100000
+/** ₹ per hour above this is not a wage, it is a typo with the decimal point in another country. */
+export const MAX_RATE_PER_HOUR = 10000000
 
 /** The prefix a build reference carries. Per-FY, high-water, never reused (`JOB-2026-27-0001`). */
 export const BUILD_PREFIX = 'JOB'
@@ -143,7 +168,28 @@ export interface Recipe {
   status: RecipeStatus
   notes: string
   components: RecipeComponent[]
+  /** Paid labour one full run takes, in minutes. A quantity — the rupee comes from the rates table. */
+  labour_minutes: number
+  /** Machine, power and rent time one full run absorbs, in minutes. Same rule. */
+  overhead_minutes: number
   created_at: string
+}
+
+/**
+ * One dated row of the shop rates. A rate is a dated row with a source stamp, never a constant —
+ * the same discipline `/fx` keeps for exchange rates — so a run from last quarter is costed at the
+ * rate that was in force when it ran. Either figure may be left unrecorded on a row; a leg with
+ * minutes but no figure in force prints a dash and a reason, never ₹0.
+ */
+export interface CostRate {
+  id: string
+  /** The day this row starts applying. One row per day; the latest row that has started wins. */
+  from_date: string
+  /** ₹ per labour hour, or null while nobody has recorded it. */
+  labour_per_hour: number | null
+  /** ₹ per overhead hour (machine, power, rent), or null. */
+  overhead_per_hour: number | null
+  note: string
 }
 
 export interface BuildLine {
@@ -174,12 +220,14 @@ export interface BomStore {
   orgId: string
   recipes: Recipe[]
   builds: Build[]
+  /** Dated shop rates the labour and overhead legs are priced from. */
+  rates: CostRate[]
   /** Per-FY high-water mark for the job number, keyed by FY label (`2026-27` → 4). */
   seq: Record<string, number>
 }
 
 export function emptyBom(orgId = ''): BomStore {
-  return { version: BOM_VERSION, updatedAt: todayISO(), orgId, recipes: [], builds: [], seq: {} }
+  return { version: BOM_VERSION, updatedAt: todayISO(), orgId, recipes: [], builds: [], rates: [], seq: {} }
 }
 
 export function newRecipe(status: RecipeStatus = 'active'): Recipe {
@@ -191,6 +239,8 @@ export function newRecipe(status: RecipeStatus = 'active'): Recipe {
     status,
     notes: '',
     components: [],
+    labour_minutes: 0,
+    overhead_minutes: 0,
     created_at: new Date().toISOString(),
   }
 }
@@ -212,6 +262,10 @@ export function newBuild(recipeId: string, ref: string, date = todayISO()): Buil
     notes: '',
     created_at: new Date().toISOString(),
   }
+}
+
+export function newRate(from = todayISO()): CostRate {
+  return { id: newId(), from_date: from, labour_per_hour: null, overhead_per_hour: null, note: '' }
 }
 
 // ── parsing and storage ───────────────────────────────────────────────────────
@@ -247,6 +301,15 @@ function roundQty(v: number): number {
   return Math.round((Number(v) || 0) * 10000) / 10000
 }
 
+/** 45 → "45 min", 135 → "2 h 15 min" — minutes read as time once they grow. */
+export function fmtMinutes(mins: number): string {
+  const m = Math.round(mins)
+  if (m < 60) return `${m} min`
+  const h = Math.floor(m / 60)
+  const rest = m % 60
+  return rest ? `${h} h ${rest} min` : `${h} h`
+}
+
 function parseComponent(raw: unknown): RecipeComponent | null {
   if (!raw || typeof raw !== 'object') return null
   const c = raw as Record<string, unknown>
@@ -260,6 +323,11 @@ function parseComponent(raw: unknown): RecipeComponent | null {
     waste_pct: Math.min(MAX_WASTE_PCT, Math.max(0, num(c.waste_pct))),
     note: str(c.note),
   }
+}
+
+/** Minutes keep the quantity rounding; a leg of zero minutes is an honest zero, not a gap. */
+function clampMinutes(v: unknown): number {
+  return Math.min(MAX_MINUTES_PER_RUN, Math.max(0, roundQty(num(v))))
 }
 
 function parseRecipe(raw: unknown): Recipe | null {
@@ -287,6 +355,10 @@ function parseRecipe(raw: unknown): Recipe | null {
     // One row per component product, whatever the envelope held — two lines for the same screw
     // is a recipe nobody can read, and the maths would silently add them.
     components: [...new Map(components.map(c => [c.product_id, c])).values()],
+    // Minutes arrived with R2-28; an envelope written before them reads as zero minutes, which is
+    // what the shop had recorded when the field did not exist.
+    labour_minutes: clampMinutes(r.labour_minutes),
+    overhead_minutes: clampMinutes(r.overhead_minutes),
     created_at: str(r.created_at) || new Date().toISOString(),
   }
 }
@@ -320,6 +392,23 @@ function parseBuild(raw: unknown): Build | null {
   }
 }
 
+function parseRate(raw: unknown): CostRate | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const id = str(r.id)
+  if (!id || !isDate(r.from_date)) return null
+  const clamp = (v: unknown) => {
+    const n = num(v)
+    return n > 0 && n <= MAX_RATE_PER_HOUR ? round2(n) : null
+  }
+  const labour = clamp(r.labour_per_hour)
+  const overhead = clamp(r.overhead_per_hour)
+  // A row with no figure on either leg is not a rate, it is a placeholder — drop it rather than
+  // let it shadow a real row that starts the same day.
+  if (labour === null && overhead === null) return null
+  return { id, from_date: r.from_date, labour_per_hour: labour, overhead_per_hour: overhead, note: str(r.note) }
+}
+
 export function parseBom(raw: string | null): BomStore {
   if (!raw) return emptyBom()
   let parsed: unknown
@@ -334,6 +423,7 @@ export function parseBom(raw: string | null): BomStore {
   if (s.version !== BOM_VERSION) return emptyBom(orgId)
   const recipes = Array.isArray(s.recipes) ? s.recipes.map(parseRecipe).filter((r): r is Recipe => r !== null) : []
   const builds = Array.isArray(s.builds) ? s.builds.map(parseBuild).filter((b): b is Build => b !== null) : []
+  const ratesIn = Array.isArray(s.rates) ? s.rates.map(parseRate).filter((r): r is CostRate => r !== null) : []
   const seqIn = s.seq && typeof s.seq === 'object' ? (s.seq as Record<string, unknown>) : {}
   const seq: Record<string, number> = {}
   for (const [k, v] of Object.entries(seqIn)) {
@@ -350,6 +440,9 @@ export function parseBom(raw: string | null): BomStore {
     // A build whose recipe is not in the envelope is dropped — it cannot be planned, priced or
     // reversed, and half a movement trail is worse than a shorter one.
     builds: builds.filter(b => recipes.some(r => r.id === b.recipe_id)),
+    // One rate per start-day (the last one wins), because `rateFor` would otherwise have two
+    // answers for the same day and the costing would depend on array order.
+    rates: [...new Map(ratesIn.map(r => [r.from_date, r])).values()].sort((a, b) => (a.from_date < b.from_date ? -1 : 1)),
     seq,
   }
 }
@@ -400,6 +493,17 @@ export function upsertBuild(orgId: string, build: Build): Build[] {
       ? s.builds.map(b => (b.id === build.id ? build : b))
       : [build, ...s.builds],
   })).builds
+}
+
+export function upsertRate(orgId: string, rate: CostRate): CostRate[] {
+  return mutate(orgId, s => ({
+    ...s,
+    rates: [...s.rates.filter(r => r.id !== rate.id), rate].sort((a, b) => (a.from_date < b.from_date ? -1 : 1)),
+  })).rates
+}
+
+export function removeRate(orgId: string, id: string): CostRate[] {
+  return mutate(orgId, s => ({ ...s, rates: s.rates.filter(r => r.id !== id) })).rates
 }
 
 export interface Refusal {
@@ -531,6 +635,10 @@ export function validateRecipe(recipe: Recipe, recipes: Recipe[], products: BomP
   else if (!index.has(recipe.output_product_id)) errs.push('The finished product is not in the catalogue.')
   if (!(recipe.output_qty > 0)) errs.push('One run has to make at least one unit.')
   if (recipe.output_qty > MAX_UNITS_PER_BUILD) errs.push(`One run cannot make more than ${MAX_UNITS_PER_BUILD} units.`)
+  if (recipe.labour_minutes < 0 || recipe.overhead_minutes < 0) errs.push('Minutes cannot be negative — a run cannot take back time.')
+  if (recipe.labour_minutes > MAX_MINUTES_PER_RUN || recipe.overhead_minutes > MAX_MINUTES_PER_RUN) {
+    errs.push(`A run cannot take more than ${MAX_MINUTES_PER_RUN} minutes of one kind — that is a unit error, not a shift.`)
+  }
   if (!recipe.components.length) errs.push('A recipe with nothing in it is a note, not a recipe.')
   if (recipe.components.length > MAX_COMPONENTS) errs.push(`Up to ${MAX_COMPONENTS} components in a recipe.`)
 
@@ -557,6 +665,43 @@ export function validateRecipe(recipe: Recipe, recipes: Recipe[], products: BomP
     errs.push('Archived and incomplete at the same time — decide which it is.')
   }
   return errs
+}
+
+/**
+ * Refusals for a rate row. A rate of zero is refused, not clamped: the register's honesty rule is
+ * that absence prints a dash and zero prints a claim, so a row that wants to say "the work costs
+ * nothing" has to stay unrecorded instead. A row with neither figure is not a rate.
+ */
+export function validateRate(rate: CostRate, rates: CostRate[]): string[] {
+  const errs: string[] = []
+  if (!isDate(rate.from_date)) errs.push('A rate needs the day it starts applying.')
+  if (rate.labour_per_hour === null && rate.overhead_per_hour === null) {
+    errs.push('A rate row with neither figure is not a rate — put the day back until there is something to price with it.')
+  }
+  if (rate.labour_per_hour !== null && !(rate.labour_per_hour > 0)) {
+    errs.push('A labour rate of ₹0 claims the work costs nothing — leave the figure out if nobody is paid for it.')
+  }
+  if (rate.overhead_per_hour !== null && !(rate.overhead_per_hour > 0)) {
+    errs.push('An overhead rate of ₹0 claims the machine and rent cost nothing — leave the figure out instead.')
+  }
+  if (rate.labour_per_hour !== null && rate.labour_per_hour > MAX_RATE_PER_HOUR) errs.push('That labour rate is not a wage, it is a typo.')
+  if (rate.overhead_per_hour !== null && rate.overhead_per_hour > MAX_RATE_PER_HOUR) errs.push('That overhead rate is not an absorption figure, it is a typo.')
+  if (isDate(rate.from_date) && rates.some(r => r.id !== rate.id && r.from_date === rate.from_date)) {
+    errs.push('A row already starts on that day — edit it instead of adding a second answer for the same day.')
+  }
+  return errs
+}
+
+/**
+ * The rate row in force on a day: the latest row whose start does not come after it. Null when no
+ * row has started yet — a rate that begins tomorrow prices nothing today.
+ */
+export function rateFor(rates: CostRate[], date: string): CostRate | null {
+  let found: CostRate | null = null
+  for (const r of rates) {
+    if (r.from_date <= date && (!found || r.from_date >= found.from_date)) found = r
+  }
+  return found
 }
 
 /**
@@ -794,26 +939,142 @@ export function costPerUnit(recipe: Recipe, products: BomProduct[]): { per_unit:
   return { per_unit: roll.value === null ? null : round2(roll.value), roll }
 }
 
+// ── labour and overhead, priced by dated shop rates ───────────────────────────
+
+export type CostLegName = 'labour' | 'overhead'
+
+/** One cost leg of a run: the minutes it took and what those minutes read as, or null. */
+export interface CostLeg {
+  minutes: number
+  /** ₹ the leg reads as — null while no rate in force carries a figure for it. */
+  value: number | null
+  /** The ₹/hour in force, when there is one — the page prints it beside the rupees. */
+  rate: number | null
+  /** Why the leg prints a dash, when it does. */
+  missing: string
+}
+
+function costLeg(minutes: number, rates: CostRate[], date: string, which: CostLegName): CostLeg {
+  if (!(minutes > 0)) return { minutes: 0, value: 0, rate: null, missing: '' }
+  const row = rateFor(rates, date)
+  const rate = row ? row[which === 'labour' ? 'labour_per_hour' : 'overhead_per_hour'] : null
+  if (!(rate !== null && rate > 0)) {
+    return {
+      minutes,
+      value: null,
+      rate: null,
+      missing: row
+        ? `no ${which} figure on the rate row in force (${row.from_date})`
+        : `no shop rate in force on ${date}`,
+    }
+  }
+  // Minutes are time and the rate is per hour: 45 minutes at ₹120/hour is ₹90, not ₹5,400.
+  return { minutes, value: round2((minutes / 60) * rate), rate, missing: '' }
+}
+
+/** The whole cost of one run of a recipe: parts, labour and overhead, each with its own basis. */
+export interface FullCost {
+  material: RollUp
+  labour: CostLeg
+  overhead: CostLeg
+  /**
+   * Parts + labour + overhead for the whole run. Null while any leg that carries minutes is
+   * unpriced or a component has no cost — a partial total would be read as the whole one.
+   */
+  value: number | null
+  /** `value` divided over the units one run makes. */
+  per_unit: number | null
+  /** Which legs could not be read: component names for parts, 'labour'/'overhead' for rates. */
+  missing: string[]
+}
+
+export function fullCostOfRun(recipe: Recipe, products: BomProduct[], rates: CostRate[], date: string): FullCost {
+  // One run means output_qty units of parts — requirement(recipe, 1) would be per-unit and mix
+  // bases against the per-run minutes below.
+  const material = rollUpCost(requirement(recipe, recipe.output_qty), products)
+  const labour = costLeg(recipe.labour_minutes, rates, date, 'labour')
+  const overhead = costLeg(recipe.overhead_minutes, rates, date, 'overhead')
+  const missing = [...material.unpriced]
+  if (labour.missing) missing.push(`labour — ${labour.missing}`)
+  if (overhead.missing) missing.push(`overhead — ${overhead.missing}`)
+  const value =
+    material.value !== null && labour.value !== null && overhead.value !== null
+      ? round2(material.value + labour.value + overhead.value)
+      : null
+  return {
+    material,
+    labour,
+    overhead,
+    value,
+    per_unit: value === null || !(recipe.output_qty > 0) ? null : round2(value / recipe.output_qty),
+    missing,
+  }
+}
+
 /**
- * What the run was worth when it was written down. Stamped on the build because it cannot be
- * re-read later — there is no price history — and stamped as a *reading*, not a posting: this
- * register is not the general ledger and no account was touched by it.
+ * What a recorded run cost, at the minutes the recipe carries scaled to the units it made and the
+ * rates in force **on the run's own date**. The material leg is still today's reading — there is
+ * no price history on `products` — which is why nothing here adds the legs into one figure without
+ * the caller saying so.
+ */
+export function fullCostOfBuild(build: Build, recipe: Recipe | undefined, products: BomProduct[], rates: CostRate[]): FullCost {
+  if (!recipe || !(recipe.output_qty > 0)) {
+    const material = rollUpCost(build.lines, products)
+    return { material, labour: { minutes: 0, value: 0, rate: null, missing: '' }, overhead: { minutes: 0, value: 0, rate: null, missing: '' }, value: material.value, per_unit: material.value === null || !(build.units > 0) ? null : round2(material.value / build.units), missing: [...material.unpriced] }
+  }
+  const runs = build.units / recipe.output_qty
+  const material = rollUpCost(build.lines, products)
+  const labour = costLeg(roundQty(recipe.labour_minutes * runs), rates, build.date, 'labour')
+  const overhead = costLeg(roundQty(recipe.overhead_minutes * runs), rates, build.date, 'overhead')
+  const missing = [...material.unpriced]
+  if (labour.missing) missing.push(`labour — ${labour.missing}`)
+  if (overhead.missing) missing.push(`overhead — ${overhead.missing}`)
+  const value =
+    material.value !== null && labour.value !== null && overhead.value !== null
+      ? round2(material.value + labour.value + overhead.value)
+      : null
+  return {
+    material,
+    labour,
+    overhead,
+    value,
+    per_unit: value === null || !(build.units > 0) ? null : round2(value / build.units),
+    missing,
+  }
+}
+
+/**
+ * What the run was worth when it was written down, leg by leg. The material figure is a reading of
+ * *today's* catalogue (there is no price history), so it is stamped as of now; the labour and
+ * overhead legs are read at the rates in force on the run's own date and stay re-readable — but
+ * the stamp carries them so the screen can print the split at the moment of writing. Stamped as a
+ * *reading*, not a posting: this register is not the general ledger and no account was touched.
  */
 export interface CostStamp {
+  /** Full cost per unit — parts, labour and overhead — or null while a leg is unpriced. */
   per_unit: number | null
   total: number | null
-  /** The names that had no cost when the run was recorded. */
+  /** Component names that had no cost when the run was recorded. */
   unpriced: string[]
+  /** The three legs, each null while it could not be read; parts may be absent and still priced. */
+  material: number | null
+  labour: number | null
+  overhead: number | null
+  /** Rate-leg reasons when labour/overhead printed a dash. */
+  unpriced_legs: string[]
   on: string
 }
 
-export function stampCost(build: Build, products: BomProduct[]): CostStamp {
-  const roll = rollUpCost(build.lines, products)
+export function stampCost(build: Build, recipe: Recipe | undefined, products: BomProduct[], rates: CostRate[]): CostStamp {
+  const full = fullCostOfBuild(build, recipe, products, rates)
   return {
-    // A run with no units cannot have a per-unit figure; dividing by zero would print ₹Infinity.
-    per_unit: roll.value === null || !(build.units > 0) ? null : round2(roll.value / build.units),
-    total: roll.value,
-    unpriced: roll.unpriced,
+    per_unit: full.per_unit,
+    total: full.value,
+    unpriced: full.material.unpriced,
+    material: full.material.value,
+    labour: full.labour.value,
+    overhead: full.overhead.value,
+    unpriced_legs: full.missing.filter(m => m.startsWith('labour') || m.startsWith('overhead')),
     on: todayISO(),
   }
 }
@@ -837,9 +1098,13 @@ export interface RecipeView {
   last_built: string
   planned_runs: number
   cost: { per_unit: number | null; roll: RollUp }
-  /** Selling price of the finished good less the material roll-up. Materials only — no labour. */
+  /** Parts + labour + overhead for one run, each leg with its own basis. */
+  full: FullCost
+  /** Selling price less the full cost when that is priced; else less the material roll-up alone. */
   margin_per_unit: number | null
   margin_pct: number | null
+  /** Which cost the margin was taken against, so the card can say so. */
+  margin_basis: 'full' | 'material' | ''
   plan: MaterialPlan
   /** The variance the last built run showed against what its recipe wanted. */
   variance: number | null
@@ -859,6 +1124,7 @@ export function recipeView(recipe: Recipe, store: BomStore, products: BomProduct
   const index = indexProducts(products)
   const output = index.get(recipe.output_product_id)
   const cost = costPerUnit(recipe, products)
+  const full = fullCostOfRun(recipe, products, store.rates, todayISO())
   const builds = buildsOf(store, recipe.id)
   const built = builds.filter(b => b.status === 'built')
   const units_built = roundQty(built.reduce((s, b) => s + b.units, 0))
@@ -866,7 +1132,15 @@ export function recipeView(recipe: Recipe, store: BomStore, products: BomProduct
   const plan = planBuild(recipe, recipe.output_qty, products, store.recipes)
 
   const price = num(output?.selling_price)
-  const margin = cost.per_unit === null || !(price > 0) ? null : round2(price - cost.per_unit)
+  // Margin against the full cost when the register can read one; otherwise against parts alone,
+  // with the basis named so nobody reads a parts-only figure as the whole truth. A recipe that
+  // carries no minutes at all reports the material basis even though the full cost is priced —
+  // its full cost *is* the parts, and "parts alone" is the whole truth, not a fallback.
+  const has_minutes = recipe.labour_minutes > 0 || recipe.overhead_minutes > 0
+  const margin_full = full.per_unit !== null && price > 0 ? round2(price - full.per_unit) : null
+  const margin_material = cost.per_unit !== null && price > 0 ? round2(price - cost.per_unit) : null
+  const margin = margin_full ?? margin_material
+  const margin_basis: 'full' | 'material' | '' = margin_full !== null && has_minutes ? 'full' : margin_material !== null ? 'material' : ''
 
   // Variance: the most recent built run, its recipe's wanted quantities against what was drawn.
   let variance: number | null = null
@@ -894,7 +1168,20 @@ export function recipeView(recipe: Recipe, store: BomStore, products: BomProduct
     else if (!(num(p.purchase_price) > 0)) findings.push({ text: `${p.name} has no cost recorded, so this recipe cannot be priced.`, tone: 'amber' })
   }
   if (margin !== null && margin < 0) {
-    findings.push({ text: 'The selling price is below the material cost — this loses money on parts alone, before any labour.', tone: 'red' })
+    findings.push(
+      margin_basis === 'full'
+        ? { text: 'The selling price is below what making it costs — parts, labour and overhead together lose money on every unit.', tone: 'red' }
+        : { text: 'The selling price is below the material cost — this loses money on parts alone, before any labour is counted.', tone: 'red' },
+    )
+  }
+  if (recipe.labour_minutes > 0 && full.labour.missing) {
+    findings.push({ text: `${fmtMinutes(recipe.labour_minutes)} of labour a run, but ${full.labour.missing} — record it on the Shop rates tab.`, tone: 'amber' })
+  }
+  if (recipe.overhead_minutes > 0 && full.overhead.missing) {
+    findings.push({ text: `${fmtMinutes(recipe.overhead_minutes)} of overhead a run, but ${full.overhead.missing} — record it on the Shop rates tab.`, tone: 'amber' })
+  }
+  if (!(recipe.labour_minutes > 0) && !(recipe.overhead_minutes > 0)) {
+    findings.push({ text: 'No labour or overhead time on this recipe — the cost is parts alone.', tone: 'grey' })
   }
   if (plan.shortages.length) {
     findings.push({
@@ -919,8 +1206,10 @@ export function recipeView(recipe: Recipe, store: BomStore, products: BomProduct
     last_built,
     planned_runs: builds.filter(b => b.status === 'planned').length,
     cost,
+    full,
     margin_per_unit: margin,
     margin_pct: margin === null || !(price > 0) ? null : round2((margin / price) * 100),
+    margin_basis,
     plan,
     variance,
     findings,
@@ -945,6 +1234,8 @@ export interface BuildView {
   units: number
   /** What the drawn materials are worth at the prices the catalogue carries today. */
   cost_today: RollUp
+  /** Parts + labour + overhead of the run, the rate legs at the rates in force on the run's date. */
+  full: FullCost
   /** What the recipe asked for, and what was drawn — the wastage the register exists to show. */
   wanted: BuildLine[]
   variance: { product_id: string; name: string; wanted: number; drawn: number; diff: number }[]
@@ -955,6 +1246,7 @@ export function buildView(build: Build, store: BomStore, products: BomProduct[])
   const index = indexProducts(products)
   const recipe = store.recipes.find(r => r.id === build.recipe_id)
   const wanted = recipe ? requirement(recipe, build.units) : []
+  const full = fullCostOfBuild(build, recipe, products, store.rates)
   const drawn = new Map(build.lines.map(l => [l.product_id, l.qty]))
   const ids = [...new Set([...wanted.map(w => w.product_id), ...build.lines.map(l => l.product_id)])]
   const variance = ids
@@ -975,6 +1267,8 @@ export function buildView(build: Build, store: BomStore, products: BomProduct[])
   if (variance.length) findings.push({ text: `${variance.length} line${variance.length === 1 ? '' : 's'} drawn differently from the recipe.`, tone: 'amber' })
   const roll = rollUpCost(build.lines, products)
   if (roll.unpriced.length) findings.push({ text: `${roll.unpriced.length} component${roll.unpriced.length === 1 ? '' : 's'} with no cost, so this run has no material value.`, tone: 'amber' })
+  if (full.labour.missing) findings.push({ text: `Labour unpriced on this run — ${full.labour.missing}.`, tone: 'amber' })
+  if (full.overhead.missing) findings.push({ text: `Overhead unpriced on this run — ${full.overhead.missing}.`, tone: 'amber' })
 
   return {
     build,
@@ -982,6 +1276,7 @@ export function buildView(build: Build, store: BomStore, products: BomProduct[])
     output: recipe ? index.get(recipe.output_product_id) : undefined,
     units: build.units,
     cost_today: roll,
+    full,
     wanted,
     variance,
     findings,
@@ -1004,6 +1299,13 @@ export interface BomSummary {
   blocked: number
   units_built_fy: number
   value_built_fy: number | null
+  /**
+   * Labour and overhead absorbed by the runs of the year, each at the rates in force on the day
+   * the run happened. Kept apart from `value_built_fy` because the bases differ — material is
+   * re-read at today's prices, the rate legs at their own dates — and two bases never add.
+   */
+  labour_fy: number | null
+  overhead_fy: number | null
   shortage_rows: number
   components_short: { name: string; unit: string; short: number }[]
   unpriced_components: string[]
@@ -1029,6 +1331,24 @@ export function summarise(views: RecipeView[], store: BomStore, products: BomPro
   }
   const roll = rollUpCost([...merged].map(([product_id, qty]) => ({ product_id, qty })), products)
 
+  // The rate legs of the year, each run priced at its own date. Null the moment one run carries
+  // minutes its date has no rate for — a partial absorption figure would read as the whole one.
+  const builtFy = store.builds.filter(x => x.status === 'built' && inFy(x.date))
+  const rateLegFy = (which: CostLegName): number | null => {
+    let total: number | null = 0
+    for (const b of builtFy) {
+      const recipe = store.recipes.find(r => r.id === b.recipe_id)
+      if (!recipe || !(recipe.output_qty > 0)) continue
+      const minutes = roundQty((which === 'labour' ? recipe.labour_minutes : recipe.overhead_minutes) * (b.units / recipe.output_qty))
+      const leg = costLeg(minutes, store.rates, b.date, which)
+      if (leg.value === null) return null
+      total = round2(total + leg.value)
+    }
+    return total
+  }
+  const labourFy = rateLegFy('labour')
+  const overheadFy = rateLegFy('overhead')
+
   const shortageMap = new Map<string, { name: string; unit: string; short: number }>()
   for (const v of views) {
     for (const s of v.plan.shortages) {
@@ -1045,6 +1365,8 @@ export function summarise(views: RecipeView[], store: BomStore, products: BomPro
     blocked: views.filter(v => v.recipe.status === 'active' && !v.plan.can_run).length,
     units_built_fy: roundQty(store.builds.filter(b => b.status === 'built' && inFy(b.date)).reduce((s, b) => s + b.units, 0)),
     value_built_fy: roll.value,
+    labour_fy: labourFy,
+    overhead_fy: overheadFy,
     shortage_rows: shortageMap.size,
     components_short: [...shortageMap.values()].sort((a, b) => b.short - a.short || a.name.localeCompare(b.name)),
     unpriced_components: unpriced,
@@ -1220,9 +1542,12 @@ export const RECIPE_CSV_HEADERS = [
   'Units per run',
   'Components',
   'Material cost / unit',
-  'Uncosted components',
+  'Labour / unit',
+  'Overhead / unit',
+  'Cost / unit (full)',
+  'Uncosted',
   'Selling price',
-  'Margin / unit (materials only)',
+  'Margin / unit',
   'Buildable now',
   'Held up by',
   'Status',
@@ -1239,7 +1564,10 @@ export function recipeCsvRows(views: RecipeView[]): (string | number)[][] {
     v.recipe.output_qty,
     v.component_count,
     v.cost.per_unit ?? '',
-    v.cost.roll.unpriced.join(' | '),
+    v.full.labour.value === null ? '' : round2(v.full.labour.value / (v.recipe.output_qty || 1)),
+    v.full.overhead.value === null ? '' : round2(v.full.overhead.value / (v.recipe.output_qty || 1)),
+    v.full.per_unit ?? '',
+    v.full.missing.join(' | '),
     num(v.output?.selling_price) || '',
     v.margin_per_unit ?? '',
     v.plan.can_run ? Math.min(v.plan.buildable_units, MAX_UNITS_PER_BUILD) : v.plan.buildable_units,
@@ -1251,7 +1579,7 @@ export function recipeCsvRows(views: RecipeView[]): (string | number)[][] {
   ])
 }
 
-export const BUILD_CSV_HEADERS = ['Job', 'Date', 'Recipe', 'Finished product', 'Units', 'Status', 'Movements written', 'Materials', 'Cost today (materials)', 'Uncosted', 'Note']
+export const BUILD_CSV_HEADERS = ['Job', 'Date', 'Recipe', 'Finished product', 'Units', 'Status', 'Movements written', 'Materials', 'Cost today (full)', 'Uncosted', 'Note']
 
 export function buildCsvRows(views: BuildView[], products: BomProduct[]): (string | number)[][] {
   const index = indexProducts(products)
@@ -1264,8 +1592,8 @@ export function buildCsvRows(views: BuildView[], products: BomProduct[]): (strin
     BUILD_STATUS_META[v.build.status].label,
     v.build.moved ? 'Yes' : 'No',
     v.build.lines.map(l => `${nameOf(index, l.product_id) || l.product_id} ${l.qty}`).join(' | '),
-    v.cost_today.value ?? '',
-    v.cost_today.unpriced.join(' | '),
+    v.full.value ?? '',
+    v.full.missing.join(' | '),
     v.build.notes,
   ])
 }

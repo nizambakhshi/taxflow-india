@@ -32,14 +32,14 @@ import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
 import { fyLabel, fyStartYear } from '@/lib/targets'
 import { loadStore, type FlowDoc } from '@/lib/orderflow'
 import {
-  BUILD_CSV_HEADERS, BUILD_STATUS_META, MAX_UNITS_PER_BUILD, PLAN_CSV_HEADERS,
+  BUILD_CSV_HEADERS, BUILD_STATUS_META, MAX_MINUTES_PER_RUN, MAX_UNITS_PER_BUILD, PLAN_CSV_HEADERS,
   RECIPE_CSV_HEADERS, RECIPE_STATUSES, RECIPE_STATUS_META, allocateRef, buildCsvRows, buildViews,
-  cancelBuild, consumedOf, demandAgainstRecipes, findCycle, indexProducts, loadBom,
-  movementsFor, newBuild, newComponent, newRecipe, peekRef, perUnitNeed, planBuild, planCsvRows,
-  recipeCsvRows, recipeView, recipeViews, removeBuild, removeRecipe, requirement, reverseMovementsFor,
-  saveBom, sortBuilds, sortRecipeViews, stampCost, summarise, upsertBuild, upsertRecipe, validateBuild,
-  validateRecipe, whereUsed,
-  type BomProduct, type BomStore, type Build, type BuildView, type PlanRow,
+  cancelBuild, consumedOf, demandAgainstRecipes, findCycle, fmtMinutes, indexProducts, loadBom,
+  movementsFor, newBuild, newComponent, newRate, newRecipe, peekRef, perUnitNeed, planBuild, planCsvRows,
+  rateFor, recipeCsvRows, recipeView, recipeViews, removeBuild, removeRate, removeRecipe, requirement,
+  reverseMovementsFor, saveBom, sortBuilds, sortRecipeViews, stampCost, summarise, upsertBuild,
+  upsertRate, upsertRecipe, validateBuild, validateRate, validateRecipe, whereUsed,
+  type BomProduct, type BomStore, type Build, type BuildView, type CostRate, type PlanRow,
   type Recipe, type RecipeView, type StockWrite,
 } from '@/lib/bom'
 import {
@@ -47,7 +47,7 @@ import {
 } from '@/components/ui'
 import Icon from '@/components/Icons'
 
-type Tab = 'recipes' | 'builds' | 'materials' | 'whereused'
+type Tab = 'recipes' | 'builds' | 'materials' | 'whereused' | 'rates'
 type RecipeFilter = 'all' | 'active' | 'draft' | 'blocked' | 'archived'
 type BuildFilter = 'all' | 'planned' | 'built' | 'cancelled'
 type Period = 'this_fy' | 'prev_fy' | 'all'
@@ -57,6 +57,7 @@ const TABS: { value: string; label: string }[] = [
   { value: 'builds', label: 'Build log' },
   { value: 'materials', label: 'Materials board' },
   { value: 'whereused', label: 'Where used' },
+  { value: 'rates', label: 'Shop rates' },
 ]
 
 const RECIPE_FILTERS: { value: string; label: string }[] = [
@@ -126,7 +127,7 @@ function RecipesPageInner() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  const [store, setStore] = useState<BomStore>({ version: 1, updatedAt: '', orgId: '', recipes: [], builds: [], seq: {} })
+  const [store, setStore] = useState<BomStore>({ version: 1, updatedAt: '', orgId: '', recipes: [], builds: [], rates: [], seq: {} })
   const [products, setProducts] = useState<BomProduct[]>([])
   const [orders, setOrders] = useState<FlowDoc[]>([])
 
@@ -145,6 +146,8 @@ function RecipesPageInner() {
   const [editorError, setEditorError] = useState('')
   const [draft, setDraft] = useState<BuildDraft | null>(null)
   const [draftError, setDraftError] = useState('')
+  const [rateEdit, setRateEdit] = useState<CostRate | null>(null)
+  const [rateError, setRateError] = useState('')
 
   async function loadProducts(oid: string) {
     // Every product, not only the stock-tracked ones: a recipe's output may be a service line and a
@@ -186,7 +189,7 @@ function RecipesPageInner() {
       // Deep links, read inside the load effect: the functions further down this component do not
       // exist yet when it runs, so the state is set inline (same idiom as /inventory/godowns).
       const view = searchParams.get('view')
-      if (view === 'builds' || view === 'materials' || view === 'whereused' || view === 'recipes') setTab(view as Tab)
+      if (view === 'builds' || view === 'materials' || view === 'whereused' || view === 'rates' || view === 'recipes') setTab(view as Tab)
       const open = searchParams.get('open')
       if (open) { setOpenRecipe(open); setTab('recipes') }
       const component = searchParams.get('component')
@@ -335,6 +338,28 @@ function RecipesPageInner() {
     flash(`${v.recipe.name} removed — it had no runs on the log.`)
   }
 
+  // ── the shop rates editor ───────────────────────────────────────────────────
+  function patchRate(patch: Partial<CostRate>) {
+    setRateEdit(r => (r ? { ...r, ...patch } : r))
+  }
+
+  function saveRate() {
+    if (!rateEdit || !orgId) return
+    const problems = validateRate(rateEdit, store.rates)
+    if (problems.length) { setRateError(problems.join(' · ')); return }
+    upsertRate(orgId, rateEdit)
+    refreshStore()
+    flash(`Rate row saved from ${formatDateIN(rateEdit.from_date)} — every run from that day reads its labour and overhead here.`)
+    setRateEdit(null)
+    setRateError('')
+  }
+
+  function deleteRateRow(rate: CostRate) {
+    removeRate(orgId, rate.id)
+    refreshStore()
+    flash(`The ${formatDateIN(rate.from_date)} rate row removed — runs from that day re-read their rate legs from the row before it.`)
+  }
+
   // ── the build editor ────────────────────────────────────────────────────────
   const activeRecipes = useMemo(() => store.recipes.filter(r => r.status === 'active'), [store.recipes])
 
@@ -429,10 +454,10 @@ function RecipesPageInner() {
       over,
       plan,
       writes: movementsFor(candidate, draftRecipe, products),
-      stamp: stampCost(candidate, products),
+      stamp: stampCost(candidate, draftRecipe, products, store.rates),
       ok: errs.length === 0 && over.length === 0,
     }
-  }, [draft, candidate, draftRecipe, products, index, store.recipes])
+  }, [draft, candidate, draftRecipe, products, index, store.recipes, store.rates])
 
   const draftPlanRows = useMemo<PlanRow[]>(() => {
     if (!draftCheck?.plan) return []
@@ -517,7 +542,7 @@ function RecipesPageInner() {
     setDraft(null)
     setDraftError('')
     flash(moved
-      ? `${saved.ref} recorded — ${check.writes.length} movement${check.writes.length === 1 ? '' : 's'} written to the stock ledger${check.stamp.total === null ? '' : `, materials worth ${money(check.stamp.total)} at the prices the catalogue carries today`}.`
+      ? `${saved.ref} recorded — ${check.writes.length} movement${check.writes.length === 1 ? '' : 's'} written to the stock ledger${check.stamp.total === null ? '' : `, worth ${money(check.stamp.total)} as the catalogue and the rate rows read`}.`
       : `${saved.ref} is a plan on the log. No stock has moved.`)
   }
 
@@ -615,10 +640,11 @@ function RecipesPageInner() {
       if (e.key !== 'Escape') return
       if (editor) { setEditor(null); setEditorError('') }
       else if (draft) { setDraft(null); setDraftError('') }
+      else if (rateEdit) { setRateEdit(null); setRateError('') }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [editor, draft])
+  }, [editor, draft, rateEdit])
 
   if (loading) {
     return <div className="page-container rc"><p className="rc-load">Reading your catalogue and this browser’s recipe book…</p></div>
@@ -626,13 +652,23 @@ function RecipesPageInner() {
 
   const noProducts = products.length === 0
   const noRecipes = store.recipes.length === 0
+  // The two FY figures never add: material is read at today's prices, the rate legs at each run's
+  // own date. The card keeps them apart in the same sentence rather than summing the bases.
+  const builtSub = summary.value_built_fy === null
+    ? 'materials drawn cannot be valued yet — a component has no cost'
+    : `${money(summary.value_built_fy)} of materials drawn, at the prices carried today`
+  const labourSub = summary.labour_fy === null
+    ? 'labour time absorbed, but a run has no rate in force'
+    : summary.labour_fy > 0 || (summary.overhead_fy ?? 0) > 0
+      ? `labour ${money(summary.labour_fy)} · overhead ${money(summary.overhead_fy ?? 0)} absorbed, at the rates in force on each day`
+      : ''
 
   return (
     <div className="page-container rc" style={{ maxWidth: 1180 }}>
       <PageHeader
         eyebrow={`${orgName.toUpperCase() || 'TAXFLOW'} · MANUFACTURING`}
         title="Recipes & builds"
-        subtitle="What each finished good is made of, how much of it the shelf can cover today, and what every run actually drew. Rupees are read from your catalogue on every load — this register stores quantities, never a price."
+        subtitle="What each finished good is made of, how much of it the shelf can cover today, and what every run actually drew. Parts are priced from your catalogue on every load, labour and overhead from your dated rate rows — this register stores quantities, minutes and dated figures, never a guessed price."
         actions={
           <>
             {tab === 'recipes' && <Button variant="ghost" size="sm" icon="download" onClick={exportRecipes} disabled={visibleRecipes.length === 0}>Recipe CSV</Button>}
@@ -659,9 +695,7 @@ function RecipesPageInner() {
         <StatCard
           label={`Built in FY ${fyLabel(fyStartYear(new Date(`${day}T00:00:00`)))}`}
           value={fmtQty(summary.units_built_fy, '')}
-          sub={summary.value_built_fy === null
-            ? 'materials drawn cannot be valued yet — a component has no cost'
-            : `${money(summary.value_built_fy)} of materials drawn, at the prices carried today`}
+          sub={labourSub ? `${builtSub} · ${labourSub}` : builtSub}
           icon="box" tone="violet" delay={80}
         />
         <StatCard
@@ -800,10 +834,18 @@ function RecipesPageInner() {
                     </div>
 
                     <div className="rc-card-stats">
-                      <StatRow label="Material cost / unit" strong
-                        value={v.cost.per_unit === null ? `— (${v.cost.roll.unpriced.length} unpriced)` : price(v.cost.per_unit)}
-                        tone={v.cost.per_unit === null ? 'amber' : 'grey'} />
-                      <StatRow label="Margin / unit, materials only"
+                      <StatRow label="Cost / unit, full" strong
+                        value={v.full.per_unit === null ? `— (${v.full.missing.length} gap${v.full.missing.length === 1 ? '' : 's'})` : price(v.full.per_unit)}
+                        tone={v.full.per_unit === null ? 'amber' : 'grey'} />
+                      {v.full.per_unit !== null && (v.recipe.labour_minutes > 0 || v.recipe.overhead_minutes > 0) && (
+                        <StatRow label="Parts · labour · overhead" tone="grey"
+                          value={[
+                            v.recipe.output_qty > 0 ? price((v.full.material.value ?? 0) / v.recipe.output_qty) : price(v.full.material.value ?? 0),
+                            v.recipe.labour_minutes > 0 ? `${fmtMinutes(v.recipe.labour_minutes / (v.recipe.output_qty || 1))} · ${price((v.full.labour.value ?? 0) / (v.recipe.output_qty || 1))}` : '',
+                            v.recipe.overhead_minutes > 0 ? `${fmtMinutes(v.recipe.overhead_minutes / (v.recipe.output_qty || 1))} · ${price((v.full.overhead.value ?? 0) / (v.recipe.output_qty || 1))}` : '',
+                          ].filter(Boolean).join(' · ')} />
+                      )}
+                      <StatRow label={v.margin_basis === 'material' ? 'Margin / unit, parts alone' : 'Margin / unit, full cost'}
                         value={v.margin_per_unit === null ? '—' : `${price(v.margin_per_unit)} · ${percent(v.margin_pct)}`}
                         tone={v.margin_per_unit === null ? 'grey' : v.margin_per_unit < 0 ? 'red' : 'green'} />
                       <StatRow label="Can make now"
@@ -943,7 +985,7 @@ function RecipesPageInner() {
                   <span data-label="Job">Job / date</span>
                   <span data-label="Recipe">Recipe · made</span>
                   <span className="rc-right" data-label="Units">Units</span>
-                  <span className="rc-right" data-label="Materials">Materials today</span>
+                  <span className="rc-right" data-label="Materials">Cost today</span>
                   <span data-label="Draw">Drawn vs recipe</span>
                   <span data-label="Status">State</span>
                   <span className="rc-right" data-label="Actions">Actions</span>
@@ -962,8 +1004,10 @@ function RecipesPageInner() {
                           <span className="rc-sub">{r.output?.name || '—'}{r.recipe ? ` · makes ${fmtQty(r.recipe.output_qty, r.output?.unit || '')}` : ''}</span>
                         </span>
                         <span className="rc-right rc-num" data-label="Units">{fmtQty(r.build.units, r.output?.unit || '')}</span>
-                        <span className="rc-right rc-num" data-label="Materials" title="Rolled up from the components' cost in the catalogue, at the prices it carries today">
-                          {r.cost_today.value === null ? `— (${r.cost_today.unpriced.length} unpriced)` : money(r.cost_today.value)}
+                        <span className="rc-right rc-num" data-label="Materials" title="Parts at the catalogue's prices today, plus labour and overhead at the rates in force on the run's own date">
+                          {r.full.value === null
+                            ? (r.full.missing.length ? `— (${r.full.missing.length} gap${r.full.missing.length === 1 ? '' : 's'})` : '—')
+                            : money(r.full.value)}
                         </span>
                         <span data-label="Draw" className="rc-variance">
                           {r.variance.length
@@ -1299,11 +1343,78 @@ function RecipesPageInner() {
         )
       )}
 
+      {/* ── shop rates ───────────────────────────────────────────────────────── */}
+      {tab === 'rates' && (() => {
+        const sorted = [...store.rates].sort((a, b) => (a.from_date < b.from_date ? 1 : -1))
+        const todayRate = rateFor(store.rates, day)
+        return (
+          <>
+            <div className="rc-note">
+              <Icon name="scale" size={13} strokeWidth={2.2} />
+              <span>
+                <strong>What labour and overhead cost here, as dated rows.</strong> A recipe stores minutes; this table stores the
+                ₹/hour those minutes read as, stamped with the day each figure starts applying — the way <Link href="/fx">/fx</Link> keeps
+                its exchange rates. A run from last quarter is costed at the row that was in force when it ran. A rate of ₹0 is refused:
+                leave the figure out if nobody records it, and the card prints a dash with the reason instead of a claim.
+              </span>
+            </div>
+
+            <Card>
+              <div className="rc-rate-head">
+                <div>
+                  <h2 className="rc-section-title">Rate rows on the register</h2>
+                  <p className="rc-section-sub">
+                    {todayRate
+                      ? <>In force today ({formatDateIN(day)}): labour {todayRate.labour_per_hour === null ? '—' : `${money(todayRate.labour_per_hour)}/hr`} · overhead {todayRate.overhead_per_hour === null ? '—' : `${money(todayRate.overhead_per_hour)}/hr`} from {formatDateIN(todayRate.from_date)}.</>
+                      : 'No row is in force today — recipes with minutes print their rate legs as dashes until one starts.'}
+                  </p>
+                </div>
+                <Button size="sm" icon="plus" onClick={() => { setRateEdit(newRate(day)); setRateError('') }}>Add rate row</Button>
+              </div>
+
+              {sorted.length === 0 ? (
+                <EmptyState icon="clock" title="No rate row yet"
+                  message="Record the first dated row — the day it starts applying, what an hour of paid labour reads, and what an hour of machine, power and rent absorbs. Recipes then carry minutes and this register does the arithmetic on every load."
+                  action={<Button size="sm" icon="plus" onClick={() => { setRateEdit(newRate(day)); setRateError('') }}>Add rate row</Button>} />
+              ) : (
+                <div className="rc-rate-list">
+                  {sorted.map(r => (
+                    <div key={r.id} className="rc-rate-row">
+                      <span className="rc-rate-day">
+                        <span className="rc-item-name">{formatDateIN(r.from_date)}</span>
+                        <span className="rc-sub">from this day{r.from_date <= day ? ' · in force' : ' · not started'}</span>
+                      </span>
+                      <span className="rc-num">{r.labour_per_hour === null ? '—' : `${money(r.labour_per_hour)}/hr`}<span className="rc-sub"> labour</span></span>
+                      <span className="rc-num">{r.overhead_per_hour === null ? '—' : `${money(r.overhead_per_hour)}/hr`}<span className="rc-sub"> overhead</span></span>
+                      <span className="rc-sub rc-rate-note">{r.note || '—'}</span>
+                      <span className="rc-acts">
+                        <Button variant="ghost" size="sm" icon="edit" title="Edit this rate row"
+                          onClick={() => { setRateEdit({ ...r }); setRateError('') }} style={{ width: 32, padding: 0 }}>{' '}</Button>
+                        <Button variant="danger" size="sm" icon="x" title="Remove this rate row — runs after this day re-read from the row before it"
+                          onClick={() => deleteRateRow(r)} style={{ width: 32, padding: 0 }}>{' '}</Button>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="rc-note" style={{ marginBottom: 0 }}>
+                <Icon name="shield" size={13} strokeWidth={2.2} />
+                <span>
+                  Removing a row is not forbidden — it re-reads every run from that day at the row before it, the same way a corrected
+                  price on the product master re-values its recipes. The register prints readings; the ledger is where postings live.
+                </span>
+              </div>
+            </Card>
+          </>
+        )
+      })()}
+
       <div className="rc-foot">
         <span>
           {summary.recipes} recipe{summary.recipes === 1 ? '' : 's'} · {buildList.length} run{buildList.length === 1 ? '' : 's'}
           {demand.length ? ` · ${demand.length} order line${demand.length === 1 ? '' : 's'} waiting on the shop` : ''}
-          {' · '}stored in this browser, not a server: recipes hold quantities and rupees are read from your catalogue on every load.
+          {' · '}stored in this browser, not a server: recipes hold quantities and minutes; rupees come from the catalogue&apos;s prices and the dated shop rates.
         </span>
         <span className="rc-foot-links">
           <Link href="/inventory">Shelf counts →</Link>
@@ -1320,8 +1431,9 @@ function RecipesPageInner() {
           sold, at the HSN/SAC and rate of <em>that</em> good — not of its parts, which is why every card above checks the output has a
           code at all. Materials handed to somebody else to work on are a different thing entirely: that is job work, a supply on
           schedule I, and it belongs on <Link href="/gst/job-work">job work</Link> with its section 143 return clock.
-          Cost here is <strong>materials only</strong> — no labour (that is measured at <Link href="/projects">projects &amp; time</Link>),
-          no overhead, no work-in-progress account.
+          Cost here is <strong>parts plus minutes priced by your dated rate rows</strong> — a reading, not a posting: there is still no
+          work-in-progress account, and nothing consumes materials by itself when an invoice is raised, because a finished unit may have
+          come from opening stock or a purchase just as well as from a run. The build form, not the invoice, records what a run took.
         </span>
       </div>
 
@@ -1339,8 +1451,7 @@ function RecipesPageInner() {
               <div className="rc-modal-head">
                 <div>
                   <h2>{editor.isNew ? 'Write a recipe' : `Edit ${editor.recipe.name || 'recipe'}`}</h2>
-                  <p>Quantities only. The cost of a run is rolled up from each component&apos;s cost on the product master, so a price
-                    corrected there re-prices this recipe by itself.</p>
+                  <p>Quantities and minutes only. Parts are priced from the product master; labour and overhead are minutes here, priced by the dated rows on the Shop rates tab.</p>
                 </div>
                 <button type="button" className="rc-close" onClick={() => setEditor(null)} aria-label="Close">
                   <Icon name="x" size={16} />
@@ -1386,6 +1497,21 @@ function RecipesPageInner() {
                       onChange={e => patchRecipe({ output_qty: Number(e.target.value) || 0 })} />
                     <span className="rc-unit">{preview.output?.unit || 'units'}</span>
                   </div>
+                </label>
+              </div>
+
+              <div className="rc-grid2">
+                <label className="rc-field">
+                  <span>Labour minutes / run</span>
+                  <input className="tf-input" type="number" min="0" max={MAX_MINUTES_PER_RUN} step="any" value={editor.recipe.labour_minutes}
+                    onChange={e => patchRecipe({ labour_minutes: Number(e.target.value) || 0 })} />
+                  <span className="rc-sub">paid time one run takes — priced at the labour rate in force when a run happens, never typed in rupees</span>
+                </label>
+                <label className="rc-field">
+                  <span>Overhead minutes / run</span>
+                  <input className="tf-input" type="number" min="0" max={MAX_MINUTES_PER_RUN} step="any" value={editor.recipe.overhead_minutes}
+                    onChange={e => patchRecipe({ overhead_minutes: Number(e.target.value) || 0 })} />
+                  <span className="rc-sub">machine, power and rent time the run absorbs — same rule, its own rate</span>
                 </label>
               </div>
 
@@ -1445,20 +1571,36 @@ function RecipesPageInner() {
                 <div className="rc-preview-head">
                   <span>What the register reads from this</span>
                   <span className="rc-preview-total">
-                    {preview.cost.per_unit === null ? 'no material value until every part has a cost' : `${price(preview.cost.per_unit)} of material per unit`}
+                    {preview.full.per_unit === null
+                      ? (preview.full.missing.length ? 'no full value yet — see the gaps below' : `${price(preview.cost.per_unit)} of material per unit`)
+                      : `${price(preview.full.per_unit)} a unit, parts + labour + overhead`}
                   </span>
                 </div>
                 <ul className="rc-preview-list">
                   <li>
                     <span className="rc-dot rc-dot-blue" />
                     {editor.recipe.components.length} component{editor.recipe.components.length === 1 ? '' : 's'} · one run makes {fmtQty(editor.recipe.output_qty, preview.output?.unit || '')}
-                    {preview.margin_per_unit !== null && <> · margin on materials {price(preview.margin_per_unit)} ({percent(preview.margin_pct)}) at the selling price on the master</>}
+                    {editor.recipe.labour_minutes > 0 && <> · {fmtMinutes(editor.recipe.labour_minutes)} of labour</>}
+                    {editor.recipe.overhead_minutes > 0 && <> · {fmtMinutes(editor.recipe.overhead_minutes)} of overhead</>}
+                    {preview.margin_per_unit !== null && <> · margin {price(preview.margin_per_unit)} ({percent(preview.margin_pct)}) at the selling price on the master{preview.margin_basis === 'material' ? ', parts alone' : ''}</>}
                   </li>
                   <li>
                     <span className={`rc-dot rc-dot-${preview.plan.can_run ? 'green' : 'amber'}`} />
                     the shelf can cover {fmtQty(preview.plan.buildable_units, '')} unit{preview.plan.buildable_units === 1 ? '' : 's'} now
                     {preview.plan.limited_by ? `, held up by ${preview.plan.limited_by}` : ''}
                   </li>
+                  {preview.full.labour.missing && (
+                    <li>
+                      <span className="rc-dot rc-dot-amber" />
+                      labour minutes recorded, but {preview.full.labour.missing} — add a rate row on the Shop rates tab
+                    </li>
+                  )}
+                  {preview.full.overhead.missing && (
+                    <li>
+                      <span className="rc-dot rc-dot-amber" />
+                      overhead minutes recorded, but {preview.full.overhead.missing} — add a rate row on the Shop rates tab
+                    </li>
+                  )}
                   {preview.cost.roll.unpriced.length > 0 && (
                     <li>
                       <span className="rc-dot rc-dot-amber" />
@@ -1494,6 +1636,67 @@ function RecipesPageInner() {
           </div>
         )
       })()}
+
+      {/* ── rate editor ──────────────────────────────────────────────────────── */}
+      {rateEdit && (
+        <div className="rc-scrim" role="dialog" aria-modal="true" aria-label="Shop rate row">
+          <div className="rc-modal" style={{ maxWidth: 560 }}>
+            <div className="rc-modal-head">
+              <div>
+                <h2>A dated rate row</h2>
+                <p>The day each figure starts applying. Runs are priced at the newest row that has started by the run&apos;s own date — a rate is never a constant.</p>
+              </div>
+              <button type="button" className="rc-close" onClick={() => { setRateEdit(null); setRateError('') }} aria-label="Close">
+                <Icon name="x" size={16} />
+              </button>
+            </div>
+
+            {rateError && (
+              <div className="rc-alert" role="alert"><Icon name="alert" size={14} strokeWidth={2.2} />{rateError}</div>
+            )}
+
+            <label className="rc-field">
+              <span>Starts applying from *</span>
+              <input className="tf-input" type="date" value={rateEdit.from_date}
+                onChange={e => patchRate({ from_date: e.target.value })} />
+            </label>
+
+            <div className="rc-grid2">
+              <label className="rc-field">
+                <span>Labour, ₹ per hour</span>
+                <input className="tf-input" type="number" min="0" step="any" value={rateEdit.labour_per_hour ?? ''}
+                  onChange={e => patchRate({ labour_per_hour: e.target.value === '' ? null : Number(e.target.value) })}
+                  placeholder="leave out if not recorded" />
+                <span className="rc-sub">paid time — the minutes recipes carry</span>
+              </label>
+              <label className="rc-field">
+                <span>Overhead, ₹ per hour</span>
+                <input className="tf-input" type="number" min="0" step="any" value={rateEdit.overhead_per_hour ?? ''}
+                  onChange={e => patchRate({ overhead_per_hour: e.target.value === '' ? null : Number(e.target.value) })}
+                  placeholder="leave out if not recorded" />
+                <span className="rc-sub">machine, power, rent — a recipe&apos;s other minutes</span>
+              </label>
+            </div>
+
+            <label className="rc-field">
+              <span>Note</span>
+              <input className="tf-input" value={rateEdit.note} onChange={e => patchRate({ note: e.target.value })}
+                placeholder="the wage revision, the new power tariff…" />
+            </label>
+
+            <div className="rc-note">
+              <Icon name="scale" size={13} strokeWidth={2.2} />
+              A figure of ₹0 is refused: absence prints a dash with the reason, ₹0 prints a claim. Leave a leg out and recipes with those
+              minutes read that leg as unpriced — the gap is the finding, not a zero.
+            </div>
+
+            <div className="rc-save">
+              <Button variant="ghost" onClick={() => { setRateEdit(null); setRateError('') }}>Cancel</Button>
+              <Button icon="check" onClick={saveRate}>Save rate row</Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── build editor ─────────────────────────────────────────────────────── */}
       {draft && (
@@ -1612,8 +1815,10 @@ function RecipesPageInner() {
                   <span>This is what gets written</span>
                   <span className="rc-preview-total">
                     {draftCheck.stamp.total === null
-                      ? `${draftCheck.stamp.unpriced.length || 'no'} component${draftCheck.stamp.unpriced.length === 1 ? '' : 's'} unpriced`
-                      : `${money(draftCheck.stamp.total)} of materials${candidate.units > 0 ? ` · ${money(draftCheck.stamp.total / candidate.units)} per unit` : ''}`}
+                      ? (draftCheck.stamp.unpriced_legs[0]
+                        ? `no full value yet — ${draftCheck.stamp.unpriced_legs[0]}`
+                        : `${draftCheck.stamp.unpriced.length || 'no'} component${draftCheck.stamp.unpriced.length === 1 ? '' : 's'} unpriced`)
+                      : `${money(draftCheck.stamp.total)} a run${candidate.units > 0 ? ` · ${money(draftCheck.stamp.total / candidate.units)} a unit` : ''}`}
                   </span>
                 </div>
                 {draftCheck.writes.length === 0 ? (
@@ -1632,6 +1837,15 @@ function RecipesPageInner() {
                       every row goes through the same movement RPC <Link href="/inventory">/inventory</Link> writes, under {candidate.ref} —
                       the schema has no build movement type, so the job rides in the note
                     </li>
+                    {draftRecipe && (draftRecipe.labour_minutes > 0 || draftRecipe.overhead_minutes > 0) && candidate.units > 0 && draftRecipe.output_qty > 0 && (
+                      <li>
+                        <span className="rc-dot rc-dot-blue" />
+                        not a movement — priced, not posted: {draftRecipe.labour_minutes > 0 && <>labour {fmtMinutes(draftRecipe.labour_minutes * candidate.units / draftRecipe.output_qty)}{draftCheck.stamp.labour === null ? ' with no rate in force' : ` · ${money(draftCheck.stamp.labour)}`}</>}
+                        {draftRecipe.labour_minutes > 0 && draftRecipe.overhead_minutes > 0 && ' · '}
+                        {draftRecipe.overhead_minutes > 0 && <>overhead {fmtMinutes(draftRecipe.overhead_minutes * candidate.units / draftRecipe.output_qty)}{draftCheck.stamp.overhead === null ? ' with no rate in force' : ` · ${money(draftCheck.stamp.overhead)}`}</>}
+                        {' '}at the rates in force on {candidate.date}
+                      </li>
+                    )}
                   </ul>
                 )}
               </div>
@@ -1769,8 +1983,17 @@ function RecipesPageInner() {
         .rc-section-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
         .rc-section-head h2 { display: flex; align-items: center; gap: 7px; font-size: 14px; font-weight: 650; color: var(--ink); margin: 0; }
         .rc-section-head h2 svg { color: var(--brand); }
+        .rc-section-title { font-size: 14px; font-weight: 650; color: var(--ink); margin: 0; }
         .rc-section-sub { font-size: 11.5px; color: var(--faint); max-width: 640px; line-height: 1.5; }
         .rc-section-link { font-size: 11.5px; color: var(--brand); text-decoration: none; margin-left: auto; }
+
+        .rc-rate-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+        .rc-rate-list { display: flex; flex-direction: column; }
+        .rc-rate-row { display: grid; grid-template-columns: 150px 130px 130px minmax(0, 1fr) 76px; gap: 10px; align-items: center;
+          padding: 9px 4px; border-bottom: 1px solid var(--line-soft); font-size: 12.5px; }
+        .rc-rate-row:last-child { border-bottom: none; }
+        .rc-rate-day { display: flex; flex-direction: column; gap: 2px; }
+        .rc-rate-note { overflow-wrap: anywhere; }
 
         .rc-demand { display: flex; flex-direction: column; gap: 9px; }
         .rc-demand-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -1900,6 +2123,7 @@ function RecipesPageInner() {
           .rc-stats { grid-template-columns: 1fr 1fr; }
           .rc-grid, .rc-grid-wide { grid-template-columns: 1fr; }
           .rc-grid2, .rc-part, .rc-parts-head, .rc-parts-head-edit, .rc-parts-head-draw, .rc-part-edit, .rc-draw, .rc-vrow, .rc-used { grid-template-columns: 1fr; }
+          .rc-rate-row { grid-template-columns: 1fr 1fr; }
           .rc-parts-head span:nth-child(n+2) { text-align: left; }
           .rc-parts-head { display: none; }
           .rc-scrim { align-items: flex-end; padding: 0; }
