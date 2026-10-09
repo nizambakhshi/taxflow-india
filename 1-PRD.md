@@ -85,7 +85,7 @@ Round 1, closed:
 - Camera barcode scan + counter sale POS (`/pos`)
 - Bill OCR scanning and natural-language reporting (`/ai/scan-bill`, `/ai/ask`)
 
-Round 2, R2-1 … R2-24:
+Round 2, R2-1 … R2-25:
 - Design system v1 (tokens, UI kit, app shell)
 - Party ledger accounts and statements of account (`/ledger`)
 - Compliance calendar with late-fee estimation and `.ics` export (`/gst/calendar`)
@@ -109,6 +109,7 @@ Round 2, R2-1 … R2-24:
 - Tally bridge: import a Tally export into a plan with reasons, and export vouchers back (`/tally`)
 - Projects & time: hours measured, whole documents attached by id, labour priced not costed, rule 47 window cited (`/projects`)
 - Manufacturing: recipes and builds, and the answer to *what the shelf cannot run today* (`/inventory/recipes`)
+- Exports: the undertaking clock and the FEMA realisation window on every consignment, with the refund limitation beside them (`/gst/exports`)
 
 Still to come:
 - Real GSP submission for e-invoice / e-way bill (blocked on paid GSP provider — see `6-Project-Memory.md`)
@@ -473,6 +474,22 @@ Still to come:
 - Four tabs — **Recipe book** (cards: cost per unit, margin, "Can make now" and what limits it, variance history, findings), **Build log** (per-FY job numbers, planned → built → cancelled with the reversal kept on the log), **Materials board** (open sales orders demanded against recipes, shortages merged into one shopping list, a per-recipe plan that explodes sub-assemblies), **Where used** (which recipes draw a component, what has been consumed against it, whether the shelf could still cover them) — plus four CSV exports
 - v1 has no production scheduling, no work-in-progress account, no labour or overhead absorption (the roll-up is *material* value and the page says so), no batch/serial issuance into a build, no scrap *sale*, and **no back-flush** — nothing consumes materials automatically when an invoice is raised, because a finished unit may equally have come from opening stock or from a purchase, and guessing which is exactly how stock books get cooked
 
+### 3.43 Exports — LUT, Realisation & Refund Windows (R2-25)
+
+- `/gst/exports` keeps, for every consignment that left India, the two things an invoice cannot hold: **the paper that made the supply zero-rated** and **the date the money had to arrive by**. Paperwork lives in `taxflow:exports:<orgId>`; every rupee is re-read on load from `invoices` and from the FX ledger
+- **Two clocks, one page.** GST asks whether a letter of undertaking was in force on the day the invoice was raised; FEMA asks whether the proceeds landed inside the window that runs from the date of export. A file can be fully settled and still be non-compliant, and a file can be perfectly compliant while the money sits unpaid — so both clocks print on the same card rather than one being traded for the other
+- **The route to zero-rating is recorded, never inferred**: `LUT` (section 16(1)(a) with Notification 44/2017, no tax paid), `IGST paid` (section 16(1)(b) with rule 96, refund against the shipping bill and the evidence of realisation), `SEZ` (rule 48) and `unknown` for a file nobody has claimed yet. Only the two that pay tax can be refunded, so the refund clock stays silent on a LUT export instead of inventing a claim
+- **The realisation window is a band, and the band is dated**: nine months under the original master direction (FEMA.23(R)/(E)/2015-16/RB, regulation 9), fifteen — eighteen for a rupee-denominated contract — from 13-11-2025, back to nine from 05-06-2026, and fifteen again from 01-10-2026. Dispatch against an advance went from twelve months to thirty-six on 13-11-2025. Each file is measured against the band in force on *its* export date, and the instrument is printed beside the number
+- **A source disagreement is kept, not smoothed.** The 13-11-2025 notification is dated that day and the readings split on whether it took effect the same day or the next, which moves a deadline by a whole band. The rule tab shows both readings for the affected files, `WindowInfo` carries `disputed` and `alternative_months`, and a per-file override is labelled *overridden on this file* — never quietly applied
+- **The date of export is derived and says so**: the file's own date, else the shipping bill date, else the invoice date, with the source named on the card. A service export has no shipping bill at all, so `KIND_META` prints the different evidence rule 96 wants for it instead of leaving a blank port field
+- **Realisation is read from `/fx`, not retyped.** Where the FX ledger holds a deal for that invoice number its receipts are the counted figure; a credit typed on this register then shows with its amount and the words *not counted*, so one remittance can never be two totals (reminder #14)
+- **The refund clock is section 54(1)**: two years from the relevant date, turning amber inside the last ninety days. Nothing is charged for waiting on it — the window simply closes and the IGST stays where it is — which is why the row explains the loss instead of estimating a fee
+- **The missing paper is the product.** Invoices the books mark as export or SEZ with no file on the register are named on the page (`unregisteredExports`), because a register that lists only what someone already remembered to enter is worth nothing. Each card then lists *paper this consignment has to produce* — the undertaking, the realisation evidence, the shipping bill — as gaps, not as notes
+- **LUTs are per registration and per year**: valid 1 April to 31 March, filed in GST RFD-11, and `nextLutWindow` puts the renewal deadline on 31 March of the year before the cover starts, with its own countdown and its own row on the compliance calendar
+- Four tabs — **register** (one card per consignment, six sorts, filters by attention), **undertakings** (the LUT table, renew, archive), **watch list** (every date a human has to act on), **the rule** (the dated bands with sources and disputes) — and five CSVs: export register, shipping bills, realisations, watch list and undertakings
+- Wiring: sidebar, GST hub, a ⌘K action, an *Open on the export register* banner on export invoices, an *Export register* link in the FX footer, and a compliance calendar that calls `watchRows()` rather than keeping its own dates so the two screens cannot disagree (FEMA and refund rows carry a note instead of a ₹-per-day estimate, because a FEMA default is not priced by the GST late-fee rule)
+- v1 fetches nothing from ICEGATE or the bank — a shipping bill and an e-BRC/FIRA are typed, not pulled; no condonation representation is drafted for a missed window; RFD-11 and RFD-1 are prepared as rows and CSV, never filed; and there is no multi-GSTIN workflow beyond a GSTIN field per undertaking, so a business exporting from several registrations manages them one at a time
+
 ---
 
 ## 4. Non-Functional Requirements
@@ -515,6 +532,7 @@ Still to come:
 - The *cost* of an hour — `/projects` (R2-23) prices labour at the rate you would bill it and never at what it took to do the work, because costing needs payroll and this register has no salary data to read
 - TDS / TCS return filing — `/tds` builds the withholding workpaper and deposit calendar, but no Form 26Q or 24Q is filed, and TCS under 206C is not covered
 - Revaluing a statutory invoice in a foreign currency — `/fx` (R2-19) keeps a dated rate ledger *beside* the rupee books; the invoice a return reads stays in rupees
+- The customs and bank side of an export — `/gst/exports` (R2-25) tracks the shipping bill, the e-BRC/FIRA and the realisation window as typed evidence; nothing is fetched from ICEGATE or an AD bank, and no condonation representation is drafted for a window that has closed
 - Authenticated customer logins — the portal (R2-16) is a share link that carries its own statement, not an account per party (Phase 14)
 - Native mobile app (the web app is an installable PWA)
 - Server-side LLM features — by design, so a business's bills never leave the device

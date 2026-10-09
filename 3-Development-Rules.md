@@ -419,6 +419,30 @@ Credit notes are signed rows (`document_type: 'credit_note'` → −1) and must 
 
 ---
 
+## Rule 29 — A Statutory Period Is a Dated Table, Not a Constant
+
+How long export proceeds may take to reach India is not one number: `REALISATION_BANDS` in `src/lib/exports.ts` runs nine months → fifteen from 13-11-2025 → nine from 05-06-2026 → fifteen (eighteen for rupee-denominated trade) from 01-10-2026, and `ADVANCE_BANDS` moved twelve → thirty-six in the same amendment. A period that a regulator can amend is therefore stored as **bands keyed by the date the clock starts on** — the date of export, not today — and every band carries `from`, `months`, `rupee_months`, its `source` instrument with a `url`, and a `note` written the way it would be quoted to a bank. `bandOn(date)` takes the **last band whose `from` is on or before that date**; nothing reads a bare constant.
+
+Two obligations come with the shape:
+
+- **A source disagreement is kept visible, not resolved silently.** The November-2025 amendment is dated 13-11-2025 by one source and effective 14-11-2025 by another, so the band carries `disputed: { from, to, instead_months, why }` and the page prints the one-day gap **as a question** with both answers. Picking a side would look tidier and would be a guess the user cannot see; the register lets a file override the window and labels the override wherever it shows.
+- **A rule the app cites is labelled as cited.** `SERVICE_INVOICE_DAYS = 30` (rule 47 read with section 31(2), from CBIC's *Handbook on Invoicing under GST*) prints on `/projects` as *cited, not settled*, because notifications widen the window for classes of supplier. Same reason `indicative_tax` on `/gst/job-work` is always labelled indicative.
+
+The rate table is the weaker form of the same discipline and stays that way on purpose: `src/lib/gst-rates.ts` records the 56th Council's effective date (22 Sep 2025) in its header and keeps the retired 12% and 28% slabs so a credit note against an old invoice can still repeat the original rate. Where a *period* is what moves — the FEMA window, the advance window — a dated header is not enough, because the period is computed from a date the document carries: that table has to be keyed, and `bandOn()` has to be the only reader of it.
+
+---
+
+## Rule 30 — A Feature's Deadlines Are Read From That Feature
+
+`/gst/calendar` does not invent dates and does not ask the profile to tick a box: it **calls the register that owns the obligation** and merges the rows. `generateEvents()` draws the statutory return dates, `jobWorkEvents()` reads `loadJob()` + `itc04Periods()` (movements recorded ⇒ statements owed), and `exportEvents()` calls `watchRows()` on the export register — LUT renewal, the FEMA realisation window, the section 54(1) refund clock and the advance-dispatch clock, each with the file's own id (`real-<fileId>`) and href, so a calendar row and the register it came from cannot disagree and a deleted file's deadline disappears with it.
+
+Two consequences to respect when adding the next one:
+
+- **A non-GST default carries words, not a rate.** FEMA rows land in `category: 'other'` with `penalty.note` naming what actually happens (the AD bank can hold further exports until a contravention is condoned; section 54(1) simply runs out). The ₹-per-day estimator must stay silent on a default it has no statutory late fee for — inventing a number is Rule 27's fake figure in calendar clothing.
+- **Filtering is the calendar's job, not the feature's.** `exportEvents()` clips to the selected FY after `watchRows()` returns, so the register stays complete and the year shown is a view.
+
+---
+
 ## Code Quality Checklist
 
 Before marking any feature complete, verify:

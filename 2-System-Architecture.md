@@ -118,7 +118,7 @@ taxflow-india/
 │   │       ├── inventory/recipes/  recipes, build log, materials board, where-used
 │   │       ├── gst/                GST hub
 │   │       │   ├── gstr1/  gstr3b/  gstr9/  gstr4/
-│   │       │   ├── reconciliation/  einvoice/  calendar/  job-work/
+│   │       │   ├── reconciliation/  einvoice/  calendar/  job-work/  exports/
 │   │       ├── reports/            business reports
 │   │       ├── reports/registers/  statutory registers
 │   │       ├── reports/targets/    plan vs achievement
@@ -157,6 +157,7 @@ taxflow-india/
 │       ├── recurring.ts  fx.ts  jobwork.ts        cadence, currency deals, rule 45 / s.143
 │       ├── costcentres.ts  projects.ts  tally.ts   the share register, the hour register, the file bridge
 │       ├── bom.ts                  recipes, builds, requirement maths, where-used explosion
+│       ├── exports.ts              zero-rating routes, dated FEMA bands, realisation join to /fx
 │       ├── portal.ts               the statement encoded inside its own share link
 │       └── gsp/                    provider adapter: types, index, mock
 ├── public/
@@ -628,6 +629,7 @@ Features that need somewhere to put information the schema does not have use one
 | `taxflow:projects:<orgId>` | Projects & time | Projects, hour rows, and whole documents attached **by id** — **measurements only**; revenue, spend, contribution and the unbilled months are re-read through the same `bookDocs()` the cost centres use, and an hour carries the rate you would bill it at, not what it cost (ADR-030) |
 | `taxflow:tally:<orgId>` | Tally bridge | **Only the log** of an import — which file, when, how many of each kind. The parsed dump, the plan and the exported XML live in memory and on disk, never here (ADR-029) |
 | `taxflow:bom:<orgId>` | Recipes & builds | Recipes (component **quantities**, output per run, waste) and builds (what the shop actually **drew**), plus the per-FY `JOB-<FY>-NNNN` high-water mark — **never a rupee**: material value is rolled up from `products.purchase_price` on every load, the same field `/accounting` values stock at (ADR-031) |
+| `taxflow:exports:<orgId>` | Exports | Undertakings, the shipping-bill / advance / refund paperwork a consignment has to prove, and the realisation credits typed here — **never the invoice value or the IGST paid**, which are re-read from `invoices`. Where `/fx` holds a deal for the same invoice number, its receipts are the counted figure and a credit typed here is printed as *not counted* |
 | `taxflow:palette-recents:<orgId>` | ⌘K | Recently opened records |
 
 Rules that make this safe:
@@ -687,6 +689,7 @@ Because replay uses the production write path, an offline invoice cannot diverge
 | `/recurring` | `recurring.ts`, `orderflow.ts` | Cadence → a real invoice, billed back into the FY it belonged to |
 | `/fx` | `fx.ts` | Dated rate ledger; realised and unrealised kept beside, not inside, the rupee books |
 | `/gst/job-work` | `jobwork.ts` | Section 143 return clock and the four ITC-04 grids |
+| `/gst/exports` | `exports.ts`, `fx.ts`, `recurring.ts` (`addMonthsISO`, `daysBetween`) | Two clocks per consignment: the undertaking that made it zero-rated and the dated FEMA window the proceeds have to land inside. Band tables carry their instrument and their disagreement; the calendar reads the same `watchRows()` |
 | `/cost-centres` | `costcentres.ts` | Stores a **share**; rupees re-read from documents through `bookDocs` |
 | `/projects` | `projects.ts`, `costcentres.ts` (`bookDocs`) | Stores hours and document ids; labour priced not costed, rule 47 window cited not settled |
 | `/tally` | `tally.ts`, `create-invoice.ts`, `create-bill.ts` | Parse → plan with blocked rows and reasons → replay through the normal write path; export builds the XML envelope |
