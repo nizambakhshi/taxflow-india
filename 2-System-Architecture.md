@@ -115,7 +115,7 @@ taxflow-india/
 │   │       ├── inventory/batches/  lot-level in/out, FEFO, expiry watch
 │   │       ├── inventory/serials/  one row per physical unit, warranty trail
 │   │       ├── inventory/godowns/  named places, per-place stock, transfers as splits
-│   │       ├── inventory/recipes/  recipes, build log, materials board, where-used
+│   │       ├── inventory/recipes/  recipes, build log, materials board, where-used, shop rates
 │   │       ├── gst/                GST hub
 │   │       │   ├── gstr1/  gstr3b/  gstr9/  gstr4/
 │   │       │   ├── reconciliation/  einvoice/  calendar/  job-work/  exports/
@@ -157,7 +157,7 @@ taxflow-india/
 │       ├── recurring.ts  fx.ts  jobwork.ts        cadence, currency deals, rule 45 / s.143
 │       ├── costcentres.ts  projects.ts  tally.ts   the share register, the hour register, the file bridge
 │       ├── creditnote.ts            one write path for both note registers (page forms + Tally bridge)
-│       ├── bom.ts                  recipes, builds, requirement maths, where-used explosion
+│       ├── bom.ts                  recipes, builds, dated shop rates, full-cost legs, where-used explosion
 │       ├── exports.ts              zero-rating routes, dated FEMA bands, realisation join to /fx
 │       ├── invoice-template.ts     the invoice template id + its loader (shared by the vault spec)
 │       ├── vault.ts                the books vault: 30 register specs, checksums, plan-then-restore
@@ -688,7 +688,7 @@ Because replay uses the production write path, an offline invoice cannot diverge
 | `/inventory/batches` | `batches.ts`, `godowns.ts` | Lot-level in/out, FEFO draw order, expiry watch |
 | `/inventory/serials` | `serials.ts` | One row per unit; warranty read from the latest sale |
 | `/inventory/godowns` | `godowns.ts`, `batches.ts` | A transfer is a lot split, never a second stock ledger |
-| `/inventory/recipes` | `bom.ts`, `orderflow.ts` (`loadStore`) | A recipe stores **quantities** and re-reads cost from `products.purchase_price`; a build stores what was drawn and moves stock only through `record_stock_movement` |
+| `/inventory/recipes` | `bom.ts`, `orderflow.ts` (`loadStore`) | A recipe stores **quantities and minutes** and re-reads cost from `products.purchase_price` plus the dated shop-rate rows in `taxflow:bom:<orgId>` — each leg priced at the rate in force on its own day; a build stores what was drawn and moves stock only through `record_stock_movement` |
 | `/recurring` | `recurring.ts`, `orderflow.ts` | Cadence → a real invoice, billed back into the FY it belonged to |
 | `/fx` | `fx.ts` | Dated rate ledger; realised and unrealised kept beside, not inside, the rupee books |
 | `/gst/job-work` | `jobwork.ts` | Section 143 return clock and the four ITC-04 grids |
