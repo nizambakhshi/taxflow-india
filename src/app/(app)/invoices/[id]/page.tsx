@@ -8,9 +8,11 @@ import { Button } from '@/components/ui'
 import Icon from '@/components/Icons'
 import { downloadElementAsPdf } from '@/lib/pdf-export'
 import {
-  INVOICE_TEMPLATES, InvoiceDocument, loadInvoiceTemplate, saveInvoiceTemplate,
-  type InvoiceTemplate,
+  InvoiceDocument,
 } from '@/components/InvoiceDocument'
+import {
+  INVOICE_TEMPLATES, loadInvoiceTemplate, saveInvoiceTemplate, type InvoiceTemplate,
+} from '@/lib/invoice-template'
 
 export default function InvoiceDetailPage() {
   const router = useRouter()

@@ -9,25 +9,7 @@ import { formatINR } from '@/lib/gst-engine'
 import { amountInWords } from '@/lib/words'
 import { formatDateIN } from '@/lib/format'
 import { stateNameFor } from '@/lib/einvoice'
-
-export type InvoiceTemplate = 'classic' | 'modern' | 'minimal'
-
-const TEMPLATE_KEY = 'taxflow:invoice-template:'
-
-export const INVOICE_TEMPLATES: { id: InvoiceTemplate; name: string; blurb: string }[] = [
-  { id: 'classic', name: 'Classic ledger', blurb: 'Ruled Tally-style sheet accountants recognise' },
-  { id: 'modern', name: 'Modern band', blurb: 'Colour header, soft table, bold total block' },
-  { id: 'minimal', name: 'Minimal', blurb: 'Quiet white document for services and consultants' },
-]
-
-export function loadInvoiceTemplate(oid: string): InvoiceTemplate {
-  const saved = typeof localStorage !== 'undefined' ? localStorage.getItem(TEMPLATE_KEY + oid) : null
-  return saved === 'modern' || saved === 'minimal' ? saved : 'classic'
-}
-
-export function saveInvoiceTemplate(oid: string, template: InvoiceTemplate) {
-  try { localStorage.setItem(TEMPLATE_KEY + oid, template) } catch { /* branding preference */ }
-}
+import { type InvoiceTemplate } from '@/lib/invoice-template'
 
 interface Props {
   invoice: any
