@@ -42,8 +42,8 @@
 //    This page makes things out of things you own.
 //
 // What v1 deliberately does NOT claim: no production plan, no scheduling, no work-in-progress
-// account, no batch or serial issuance into a build (a build draws quantities; lots and units are
-// drawn at the counter by `/inventory/batches` and `/inventory/serials`), no scrap *sale* —
+// account, no serial issuance into a build (a finished unit is not a numbered physical unit —
+// `/inventory/serials` decides that at the counter), no scrap *sale* —
 // offcuts sold are an ordinary invoice — and no back-flush. The ERP habit called back-flushing
 // consumes materials automatically when a finished unit is sold or received; this register refuses
 // it on purpose, because a unit on the shelf may equally have come from opening stock or a
@@ -63,7 +63,19 @@
 // a dash and a reason, because ₹0 claims the work costs nothing and a dash admits nobody recorded
 // it.
 
-import { newId, todayISO } from '@/lib/batches'
+// What R2-29 added: **a build draws lots, not only quantities.** Each drawn line may carry the
+// physical batches it came off (`BuildLine.lots`), allocated first-expiry-first-out **by
+// `batches.ts`'s own `allocateFefo()`** — this register never restates that maths, so the counter
+// and the plant cannot rotate stock differently. Recording a run that names lots appends the
+// matching moves through the batch register's own owners and lands the finished units as **their
+// own lot** (`Build.output_batch_id`), dated the day of the run and costed at the cost the run
+// read that day. Two refusals hold the line honest: a lot that cannot cover what the line says was
+// drawn blocks the issue rather than drawing the remainder from thin air, and cancelling a run
+// whose finished lot has already been sold from is refused — putting back units that left the
+// building would be the stock fiction this register exists to avoid.
+//
+
+import { allocateFefo, newId, todayISO, type Batch, type BatchMove } from '@/lib/batches'
 import { round2 } from '@/lib/costcentres'
 import { fyLabel, fyStartYear } from '@/lib/targets'
 
@@ -192,10 +204,31 @@ export interface CostRate {
   note: string
 }
 
+/**
+ * One drawn quantity traced to the physical lot it came off — the batch register's row, copied
+ * here so the run is readable without re-deriving it. Optional on purpose: a shop that keeps no
+ * lots for a bought-in part draws by quantity alone, and an old run written before R2-29 reads
+ * back as exactly that.
+ */
+export interface LotPick {
+  /** `batches.ts`'s own lot id — the link, never a re-issued number. */
+  batch_id: string
+  /** The batch number as the register prints it, so a movement note is readable on its own. */
+  batch_no: string
+  qty: number
+  /** The lot's expiry date at draw time, '' when the part does not perish. A past date is *named*, not hidden. */
+  expiry_date: string
+}
+
 export interface BuildLine {
   product_id: string
   /** What the shop actually drew. Stored, because the drum said what it said. */
   qty: number
+  /**
+   * Which lots that quantity came off, FEFO. Absent = this draw names no physical batch:
+   * either the part is not batch-tracked, or the run predates R2-29.
+   */
+  lots?: LotPick[]
 }
 
 export interface Build {
@@ -210,6 +243,12 @@ export interface Build {
   lines: BuildLine[]
   /** The movements reached `record_stock_movement`. A built run that never wrote is a plan, not a fact. */
   moved: boolean
+  /**
+   * The lot the finished units landed in — `batches.ts`'s row, created when a run with a
+   * batch-tracked output was recorded. Absent for a plan, for an untracked output, and for every
+   * run written before R2-29.
+   */
+  output_batch_id?: string
   notes: string
   created_at: string
 }
@@ -363,11 +402,33 @@ function parseRecipe(raw: unknown): Recipe | null {
   }
 }
 
+function parsePick(raw: unknown): LotPick | null {
+  if (!raw || typeof raw !== 'object') return null
+  const p = raw as Record<string, unknown>
+  const batch_id = str(p.batch_id)
+  const qty = num(p.qty)
+  if (!batch_id || !(qty > 0)) return null
+  const expiry = str(p.expiry_date)
+  return { batch_id, batch_no: str(p.batch_no), qty: roundQty(qty), expiry_date: isDate(expiry) ? expiry : '' }
+}
+
 function parseLine(raw: unknown): BuildLine | null {
   if (!raw || typeof raw !== 'object') return null
   const l = raw as Record<string, unknown>
   if (!str(l.product_id) || !(num(l.qty) > 0)) return null
-  return { product_id: str(l.product_id), qty: roundQty(num(l.qty)) }
+  const line: BuildLine = { product_id: str(l.product_id), qty: roundQty(num(l.qty)) }
+  // Two picks naming one lot would double-count the same physical units: merged, not kept.
+  const picks = Array.isArray(l.lots) ? l.lots.map(parsePick).filter((p): p is LotPick => p !== null) : []
+  if (picks.length) {
+    const merged = new Map<string, LotPick>()
+    for (const p of picks) {
+      const prev = merged.get(p.batch_id)
+      if (prev) prev.qty = roundQty(prev.qty + p.qty)
+      else merged.set(p.batch_id, { ...p })
+    }
+    line.lots = [...merged.values()]
+  }
+  return line
 }
 
 function parseBuild(raw: unknown): Build | null {
@@ -387,6 +448,9 @@ function parseBuild(raw: unknown): Build | null {
     status: isBuildStatus(b.status) ? b.status : 'planned',
     lines: [...new Map(lines.map(l => [l.product_id, l])).values()],
     moved: b.moved === true,
+    // A build that names no lot simply has no `output_batch_id` — an empty string would read as
+    // "a lot exists and its id is blank", which is a broken link rather than an absent one.
+    ...(str(b.output_batch_id) ? { output_batch_id: str(b.output_batch_id) } : {}),
     notes: str(b.notes),
     created_at: str(b.created_at) || new Date().toISOString(),
   }
@@ -1236,13 +1300,24 @@ export interface BuildView {
   cost_today: RollUp
   /** Parts + labour + overhead of the run, the rate legs at the rates in force on the run's date. */
   full: FullCost
+  /** Which physical lots the draw came off — `count: 0` means the run drew by quantity alone. */
+  lots: { count: number; picks: LotPick[]; lines: string[] }
   /** What the recipe asked for, and what was drawn — the wastage the register exists to show. */
   wanted: BuildLine[]
   variance: { product_id: string; name: string; wanted: number; drawn: number; diff: number }[]
   findings: Finding[]
 }
 
-export function buildView(build: Build, store: BomStore, products: BomProduct[]): BuildView {
+export interface BuildViewOptions {
+  /**
+   * Product ids the batch register holds a lot for *today*. Supplied, a built run that named no
+   * lot gets an amber finding rather than silence; omitted, the view stays quiet, because absence
+   * of the list is not evidence that the shop keeps no lots — it is evidence that nobody asked.
+   */
+  batchedProducts?: string[]
+}
+
+export function buildView(build: Build, store: BomStore, products: BomProduct[], opts: BuildViewOptions = {}): BuildView {
   const index = indexProducts(products)
   const recipe = store.recipes.find(r => r.id === build.recipe_id)
   const wanted = recipe ? requirement(recipe, build.units) : []
@@ -1269,6 +1344,16 @@ export function buildView(build: Build, store: BomStore, products: BomProduct[])
   if (roll.unpriced.length) findings.push({ text: `${roll.unpriced.length} component${roll.unpriced.length === 1 ? '' : 's'} with no cost, so this run has no material value.`, tone: 'amber' })
   if (full.labour.missing) findings.push({ text: `Labour unpriced on this run — ${full.labour.missing}.`, tone: 'amber' })
   if (full.overhead.missing) findings.push({ text: `Overhead unpriced on this run — ${full.overhead.missing}.`, tone: 'amber' })
+  const lots = lotTrail(build)
+  if (!lots.count && build.moved && opts.batchedProducts?.some(id => build.lines.some(l => l.product_id === id))) {
+    findings.push({ text: 'Its components have lots on the register, but this draw names none — the batch ledger will not know the run took them.', tone: 'amber' })
+  }
+  if (lots.picks.some(p => p.expiry_date && p.expiry_date < build.date)) {
+    findings.push({ text: 'A lot that had passed its expiry on the run date was drawn. The register records what left the shelf; this is the one that should have been pulled first.', tone: 'red' })
+  }
+  if (build.status === 'cancelled' && build.output_batch_id) {
+    findings.push({ text: 'Cancelled — the finished lot it landed in has to be zeroed back off, and if units left it already, that lot is the record of it.', tone: 'amber' })
+  }
 
   return {
     build,
@@ -1277,14 +1362,15 @@ export function buildView(build: Build, store: BomStore, products: BomProduct[])
     units: build.units,
     cost_today: roll,
     full,
+    lots,
     wanted,
     variance,
     findings,
   }
 }
 
-export function buildViews(store: BomStore, products: BomProduct[]): BuildView[] {
-  return store.builds.map(b => buildView(b, store, products))
+export function buildViews(store: BomStore, products: BomProduct[], opts: BuildViewOptions = {}): BuildView[] {
+  return store.builds.map(b => buildView(b, store, products, opts))
 }
 
 export function sortBuilds(builds: Build[]): Build[] {
@@ -1463,6 +1549,257 @@ export function reverseMovementsFor(build: Build, recipe: Recipe | undefined, pr
   }))
 }
 
+// ── lots: which physical batch a draw came off ───────────────────────────────
+//
+// A quantity says how much left the shelf; a lot says *which* units left it, and for a shop that
+// keeps the batch register that difference is the whole point of FEFO. So the drawdown is planned
+// here and executed there: this register asks `batches.ts`'s own `allocateFefo()` for the picks —
+// it never restates the rotation, so the counter and the plant cannot disagree about which lot
+// goes first — and the page appends the moves through the batch register's own owners.
+//
+// Two refusals hold the line honest, and both are the same idea: a build may not claim units that
+// no lot can produce, and a cancelled run may not put back finished units that have already left.
+
+export interface LotRow {
+  product_id: string
+  name: string
+  unit: string
+  /** What the line says was drawn. */
+  need: number
+  /** False when the batch register holds no lot for this product at all — the part is not batch-tracked. */
+  batched: boolean
+  /** FEFO picks, in the order they were taken. Empty for an unbatched part. */
+  picks: LotPick[]
+  covered: number
+  shortfall: number
+  /** Batch numbers whose expiry date has passed — drawn when they came first, and named for it. */
+  expired: string[]
+  ok: boolean
+}
+
+/**
+ * Splits a build's drawn lines across the lots that would have to give them up, first expiry first
+ * out. Two lines for one product allocate against a **running** move list, exactly as `recordSale`
+ * does, so the same units cannot be issued to both.
+ *
+ * `where` narrows the places to draw from — the godown filter `/inventory/godowns` hands the
+ * allocator a predicate; left out, every lot in the books is a candidate.
+ */
+export function allocateLots(
+  lines: BuildLine[],
+  products: BomProduct[],
+  batches: Batch[],
+  moves: BatchMove[],
+  today = todayISO(),
+  where?: (b: Batch) => boolean,
+): LotRow[] {
+  const index = indexProducts(products)
+  const tracked = new Set(batches.map(b => b.product_id).filter((id): id is string => Boolean(id)))
+  let working = moves
+  const rows: LotRow[] = []
+  for (const l of lines) {
+    const batched = tracked.has(l.product_id)
+    const base = {
+      product_id: l.product_id,
+      name: nameOf(index, l.product_id) || l.product_id,
+      unit: index.get(l.product_id)?.unit?.trim() || '',
+      need: roundQty(l.qty),
+      batched,
+    }
+    if (!batched) {
+      rows.push({ ...base, picks: [], covered: 0, shortfall: 0, expired: [], ok: true })
+      continue
+    }
+    const alloc = allocateFefo(batches, working, l.product_id, l.qty, where)
+    const picks: LotPick[] = alloc.picks.map(p => ({
+      batch_id: p.batch.id,
+      batch_no: p.batch.batch_no || p.batch.id,
+      qty: roundQty(p.take),
+      expiry_date: p.batch.expiry_date || '',
+    }))
+    // Write each pick back against the working list as a negative move, so the next line of the
+    // same product sees a shelf that has already given these units away. These are not stored —
+    // they are the running figure the next `allocateFefo` call reads, and `plan:` says so in the id.
+    working = [...working, ...picks.map(p => ({
+      id: `plan:${p.batch_id}`,
+      batch_id: p.batch_id,
+      date: today,
+      qty: -p.qty,
+      kind: 'adjust' as const,
+      doc_ref: '',
+      note: '',
+      created_at: new Date().toISOString(),
+    }))]
+    rows.push({
+      ...base,
+      picks,
+      covered: roundQty(alloc.covered),
+      shortfall: roundQty(alloc.shortfall),
+      expired: picks.filter(p => p.expiry_date && p.expiry_date < today).map(p => p.batch_no),
+      ok: alloc.shortfall <= 0,
+    })
+  }
+  return rows
+}
+
+/** One move this register asks the batch register to append. Mirrors `StockWrite` in shape. */
+export interface BatchWrite {
+  batch_id: string
+  /** The lot's own number, so the note reads as paper rather than as a uuid. */
+  batch_no: string
+  product_id: string
+  /** Signed: negative leaves the lot, positive returns to it. */
+  qty: number
+  date: string
+  /** Always `adjust` — the batch register has three kinds and none of them is `issue`. A fourth
+   *  would be a shape change, and an unknown kind would be read back as `adjust` anyway. */
+  kind: 'adjust'
+  /** The job number, riding as `doc_ref` the way an invoice number rides on a sale move. */
+  doc_ref: string
+  note: string
+}
+
+export function lotWritesFor(build: Build, products: BomProduct[]): BatchWrite[] {
+  const index = indexProducts(products)
+  const out: BatchWrite[] = []
+  for (const l of build.lines) {
+    for (const p of l.lots || []) {
+      out.push({
+        batch_id: p.batch_id,
+        batch_no: p.batch_no,
+        product_id: l.product_id,
+        qty: -roundQty(p.qty),
+        date: build.date,
+        kind: 'adjust',
+        doc_ref: build.ref,
+        note: `Build ${build.ref} — ${nameOf(index, l.product_id) || 'component'} ${roundQty(p.qty)} issued from lot ${p.batch_no || 'unnamed'}`,
+      })
+    }
+  }
+  return out
+}
+
+/** The reversal: the drawn units go back to the lots they came from. Same rule, opposite signs. */
+export function reverseLotWritesFor(build: Build, products: BomProduct[]): BatchWrite[] {
+  return lotWritesFor(build, products).map(w => ({
+    ...w,
+    qty: -w.qty,
+    note: w.note.replace(/^Build /, 'Cancel '),
+  }))
+}
+
+/** What a run issued, as one readable line for the log and the flash message. */
+export function lotTrail(build: Build): { count: number; picks: LotPick[]; lines: string[] } {
+  const picks = build.lines.flatMap(l => l.lots || [])
+  return {
+    count: picks.length,
+    picks,
+    lines: build.lines
+      .filter(l => (l.lots || []).length)
+      .map(l => l.lots!.map(p => `${p.batch_no || 'unnamed lot'} ${roundQty(p.qty)}`).join(' + ')),
+  }
+}
+
+/**
+ * The lot the finished units land in — the batch register's row, described here so the plant's
+ * decision (this run made this lot, on this day, at this cost reading) is in one place. The page
+ * hands it to `newBatch()` and `upsertBatch()`; nothing here writes.
+ *
+ * `expiry_date` is deliberately empty: this register knows the day the run happened, not the shelf
+ * life of the thing it made, and inventing an expiry would be a fabricated date on a lot the
+ * expiry clock is supposed to be trusted for. The batch page can date it later.
+ *
+ * `godown_id` is empty for the same reason — a build names no place. Unplaced reads as Main
+ * (godowns.ts), and the page says so rather than guessing where the run happened.
+ */
+export interface ProducedLot {
+  product_id: string
+  product_name: string
+  sku: string
+  unit: string
+  batch_no: string
+  mfg_date: string
+  expiry_date: string
+  qty: number
+  /** ₹ per unit as the run read it, or 0 with a note saying nobody recorded one — `Batch.cost` has no null. */
+  cost: number
+  bill_ref: string
+  notes: string
+  godown_id: string
+}
+
+export function producedLot(
+  build: Build,
+  recipe: Recipe,
+  product: BomProduct | undefined,
+  perUnitCost: number | null,
+): ProducedLot {
+  const cost = perUnitCost === null || !Number.isFinite(perUnitCost) || perUnitCost <= 0
+    ? 0
+    : round2(perUnitCost)
+  const where = product?.name?.trim() || recipe.output_product_id
+  return {
+    product_id: product?.id || recipe.output_product_id,
+    product_name: where,
+    sku: product?.sku?.trim() || '',
+    unit: product?.unit?.trim() || '',
+    // The job number *is* the batch number of the run: one build, one lot, and the trace a shop
+    // actually asks for ("which batch was this?") answers with the run that made it.
+    batch_no: build.ref,
+    mfg_date: build.date,
+    expiry_date: '',
+    qty: roundQty(build.units),
+    cost,
+    bill_ref: build.ref,
+    notes: [
+      `Made by build ${build.ref} — recipe ${recipe.name?.trim() || 'unnamed'} (${roundQty(recipe.output_qty)} per run).`,
+      cost > 0
+        ? `Costed ${round2(cost)}/unit from the catalogue and the shop rates in force on ${build.date}; a reading, not a ledger posting.`
+        : `No cost recorded — a component price or a shop rate was missing on ${build.date}. Enter it on the batch page when it is known.`,
+      'No expiry date and no godown: the run recorded neither, so this lot stands unplaced (Main) until the shop says otherwise.',
+    ].join(' '),
+    godown_id: '',
+  }
+}
+
+/** What the finished lot holds that this run did not put there — the sale or adjustment to check before a cancel. */
+export function drawnElsewhereFrom(batchId: string, buildRef: string, moves: BatchMove[]): BatchMove[] {
+  return moves.filter(m => m.batch_id === batchId && m.qty < 0 && m.doc_ref !== buildRef)
+}
+
+/**
+ * A stored draw has to be one the batch register can honour. Each refusal names the missing word
+ * the way the Tally planner does, because "it will not fit" is not something a shop can act on.
+ */
+export function validateLotIssues(build: Build, batches: Batch[], products: BomProduct[]): string[] {
+  const index = indexProducts(products)
+  const byId = new Map(batches.map(b => [b.id, b]))
+  const problems: string[] = []
+  for (const l of build.lines) {
+    const picks = l.lots || []
+    if (!picks.length) continue
+    const part = nameOf(index, l.product_id) || 'A component'
+    let sum = 0
+    for (const p of picks) {
+      const lot = byId.get(p.batch_id)
+      if (!lot) {
+        problems.push(`${part} names lot ${p.batch_no || p.batch_id}, which is not on the batch register.`)
+        continue
+      }
+      if (lot.product_id && lot.product_id !== l.product_id) {
+        problems.push(`Lot ${lot.batch_no || p.batch_id} belongs to ${lot.product_name || 'another product'}, not to ${part} — a draw cannot name someone else's batch.`)
+        continue
+      }
+      sum += p.qty
+    }
+    const diff = roundQty(roundQty(sum) - roundQty(l.qty))
+    if (Math.abs(diff) > 0.0000001) {
+      problems.push(`The lots on ${part} cover ${roundQty(sum)} of the ${roundQty(l.qty)} drawn — ${diff > 0 ? 'more than was drawn.' : 'the rest names no lot. Issue the whole draw or none of it.'}`)
+    }
+  }
+  return problems
+}
+
 // ── demand that already exists: the orders the shop has taken ─────────────────
 
 export interface DemandLine {
@@ -1579,7 +1916,7 @@ export function recipeCsvRows(views: RecipeView[]): (string | number)[][] {
   ])
 }
 
-export const BUILD_CSV_HEADERS = ['Job', 'Date', 'Recipe', 'Finished product', 'Units', 'Status', 'Movements written', 'Materials', 'Cost today (full)', 'Uncosted', 'Note']
+export const BUILD_CSV_HEADERS = ['Job', 'Date', 'Recipe', 'Finished product', 'Units', 'Status', 'Movements written', 'Materials', 'Lots drawn', 'Cost today (full)', 'Uncosted', 'Note']
 
 export function buildCsvRows(views: BuildView[], products: BomProduct[]): (string | number)[][] {
   const index = indexProducts(products)
@@ -1592,6 +1929,9 @@ export function buildCsvRows(views: BuildView[], products: BomProduct[]): (strin
     BUILD_STATUS_META[v.build.status].label,
     v.build.moved ? 'Yes' : 'No',
     v.build.lines.map(l => `${nameOf(index, l.product_id) || l.product_id} ${l.qty}`).join(' | '),
+    // The physical lots the draw named, so an exported run reads as what left which shelf. A run
+    // before R2-29, or a plan that never allocated, exports an empty cell — not a zero.
+    v.lots.lines.join(' | '),
     v.full.value ?? '',
     v.full.missing.join(' | '),
     v.build.notes,
