@@ -85,7 +85,7 @@ Round 1, closed:
 - Camera barcode scan + counter sale POS (`/pos`)
 - Bill OCR scanning and natural-language reporting (`/ai/scan-bill`, `/ai/ask`)
 
-Round 2, R2-1 … R2-25:
+Round 2, R2-1 … R2-26:
 - Design system v1 (tokens, UI kit, app shell)
 - Party ledger accounts and statements of account (`/ledger`)
 - Compliance calendar with late-fee estimation and `.ics` export (`/gst/calendar`)
@@ -110,6 +110,7 @@ Round 2, R2-1 … R2-25:
 - Projects & time: hours measured, whole documents attached by id, labour priced not costed, rule 47 window cited (`/projects`)
 - Manufacturing: recipes and builds, and the answer to *what the shelf cannot run today* (`/inventory/recipes`)
 - Exports: the undertaking clock and the FEMA realisation window on every consignment, with the refund limitation beside them (`/gst/exports`)
+- The books vault: every device-side register — batches, serials, godowns, LUTs, workpapers, settings — backed up into one portable file and restored through the pages that own the data, each proved by reading back through its own loader (`/vault`)
 
 Still to come:
 - Real GSP submission for e-invoice / e-way bill (blocked on paid GSP provider — see `6-Project-Memory.md`)
@@ -490,6 +491,18 @@ Still to come:
 - Wiring: sidebar, GST hub, a ⌘K action, an *Open on the export register* banner on export invoices, an *Export register* link in the FX footer, and a compliance calendar that calls `watchRows()` rather than keeping its own dates so the two screens cannot disagree (FEMA and refund rows carry a note instead of a ₹-per-day estimate, because a FEMA default is not priced by the GST late-fee rule)
 - v1 fetches nothing from ICEGATE or the bank — a shipping bill and an e-BRC/FIRA are typed, not pulled; no condonation representation is drafted for a missed window; RFD-11 and RFD-1 are prepared as rows and CSV, never filed; and there is no multi-GSTIN workflow beyond a GSTIN field per undertaking, so a business exporting from several registrations manages them one at a time
 
+### 3.44 The Books Vault — Backup & Restore (R2-26)
+
+- `/vault` writes **every device-side register into one file the user owns** — `taxflow-vault-<org>-<date>.json` — because ADR-013's registers (batches, serials, godowns, LUTs, FX deals, job-work lots, cost centres, projects, recipes, exports, targets, splits, workpapers, the invoice template) live in one browser and nowhere else, and a cleared cache or a changed laptop loses them all. No cloud competitor offers the inverse: a portable file rather than an export inside someone's cloud
+- **A backup walks a named list, never a sweep.** `REGISTERS` in `src/lib/vault.ts` is thirty `RegisterSpec`s — twenty-five restorable, five evidence-only — and sweeping localStorage instead would catch the Supabase auth keys (`sb-*`) beside the books. Credentials are never in the file; that is the reason the walk exists
+- **Restore goes through the owner and proves it.** Each register is written back through its own save path (never a direct `setItem`, which would bypass every parser and version check), then read back through its own loader, and the plan prints `from → seen` per register — rows a parser dropped are counted, not lost
+- **The plan comes before the write.** Nine states per register — new, replace, blank, same, foreign, damaged, absent, evidence, unknown — with `blank` selectable but never pre-ticked, because two empty registers and a wiped one look identical from outside and that is the user's call; the page demands explicit confirmation whenever the restore would replace or clear anything
+- **Damage is named, not guessed.** Every block carries its own FNV-1a checksum, so a truncated or hand-edited block is refused by name even when it still parses; an unreadable file yields one of five fault sentences, and an unreadable block is kept as text with a note rather than discarded
+- **Evidence is shown, never written.** The offline outbox, e-way bills, the Tally import log, palette recents and the compliance profile ride in the file for reference; putting a pending invoice back into the outbox would replay a sync and bill the same sale twice
+- Restore is **not a transaction** — registers apply one by one and the run stops nowhere — which is why the plan is the page's main product and why the vault's own log (`taxflow:vault:<orgId>`) records refused runs too. That log is deliberately not in the vault itself: a backup that recorded its backups would grow every time it was restored
+- Four tabs — **backup** (what would travel, days since the last one, the download), **restore** (drop/paste, the fault card, the plan table, the risk confirmation, the result flash), **registers** (the thirty specs as a reference), **not in this file** (the server-held documents, payments and evidence, and credentials) — plus a Settings card and a cross-note on `/offline`
+- v1 keeps no server copy: the file is the backup, and a scheduled cloud copy would need a server route the schema rule forbids; future-version files are refused with the version named, never partially read
+
 ---
 
 ## 4. Non-Functional Requirements
@@ -536,4 +549,5 @@ Still to come:
 - Authenticated customer logins — the portal (R2-16) is a share link that carries its own statement, not an account per party (Phase 14)
 - Native mobile app (the web app is an installable PWA)
 - Server-side LLM features — by design, so a business's bills never leave the device
+- A server-held copy of the vault backup — `/vault` (R2-26) produces a file the user keeps somewhere the browser is not; scheduling a cloud upload would need a server route the schema rule forbids
 - New database tables or migrations; feature work rides on the existing schema plus per-organisation local storage

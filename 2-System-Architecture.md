@@ -158,6 +158,8 @@ taxflow-india/
 │       ├── costcentres.ts  projects.ts  tally.ts   the share register, the hour register, the file bridge
 │       ├── bom.ts                  recipes, builds, requirement maths, where-used explosion
 │       ├── exports.ts              zero-rating routes, dated FEMA bands, realisation join to /fx
+│       ├── invoice-template.ts     the invoice template id + its loader (shared by the vault spec)
+│       ├── vault.ts                the books vault: 30 register specs, checksums, plan-then-restore
 │       ├── portal.ts               the statement encoded inside its own share link
 │       └── gsp/                    provider adapter: types, index, mock
 ├── public/
@@ -693,6 +695,7 @@ Because replay uses the production write path, an offline invoice cannot diverge
 | `/cost-centres` | `costcentres.ts` | Stores a **share**; rupees re-read from documents through `bookDocs` |
 | `/projects` | `projects.ts`, `costcentres.ts` (`bookDocs`) | Stores hours and document ids; labour priced not costed, rule 47 window cited not settled |
 | `/tally` | `tally.ts`, `create-invoice.ts`, `create-bill.ts` | Parse → plan with blocked rows and reasons → replay through the normal write path; export builds the XML envelope |
+| `/vault` | `vault.ts` (every register's `save*`/`load*`) | Thirty named specs into one portable file; restore writes through the owner and reads back through its own loader, `from → seen` per register |
 | `/portal` (public) | `portal.ts` | The whole statement encoded in the URL fragment — nothing stored server-side |
 | `/pos` | `barcode.ts`, `create-invoice.ts` | GS1 check digits, EAN/UPC variants, cash sale write |
 | `/offline` | `outbox.ts`, `create-invoice.ts` | Queue, replay, sequence numbering |

@@ -443,6 +443,19 @@ Two consequences to respect when adding the next one:
 
 ---
 
+## Rule 31 — A Backup Walks a Named List and Restores Through the Owners
+
+`src/lib/vault.ts` holds `REGISTERS` — one `RegisterSpec` per device-side key, thirty of them — and `takeBackup()` walks **that list and nothing else**. A sweep of localStorage would catch the Supabase auth keys (`sb-*`) alongside the books; walking named entries is what keeps session material out of a file the user emails to their CA. Every spec names its group, its owning page, its encoding, its row counter and — for the 25 restorable ones — the `write` function that saves it.
+
+Restore goes **through the owner, then proves it**: `applyRestore()` calls `spec.write(orgId, data)`, then `spec.verify()` — the register's own loader — and prints `from → seen` per register, so rows silently dropped by a parser are counted, not lost. A direct `setItem` would bypass every parser and every version check the register owns. Three guards stand before any write, each refusing by name: the **org** (`foreign` — the file belongs to another business), the **checksum** (per-block FNV-1a — a truncated or edited block is refused even when the JSON parses), and **shape** (`accepts()` — the register's own type guard, so a v2 shape cannot be forced into a v1 loader).
+
+Consequences to respect when the next register appears:
+
+- **A new `taxflow:<name>:<orgId>` key must join `REGISTERS` in the same round that creates it** — otherwise the register is real but unownable: invisible to the backup and un-restorable after a browser wipe. Evidence-only logs (outbox, e-way bills, Tally import, palette recents, compliance profile) are collected into the file with `write: undefined` and a reason, so the restore plan can *show* them and never *write* them — replaying a pending invoice would bill it twice.
+- **Restore is not a transaction, and every attempt is logged.** Registers restore one by one and the run stops nowhere — a refusal mid-run leaves the earlier writes in place, which is why the plan (nine states, plan-before-write, `blank` selectable but never pre-ticked) is the page's main product and why the vault's own log (`taxflow:vault:`) records refused runs too. That log is deliberately **not** in the vault itself: a backup that recorded its backups would grow every time it was restored, and "when did you last take this file" belongs to the browser that took it.
+
+---
+
 ## Code Quality Checklist
 
 Before marking any feature complete, verify:
