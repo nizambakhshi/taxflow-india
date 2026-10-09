@@ -7,11 +7,12 @@ import { SearchInput } from '@/components/ui'
 import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
 import {
   determineGSTType, calculateLineItem,
-  calculateInvoiceTotals, getFinancialYear,
+  calculateInvoiceTotals,
   formatINR, type LineItemResult
 } from '@/lib/gst-engine'
 import { INDIAN_STATES } from '@/lib/constants'
 import { GST_RATES } from '@/lib/gst-rates'
+import { createDebitNote } from '@/lib/creditnote'
 
 const inputStyle = {
   width: '100%', padding: '8px 10px',
@@ -193,73 +194,41 @@ function DebitNotesPageInner() {
     setError('')
 
     try {
-      const fy = getFinancialYear()
-      let { data: seq } = await supabase
-        .from('debit_note_sequences')
-        .select('*')
-        .eq('organization_id', orgId)
-        .eq('financial_year', fy)
-        .single()
-
-      let nextNumber = 1
-      if (seq) {
-        nextNumber = seq.last_number + 1
-        await supabase.from('debit_note_sequences').update({ last_number: nextNumber }).eq('id', seq.id)
-      } else {
-        await supabase.from('debit_note_sequences').insert({ organization_id: orgId, prefix: 'DN', financial_year: fy, last_number: 1 })
-      }
-
-      const dnNumber = `DN-${fy}-${String(nextNumber).padStart(4, '0')}`
-
-      const { data: dn, error: dnErr } = await supabase
-        .from('debit_notes')
-        .insert({
-          organization_id: orgId,
-          debit_note_number: dnNumber,
-          debit_note_date: debitDate,
-          status: 'active',
-          bill_id: billId || null,
-          bill_number: billNumber || null,
-          vendor_id: vendorId || null,
-          vendor_name: vendorName,
-          vendor_gstin: vendorGstin,
-          vendor_state_code: vendorStateCode,
-          reason,
-          subtotal: totals.subtotal,
-          taxable_amount: totals.taxable_amount,
-          cgst_amount: totals.cgst_amount,
-          sgst_amount: totals.sgst_amount,
-          igst_amount: totals.igst_amount,
-          total_tax: totals.total_tax,
-          grand_total: totals.grand_total,
-          notes,
-        })
-        .select().single()
-
-      if (dnErr) throw dnErr
-
-      await supabase.from('debit_note_items').insert(
-        validItems.map((item, idx) => ({
-          debit_note_id: dn.id,
-          organization_id: orgId,
-          product_id: item.product_id || null,
-          item_name: item.item_name,
-          hsn_sac: item.hsn_sac,
-          quantity: parseFloat(item.quantity),
-          unit: item.unit,
-          rate: parseFloat(item.rate),
-          taxable_value: item.calculated?.taxable_value || 0,
-          gst_rate: parseFloat(item.gst_rate),
-          cgst_rate: item.calculated?.cgst_rate || 0,
-          sgst_rate: item.calculated?.sgst_rate || 0,
-          igst_rate: item.calculated?.igst_rate || 0,
-          cgst_amount: item.calculated?.cgst_amount || 0,
-          sgst_amount: item.calculated?.sgst_amount || 0,
-          igst_amount: item.calculated?.igst_amount || 0,
-          total_amount: item.calculated?.total_amount || 0,
-          sort_order: idx,
-        }))
-      )
+      await createDebitNote(supabase, orgId, {
+        debit_note_date: debitDate,
+        status: 'active',
+        bill_id: billId || null,
+        bill_number: billNumber || null,
+        vendor_id: vendorId || null,
+        vendor_name: vendorName,
+        vendor_gstin: vendorGstin,
+        vendor_state_code: vendorStateCode,
+        reason,
+        subtotal: totals.subtotal,
+        taxable_amount: totals.taxable_amount,
+        cgst_amount: totals.cgst_amount,
+        sgst_amount: totals.sgst_amount,
+        igst_amount: totals.igst_amount,
+        total_tax: totals.total_tax,
+        grand_total: totals.grand_total,
+        notes,
+      }, validItems.map(item => ({
+        product_id: item.product_id || null,
+        item_name: item.item_name,
+        hsn_sac: item.hsn_sac,
+        quantity: parseFloat(item.quantity),
+        unit: item.unit,
+        rate: parseFloat(item.rate),
+        taxable_value: item.calculated?.taxable_value || 0,
+        gst_rate: parseFloat(item.gst_rate),
+        cgst_rate: item.calculated?.cgst_rate || 0,
+        sgst_rate: item.calculated?.sgst_rate || 0,
+        igst_rate: item.calculated?.igst_rate || 0,
+        cgst_amount: item.calculated?.cgst_amount || 0,
+        sgst_amount: item.calculated?.sgst_amount || 0,
+        igst_amount: item.calculated?.igst_amount || 0,
+        total_amount: item.calculated?.total_amount || 0,
+      })))
 
       const { data: updated } = await supabase
         .from('debit_notes')

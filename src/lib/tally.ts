@@ -32,11 +32,13 @@
 //    that is not a counterparty is skipped with the reason, never silently
 //    converted into a customer.
 //
-// What v1 deliberately does NOT claim: credit/debit notes, receipts, payments,
-// journals and delivery challans in the file are listed as skipped, because their
-// write paths live on other pages; a service voucher with only ledger entries and
-// no line at all blocks rather than inventing a line; and the file's Tally company
-// state is not read — the organisation's own primary GSTIN supplies it.
+// What v1 deliberately does NOT claim: receipts, payments, journals and delivery
+// challans in the file are listed as skipped, because their write paths live on
+// other pages — credit and debit notes, whose pages write through their own
+// creators, are planned and written like any other document. A service voucher
+// with only ledger entries and no line at all blocks rather than inventing a
+// line; and the file's Tally company state is not read — the organisation's own
+// primary GSTIN supplies it.
 // =============================================
 
 import { INDIAN_STATES } from '@/lib/constants'
@@ -985,7 +987,7 @@ function readVoucher(node: XmlNode, sourceIndex: number, ledgerIndex: Map<string
     number: number.trim(),
     date,
     dateFrom,
-    reference: xmlValue(node, 'reference', 'referencenumber', 'narration').trim(),
+    reference: xmlValue(node, 'reference', 'referencenumber', 'originalinvoiceno', 'originalinvoicenumber', 'narration').trim(),
     party,
     partyHow,
     reverseCharge: /yes|^true|1$/i.test(xmlValue(node, 'isreversecharge', 'reversecharge', 'isreversechargeapplicable')),
@@ -1143,7 +1145,11 @@ export function readTally(xml: string): TallyDump {
 // ready), `already` means the register has this row, and `skipped` says the object
 // is not something this app holds.
 
-export type PlanTarget = 'customer' | 'vendor' | 'product' | 'invoice' | 'purchase_bill' | 'other'
+export type PlanTarget =
+  | 'customer' | 'vendor' | 'product'
+  | 'invoice' | 'purchase_bill'
+  | 'credit_note' | 'debit_note'
+  | 'other'
 export type PlanStatus = 'ready' | 'blocked' | 'skipped' | 'already'
 
 export const TARGET_LABEL: Record<PlanTarget, string> = {
@@ -1152,6 +1158,8 @@ export const TARGET_LABEL: Record<PlanTarget, string> = {
   product: 'Product',
   invoice: 'Sales invoice',
   purchase_bill: 'Purchase bill',
+  credit_note: 'Credit note',
+  debit_note: 'Debit note',
   other: 'Not imported',
 }
 
@@ -1224,6 +1232,8 @@ export interface Existing {
   products?: ExistingProduct[]
   invoices?: ExistingDocument[]
   bills?: ExistingDocument[]
+  creditNotes?: ExistingDocument[]
+  debitNotes?: ExistingDocument[]
 }
 
 export interface OrgIdentity {
@@ -1290,6 +1300,21 @@ function findProduct(existing: ExistingProduct[], name: string, hsn: string, uni
     if (bySku) return bySku
   }
   return null
+}
+
+/**
+ * The document a note reverses: by the number it names, or — when that invoice or
+ * bill was itself imported from Tally — by the Tally reference its notes carry.
+ */
+function findOriginalDocument(docs: ExistingDocument[], reference: string): ExistingDocument | null {
+  const want = normTagName(reference)
+  if (!want) return null
+  const byNumber = docs.find(d => normTagName(d.number || '') === want)
+  if (byNumber) return byNumber
+  // The `#<ref>` sits in the raw notes, so the fold would strip the very mark that
+  // anchors it — match on the raw, case-folded text instead.
+  const hash = `#${reference.toLowerCase()}`
+  return docs.find(d => (d.notes || '').toLowerCase().includes(hash)) || null
 }
 
 /**
@@ -1806,13 +1831,308 @@ function documentItem(
   }
 }
 
-/** A voucher that is not a sale or a purchase is shown, named, and left alone. */
+/**
+ * A Credit Note or Debit Note voucher → one note row against the document it reverses.
+ * The original is never invented: the note has to name it, and that invoice or bill
+ * must already be on the register or be raised earlier in this same import. A credit
+ * note rides the customer side of an invoice, a debit note the vendor side of a bill —
+ * the same sides their pages write, through the same creators.
+ */
+function noteItem(
+  v: TallyVoucher,
+  noteKind: 'credit' | 'debit',
+  org: OrgIdentity,
+  parties: Map<string, PlanItem>,
+  products: Map<string, PlanItem>,
+  stockIndex: Map<string, TallyStockItem>,
+  documents: Map<string, PlanItem>,
+  existing: Existing,
+): PlanItem {
+  const isCredit = noteKind === 'credit'
+  const target: PlanTarget = isCredit ? 'credit_note' : 'debit_note'
+  const reasons: string[] = []
+  const derived: string[] = []
+  const flags: string[] = []
+  const requires: PlanRequirement[] = []
+  const tallyRef = [v.voucherType, v.number && `#${v.number}`].filter(Boolean).join(' ')
+
+  if (v.date) derived.push(`Date read from ${v.dateFrom || 'the voucher'} — it books into the ${v.date.slice(0, 4)}–${Number(v.date.slice(0, 4)) + 1} financial year if the month says so`)
+  derived.push(`The note is numbered by this app’s ${isCredit ? 'credit' : 'debit'}-note sequence; the Tally voucher number travels in the notes`)
+
+  // ── the party: a credit note rides the customer side, a debit note the vendor ──
+  let party: PlanItem | null = null
+  let matched = ''
+  if (v.party) {
+    party = parties.get(planKey(isCredit ? 'customer' : 'vendor', v.party)) || null
+    const existingMatch = findParty(isCredit ? existing.customers || [] : existing.vendors || [], v.party, party?.fields.gstin as string || '')
+    if (existingMatch) matched = existingMatch.id
+    if (!party && !matched) {
+      const other = parties.get(planKey(isCredit ? 'vendor' : 'customer', v.party))
+      if (other) reasons.push(`“${v.party}” is on the file as the other kind of party — ${isCredit ? 'customers' : 'vendors'} come from ${isCredit ? 'Sundry Debtors' : 'Sundry Creditors'}`)
+      else reasons.push(`“${v.party}” is neither in this file as a ${isCredit ? 'customer' : 'vendor'} nor on the ${isCredit ? 'customer' : 'vendor'} register — add the ${isCredit ? 'customer' : 'vendor'} (or import the masters in this file) and this note unblocks`)
+    }
+    if (party) requires.push({ key: party.key, what: `${party.title} as a ${isCredit ? 'customer' : 'vendor'}` })
+  } else {
+    reasons.push(v.partyHow === 'no party in the file'
+      ? `The voucher names no party ledger, and none of its ${v.entries.length} entries is flagged as one — whose ${isCredit ? 'credit' : 'debit'} note is this?`
+      : `The party could not be found on this voucher (${v.partyHow})`)
+  }
+
+  const gstinOfParty = (party?.fields.gstin as string) || ''
+  const stateOfParty = (party?.fields.state_code as string) || ''
+
+  let placeOfSupply = ''
+  if (gstinOfParty && gstinOfParty.length === 15) placeOfSupply = gstinOfParty.slice(0, 2)
+  else if (stateOfParty) placeOfSupply = stateOfParty
+  else if (org.stateCode) {
+    placeOfSupply = org.stateCode
+    flags.push(`No state on the party in the file, so the place of supply is taken as this business’s own state (${org.stateCode}) — right for a counterparty served from the same place, wrong for one that is not`)
+  } else {
+    reasons.push('Neither the party’s GSTIN nor its state gives a place of supply, and this organisation has no primary GSTIN state to fall back on — set it in Settings')
+  }
+  if (placeOfSupply) derived.push(`Place of supply ${placeOfSupply}${stateNameFromCode(placeOfSupply) ? ` (${stateNameFromCode(placeOfSupply)})` : ''}`)
+
+  // ── the document it reverses ──
+  let originalId = ''
+  let originalNumber = ''
+  if (!v.reference) {
+    reasons.push(`The voucher names no original document — a note has to point at the ${isCredit ? 'invoice' : 'bill'} it reverses, and one is not invented here`)
+  } else {
+    const onRegister = findOriginalDocument(isCredit ? existing.invoices || [] : existing.bills || [], v.reference)
+    if (onRegister) {
+      originalId = onRegister.id
+      originalNumber = onRegister.number || v.reference
+      derived.push(`It reverses ${onRegister.number || onRegister.id} from the register`)
+    } else {
+      const inFile = documents.get(normTagName(v.reference)) || null
+      if (inFile && inFile.status === 'ready') {
+        requires.push({ key: inFile.key, what: `${inFile.title} — the ${isCredit ? 'invoice' : 'bill'} this note reverses` })
+        originalNumber = v.reference
+        derived.push(`It reverses a ${isCredit ? 'sales invoice' : 'purchase bill'} raised in this same file, so the two are written in one pass`)
+      } else if (inFile) {
+        reasons.push(`The ${isCredit ? 'invoice' : 'bill'} it reverses is raised in this same file but is blocked — its own row says why. Clear that and this note unblocks with it.`)
+      } else {
+        reasons.push(`No ${isCredit ? 'invoice' : 'bill'} numbered “${v.reference}” is on the register, and this file does not raise one — import the ${isCredit ? 'invoices' : 'bills'} first (this file again, if they are in it) and the note unblocks`)
+      }
+    }
+  }
+
+  // ── the lines ──
+  const missingItems: string[] = []
+  const linePlan: { line: TallyLine; productKey: string; matchedId: string }[] = []
+  for (const line of v.lines) {
+    const product = products.get(planKey('product', line.item))
+    const existingProduct = findProduct(existing.products || [], line.item, line.hsn || '', '')
+    if (!product && !existingProduct) missingItems.push(line.item)
+    else if (product) requires.push({ key: product.key, what: `${product.title} as a product` })
+    linePlan.push({ line, productKey: product ? product.key : '', matchedId: existingProduct?.id || '' })
+  }
+  if (missingItems.length) {
+    const shown = missingItems.slice(0, 3).map(n => `“${n}”`).join(', ')
+    reasons.push(`${missingItems.length === 1 ? `${shown} is` : `${shown}${missingItems.length > 3 ? ` and ${missingItems.length - 3} more` : ' are'}`} neither a stock item in this file nor a product on the register — a line has to name something`)
+  }
+  if (!v.lines.length) {
+    reasons.push(`The voucher carries ${v.entries.length} ledger entr${v.entries.length === 1 ? 'y' : 'ies'} and no stock or service line — the file shows money moving, not what came back. A note has to name what it reverses.`)
+  }
+
+  // The reader's findings, routed by what they mean for a note: a missing date still
+  // blocks, a ledger with nowhere to go is a warning — but a negative quantity is what
+  // a reversal looks like, so it is read as the note's shape, not a fault.
+  for (const problem of v.problems) {
+    if (problem.key === 'no-date') reasons.push(problem.text)
+    else if (problem.key === 'other-ledger') flags.push(problem.text)
+  }
+  if (v.problems.some(p => p.key === 'negative-qty')) {
+    derived.push('Quantities are carried as positive amounts — the reversal is what the note is, and the note lands as its own row')
+  }
+
+  // ── the money ──
+  const taxableFromLines = round2(v.lines.reduce((s, l) => s + l.taxable, 0))
+  const rates = resolveRates(v, taxableFromLines)
+  derived.push(...rates.derived)
+  flags.push(...rates.flags)
+  reasons.push(...rates.blocked)
+
+  if (Math.abs(v.balance) > 0.05) {
+    flags.push(`The voucher’s own lines do not balance to zero (off by ₹${Math.abs(v.balance).toLocaleString('en-IN')}) — a file cut off mid-voucher, or an amount this reader could not parse`)
+  }
+
+  // The same arithmetic documentItem runs, into rows that carry exactly the columns a
+  // note item table has: no discount, no cess rate — those travel inside the values.
+  const computed: LineItemResult[] = []
+  const itemsPayload: Record<string, unknown>[] = []
+  // A cess rate belongs on the line. The stock item states one; where it does not, a
+  // single cess ledger in the voucher states it for the whole supply — the file's own
+  // words. Two different cess rates in one voucher are not attributable, so none is used.
+  const cessLedgerRates = [...new Set(v.entries
+    .filter(e => e.taxFamily === 'cess' && e.rate !== null)
+    .map(e => e.rate as number))]
+  const fileCessRate = cessLedgerRates.length === 1 ? cessLedgerRates[0] : 0
+  let cessCameFromLedger = false
+  v.lines.forEach((line, idx) => {
+    const stock = stockIndex.get(normTagName(line.item))
+    const perItemRate = rates.perLine[idx]
+    const gst_rate = perItemRate !== null && perItemRate > 0 ? perItemRate : rates.docRate
+    const stockCess = stock?.cessRate ?? 0
+    const cess_rate = v.tax.cess > 0 ? (stockCess || fileCessRate) : 0
+    if (v.tax.cess > 0 && !stockCess && fileCessRate) cessCameFromLedger = true
+    if (v.tax.cess > 0 && stockCess && fileCessRate && stockCess !== fileCessRate) {
+      flags.push(`Line ${idx + 1} (${line.item}): the stock item states a ${stockCess}% cess and this voucher’s cess ledger states ${fileCessRate}% — the item’s own rate is used`)
+    }
+    const result = calculateLineItem(
+      {
+        quantity: Math.abs(line.qty),
+        rate: line.rate,
+        discount_percent: line.discountPercent,
+        gst_rate,
+        cess_rate,
+      },
+      rates.gstType,
+    )
+    computed.push(result)
+    const resolved = linePlan[idx]
+    itemsPayload.push({
+      product_id: resolved?.matchedId ? resolved.matchedId : null,
+      item_name: line.item,
+      hsn_sac: line.hsn || stock?.hsn || '',
+      quantity: Math.abs(line.qty),
+      unit: line.unit || stock?.unit || 'NOS',
+      rate: line.rate,
+      taxable_value: result.taxable_value,
+      gst_rate,
+      cgst_rate: result.cgst_rate,
+      sgst_rate: result.sgst_rate,
+      igst_rate: result.igst_rate,
+      cgst_amount: result.cgst_amount,
+      sgst_amount: result.sgst_amount,
+      igst_amount: result.igst_amount,
+      total_amount: result.total_amount,
+    })
+    if (Math.abs(result.taxable_value - line.taxable) > 0.05) {
+      flags.push(`Line ${idx + 1} (${line.item}): the file’s assessable value is ₹${line.taxable.toLocaleString('en-IN')} and these quantity and rate figures come to ₹${result.taxable_value.toLocaleString('en-IN')} — the quantity and rate win, because that is what was billed`)
+    }
+  })
+
+  const amountDiscounts = v.lines.filter(l => l.discountHow === 'amount').length
+  if (amountDiscounts) {
+    derived.push(`${amountDiscounts} line${amountDiscounts === 1 ? '' : 's'} state${amountDiscounts === 1 ? 's' : ''} a discount in rupees; a note item stores the value, so it is already inside the taxable value these lines carry`)
+  }
+  if (cessCameFromLedger) {
+    derived.push(`The cess rate comes from this voucher’s cess ledger (${fileCessRate}%), because the stock item states none`)
+  }
+  // A credit note row has a cess column; a debit note row does not, so a debit note
+  // the file charged cess on would land different from what it says.
+  if (!isCredit && v.tax.cess > 0) {
+    reasons.push(`₹${v.tax.cess.toLocaleString('en-IN')} of cess sits in this voucher’s ledgers, and a debit note here has no cess column — the note would not carry it, which is not an import`)
+  }
+  if (isCredit && v.tax.cess > 0 && computed.every(c => c.cess_amount === 0)) {
+    reasons.push(`₹${v.tax.cess.toLocaleString('en-IN')} of cess sits in the file’s ledgers and no line states a cess rate — the note would drop it, which is not an import`)
+  }
+
+  const totals = calculateInvoiceTotals(computed)
+
+  if (v.statedTotal !== null && Math.abs(v.statedTotal - totals.grand_total) > 1) {
+    flags.push(`The voucher prints a total of ₹${Math.abs(v.statedTotal).toLocaleString('en-IN')}; these lines come to ₹${totals.grand_total.toLocaleString('en-IN')}. The lines win — a printed total is a summary of them, not a price of its own.`)
+  }
+
+  const supplyType = gstinOfParty && gstinOfParty.length === 15 ? 'b2b' : 'b2c'
+  if (placeOfSupply && org.stateCode) {
+    const fromStates = determineGSTType(org.stateCode, placeOfSupply, supplyType)
+    if (fromStates !== rates.gstType && taxableFromLines > 0 && (v.tax.cgst + v.tax.sgst + v.tax.igst) > 0) {
+      flags.push(
+        fromStates === 'igst'
+          ? `The file split the tax into CGST and SGST, but ${org.stateCode} → ${placeOfSupply} is an inter-state supply. The tax is carried as the file charged it; check which is right before this reaches a return.`
+          : `The file charged IGST, but ${org.stateCode} → ${placeOfSupply} reads as a same-state supply. The tax is carried as the file charged it; check which is right before this reaches a return.`,
+      )
+    }
+  }
+
+  const tallyNote = `Tally ${tallyRef || 'voucher'}${v.reference ? ` · ref ${v.reference}` : ''}`
+  const existingNotes = isCredit ? existing.creditNotes || [] : existing.debitNotes || []
+  const already = existingNotes.find(d => (d.notes || '').toLowerCase().includes(tallyNote.toLowerCase()))
+  if (already) reasons.push(`A note with this Tally reference is already in the register (${already.number || already.id}) — importing again would raise a second one`)
+  const lookalike = existingNotes.find(d =>
+    d.date === v.date &&
+    Math.abs((d.grand_total ?? -1) - totals.grand_total) < 0.01 &&
+    normTagName(d.party_name || '') === normTagName(v.party))
+  if (lookalike && !already) flags.push(`The register already holds ${lookalike.number || lookalike.id} for the same party, date and total — importing adds a second note, not a correction`)
+
+  const fields: Record<string, unknown> = isCredit
+    ? {
+      credit_note_date: v.date,
+      status: 'active',
+      invoice_id: originalId || null,
+      invoice_number: originalNumber || null,
+      customer_id: matched || null,
+      customer_name: v.party,
+      customer_gstin: gstinOfParty,
+      customer_state_code: placeOfSupply,
+      place_of_supply: placeOfSupply,
+      place_of_supply_name: stateNameFromCode(placeOfSupply),
+      supply_type: supplyType,
+      reason: 'other',
+      subtotal: totals.subtotal,
+      taxable_amount: totals.taxable_amount,
+      cgst_amount: totals.cgst_amount,
+      sgst_amount: totals.sgst_amount,
+      igst_amount: totals.igst_amount,
+      cess_amount: totals.cess_amount,
+      total_tax: totals.total_tax,
+      grand_total: totals.grand_total,
+      notes: tallyNote,
+    }
+    : {
+      debit_note_date: v.date,
+      status: 'active',
+      bill_id: originalId || null,
+      bill_number: originalNumber || null,
+      vendor_id: matched || null,
+      vendor_name: v.party,
+      vendor_gstin: gstinOfParty,
+      vendor_state_code: placeOfSupply,
+      reason: 'other',
+      subtotal: totals.subtotal,
+      taxable_amount: totals.taxable_amount,
+      cgst_amount: totals.cgst_amount,
+      sgst_amount: totals.sgst_amount,
+      igst_amount: totals.igst_amount,
+      total_tax: totals.total_tax,
+      grand_total: totals.grand_total,
+      notes: tallyNote,
+    }
+
+  if (v.moneyLedgers.length) {
+    const moved = round2(v.moneyLedgers.reduce((s, m) => s + m.amount, 0))
+    flags.push(`₹${moved.toLocaleString('en-IN')} moved through ${v.moneyLedgers.map(m => m.ledger).join(', ')} on this voucher in Tally. Money is recorded on /payments, and an import does not write it — the note lands without it.`)
+  }
+
+  if (!reasons.length) derived.push(`The note ${isCredit ? 'will be raised' : 'will be booked'} at ₹${totals.grand_total.toLocaleString('en-IN')} against ${originalNumber} from ${v.lines.length} line${v.lines.length === 1 ? '' : 's'}`)
+
+  return {
+    key: planKey(target, `${v.party || 'no party'}|${v.date}|${v.number}|${v.sourceIndex}`),
+    target,
+    status: already ? 'already' : reasons.length ? 'blocked' : 'ready',
+    title: `${v.party || 'Unnamed party'} · ${totals.grand_total.toLocaleString('en-IN')}`,
+    subtitle: `${v.voucherType || (isCredit ? 'Credit Note' : 'Debit Note')}${v.number ? ` #${v.number}` : ''} · ${v.date || 'no date'} · ${v.lines.length} line${v.lines.length === 1 ? '' : 's'}`,
+    fields,
+    lines: itemsPayload,
+    reasons,
+    derived,
+    flags,
+    requires,
+    matchedId: already?.id || '',
+    tallyRef: tallyRef,
+    rupees: totals.grand_total,
+    sourceIndex: v.sourceIndex,
+  }
+}
+
+/** A voucher that is not a sale, a purchase or a note is shown, named, and left alone. */
 function skippedDocumentItem(v: TallyVoucher): PlanItem {
   const type = v.voucherType || 'unnamed'
   const amount = v.statedTotal !== null ? Math.abs(v.statedTotal) : round2(v.entries.reduce((s, e) => s + (e.kind === 'party' || e.kind === 'money' ? 0 : e.absolute), 0))
   let reason = `A “${type}” voucher is not a sale or a purchase. v1 imports those two documents; this one stays in Tally.`
   if (/receipt|payment/i.test(type)) reason = `A “${type}” voucher is money ${/receipt/i.test(type) ? 'in' : 'out'} of ₹${amount.toLocaleString('en-IN')}. Payments are the only writer of money here, and an import does not make one — record it on /payments.`
-  else if (/credit note|debit note/i.test(type)) reason = `A “${type}” voucher reverses ₹${amount.toLocaleString('en-IN')} against an earlier document. Credit and debit notes are raised on their own pages against the invoice they belong to, which an import cannot point at.`
   else if (/journal/i.test(type)) reason = `A “${type}” voucher moves amounts between ledgers, not goods or services to a party — there is no invoice underneath it.`
   else if (/delivery|challan/i.test(type)) reason = `A “${type}” voucher moves stock without a sale. Delivery challans are raised on /challans.`
   else if (/sales order|purchase order/i.test(type)) reason = `A “${type}” voucher is an order, not a document. Orders live on the order registers until they are billed.`
@@ -1889,7 +2209,9 @@ const TARGET_ORDER: Record<PlanTarget, number> = {
   vendor: 2,
   invoice: 3,
   purchase_bill: 4,
-  other: 5,
+  credit_note: 5,
+  debit_note: 6,
+  other: 7,
 }
 
 /**
@@ -1926,12 +2248,26 @@ export function buildPlan(dump: TallyDump, existing: Existing = {}, org: OrgIden
     items.push(item)
   }
 
+  // Documents are planned before notes on purpose: a note reverses a document that
+  // may sit later in the same file, so every invoice and bill is planned first and
+  // the notes then check against that map. The sort by sourceIndex puts both back
+  // in file order for the page.
+  const documents = new Map<string, PlanItem>()
+  const noteVouchers: { v: TallyVoucher; noteKind: 'credit' | 'debit' }[] = []
   for (const v of dump.vouchers) {
+    const foldedType = normTagName(v.voucherType)
+    if (/creditnote/.test(foldedType)) { noteVouchers.push({ v, noteKind: 'credit' }); continue }
+    if (/debitnote/.test(foldedType)) { noteVouchers.push({ v, noteKind: 'debit' }); continue }
     if (v.kind === 'other') {
       items.push(skippedDocumentItem(v))
       continue
     }
-    items.push(documentItem(v, org, parties, products, stockIndex, existing))
+    const item = documentItem(v, org, parties, products, stockIndex, existing)
+    if (v.number && !documents.has(normTagName(v.number))) documents.set(normTagName(v.number), item)
+    items.push(item)
+  }
+  for (const { v, noteKind } of noteVouchers) {
+    items.push(noteItem(v, noteKind, org, parties, products, stockIndex, documents, existing))
   }
 
   dump.skipped.forEach((s, index) => items.push(skippedRawItem(s, index)))
@@ -1940,7 +2276,12 @@ export function buildPlan(dump: TallyDump, existing: Existing = {}, org: OrgIden
 
   const dated = items.filter(i => (i.target === 'invoice' || i.target === 'purchase_bill') && typeof i.fields.invoice_date === 'string' && i.fields.invoice_date)
   const billDated = items.filter(i => i.target === 'purchase_bill' && typeof i.fields.bill_date === 'string' && i.fields.bill_date)
-  const dates = [...dated.map(i => i.fields.invoice_date as string), ...billDated.map(i => i.fields.bill_date as string)].sort()
+  const noteDated = items.filter(i => (i.target === 'credit_note' || i.target === 'debit_note') && typeof i.fields[`${i.target === 'credit_note' ? 'credit' : 'debit'}_note_date`] === 'string' && i.fields[`${i.target === 'credit_note' ? 'credit' : 'debit'}_note_date`])
+  const dates = [
+    ...dated.map(i => i.fields.invoice_date as string),
+    ...billDated.map(i => i.fields.bill_date as string),
+    ...noteDated.map(i => i.fields[`${i.target === 'credit_note' ? 'credit' : 'debit'}_note_date`] as string),
+  ].sort()
 
   const byTarget = {} as Record<PlanTarget, { count: number; rupees: number }>
   for (const target of Object.keys(TARGET_ORDER) as PlanTarget[]) byTarget[target] = { count: 0, rupees: 0 }
@@ -2719,6 +3060,34 @@ export const SAMPLE_TALLY_DUMP = `<?xml version="1.0" encoding="UTF-8"?>
      <AMOUNT>-9160.00</AMOUNT>
     </ALLLEDGERENTRIES.LIST>
    </VOUCHER>
+   <VOUCHER VCHTYPE="Credit Note" ACTION="Create">
+    <DATE>20250425</DATE>
+    <VOUCHERTYPENAME>Credit Note</VOUCHERTYPENAME>
+    <VOUCHERNUMBER>CN-41</VOUCHERNUMBER>
+    <PARTYLEDGERNAME>Alpha Traders</PARTYLEDGERNAME>
+    <REFERENCE>V-101</REFERENCE>
+    <TOTAL>2832.00</TOTAL>
+    <ALLINVENTORYENTRIES.LIST>
+     <STOCKITEMNAME>Steel Flange 50mm</STOCKITEMNAME>
+     <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+     <ACTUALQTY>-2.00</ACTUALQTY><BILLEDQTY>-2.00</BILLEDQTY>
+     <RATE>1200.00</RATE><AMOUNT>2400.00</AMOUNT>
+     <HSN_CODEunderGSTN_UG>73079900</HSN_CODEunderGSTN_UG>
+    </ALLINVENTORYENTRIES.LIST>
+    <ALLLEDGERENTRIES.LIST>
+     <LEDGERNAME>Output CGST @9%</LEDGERNAME>
+     <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE><AMOUNT>216.00</AMOUNT>
+    </ALLLEDGERENTRIES.LIST>
+    <ALLLEDGERENTRIES.LIST>
+     <LEDGERNAME>Output SGST @9%</LEDGERNAME>
+     <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE><AMOUNT>216.00</AMOUNT>
+    </ALLLEDGERENTRIES.LIST>
+    <ALLLEDGERENTRIES.LIST>
+     <LEDGERNAME>Alpha Traders</LEDGERNAME>
+     <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE><ISPARTYLEDGER>Yes</ISPARTYLEDGER>
+     <AMOUNT>-2832.00</AMOUNT>
+    </ALLLEDGERENTRIES.LIST>
+   </VOUCHER>
    <VOUCHER VCHTYPE="Payment" ACTION="Create">
     <DATE>20250422</DATE>
     <VOUCHERTYPENAME>Payment</VOUCHERTYPENAME>
@@ -2755,6 +3124,8 @@ export interface TallyImportRecord {
   products: number
   invoices: number
   bills: number
+  credit_notes: number
+  debit_notes: number
   skipped: number
   note: string
 }
@@ -2788,6 +3159,8 @@ function parseLog(raw: string | null): TallyImportRecord[] {
           products: countOf(o.products),
           invoices: countOf(o.invoices),
           bills: countOf(o.bills),
+          credit_notes: countOf(o.credit_notes),
+          debit_notes: countOf(o.debit_notes),
           skipped: countOf(o.skipped),
           note: str(o.note),
         }
@@ -2821,6 +3194,8 @@ export function recordTallyImport(
     products: entry.products,
     invoices: entry.invoices,
     bills: entry.bills,
+    credit_notes: entry.credit_notes,
+    debit_notes: entry.debit_notes,
     skipped: entry.skipped,
     note: entry.note,
   }

@@ -7,11 +7,12 @@ import { SearchInput } from '@/components/ui'
 import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
 import {
   determineGSTType, calculateLineItem,
-  calculateInvoiceTotals, getFinancialYear,
+  calculateInvoiceTotals,
   formatINR, type LineItemResult
 } from '@/lib/gst-engine'
 import { INDIAN_STATES } from '@/lib/constants'
 import { GST_RATES } from '@/lib/gst-rates'
+import { createCreditNote } from '@/lib/creditnote'
 
 const inputStyle = {
   width: '100%', padding: '8px 10px',
@@ -196,77 +197,45 @@ function CreditNotesPageInner() {
     setError('')
 
     try {
-      const fy = getFinancialYear()
-      let { data: seq } = await supabase
-        .from('credit_note_sequences')
-        .select('*')
-        .eq('organization_id', orgId)
-        .eq('financial_year', fy)
-        .single()
-
-      let nextNumber = 1
-      if (seq) {
-        nextNumber = seq.last_number + 1
-        await supabase.from('credit_note_sequences').update({ last_number: nextNumber }).eq('id', seq.id)
-      } else {
-        await supabase.from('credit_note_sequences').insert({ organization_id: orgId, prefix: 'CN', financial_year: fy, last_number: 1 })
-      }
-
-      const cnNumber = `CN-${fy}-${String(nextNumber).padStart(4, '0')}`
-
-      const { data: cn, error: cnErr } = await supabase
-        .from('credit_notes')
-        .insert({
-          organization_id: orgId,
-          credit_note_number: cnNumber,
-          credit_note_date: creditDate,
-          status: 'active',
-          invoice_id: invoiceId || null,
-          invoice_number: invoiceNumber || null,
-          customer_id: customerId || null,
-          customer_name: customerName,
-          customer_gstin: customerGstin,
-          customer_state_code: customerStateCode,
-          place_of_supply: placeOfSupply,
-          place_of_supply_name: placeOfSupplyName,
-          supply_type: supplyType,
-          reason,
-          subtotal: totals.subtotal,
-          taxable_amount: totals.taxable_amount,
-          cgst_amount: totals.cgst_amount,
-          sgst_amount: totals.sgst_amount,
-          igst_amount: totals.igst_amount,
-          cess_amount: totals.cess_amount,
-          total_tax: totals.total_tax,
-          grand_total: totals.grand_total,
-          notes,
-        })
-        .select().single()
-
-      if (cnErr) throw cnErr
-
-      await supabase.from('credit_note_items').insert(
-        validItems.map((item, idx) => ({
-          credit_note_id: cn.id,
-          organization_id: orgId,
-          product_id: item.product_id || null,
-          item_name: item.item_name,
-          hsn_sac: item.hsn_sac,
-          quantity: parseFloat(item.quantity),
-          unit: item.unit,
-          rate: parseFloat(item.rate),
-          taxable_value: item.calculated?.taxable_value || 0,
-          gst_rate: parseFloat(item.gst_rate),
-          cgst_rate: item.calculated?.cgst_rate || 0,
-          sgst_rate: item.calculated?.sgst_rate || 0,
-          igst_rate: item.calculated?.igst_rate || 0,
-          cgst_amount: item.calculated?.cgst_amount || 0,
-          sgst_amount: item.calculated?.sgst_amount || 0,
-          igst_amount: item.calculated?.igst_amount || 0,
-          total_amount: item.calculated?.total_amount || 0,
-          sort_order: idx,
-        }))
-      )
+      await createCreditNote(supabase, orgId, {
+        credit_note_date: creditDate,
+        status: 'active',
+        invoice_id: invoiceId || null,
+        invoice_number: invoiceNumber || null,
+        customer_id: customerId || null,
+        customer_name: customerName,
+        customer_gstin: customerGstin,
+        customer_state_code: customerStateCode,
+        place_of_supply: placeOfSupply,
+        place_of_supply_name: placeOfSupplyName,
+        supply_type: supplyType,
+        reason,
+        subtotal: totals.subtotal,
+        taxable_amount: totals.taxable_amount,
+        cgst_amount: totals.cgst_amount,
+        sgst_amount: totals.sgst_amount,
+        igst_amount: totals.igst_amount,
+        cess_amount: totals.cess_amount,
+        total_tax: totals.total_tax,
+        grand_total: totals.grand_total,
+        notes,
+      }, validItems.map(item => ({
+        product_id: item.product_id || null,
+        item_name: item.item_name,
+        hsn_sac: item.hsn_sac,
+        quantity: parseFloat(item.quantity),
+        unit: item.unit,
+        rate: parseFloat(item.rate),
+        taxable_value: item.calculated?.taxable_value || 0,
+        gst_rate: parseFloat(item.gst_rate),
+        cgst_rate: item.calculated?.cgst_rate || 0,
+        sgst_rate: item.calculated?.sgst_rate || 0,
+        igst_rate: item.calculated?.igst_rate || 0,
+        cgst_amount: item.calculated?.cgst_amount || 0,
+        sgst_amount: item.calculated?.sgst_amount || 0,
+        igst_amount: item.calculated?.igst_amount || 0,
+        total_amount: item.calculated?.total_amount || 0,
+      })))
 
       const { data: updated } = await supabase
         .from('credit_notes')

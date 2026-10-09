@@ -33,6 +33,7 @@ import { download } from '@/lib/party-ledger'
 import { getFinancialYear } from '@/lib/gst-engine'
 import { createInvoice } from '@/lib/create-invoice'
 import { createPurchaseBill } from '@/lib/create-bill'
+import { createCreditNote, createDebitNote } from '@/lib/creditnote'
 import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
 import {
   PLAN_CSV_HEADERS, SAMPLE_TALLY_DUMP, STATUS_LABEL, TARGET_LABEL,
@@ -53,10 +54,10 @@ const money = (n: number) => `₹${inr.format(Number(n) || 0)}`
 
 type View = 'plan' | 'export' | 'log'
 
-const GROUPS: PlanTarget[] = ['product', 'customer', 'vendor', 'invoice', 'purchase_bill', 'other']
+const GROUPS: PlanTarget[] = ['product', 'customer', 'vendor', 'invoice', 'purchase_bill', 'credit_note', 'debit_note', 'other']
 const GROUP_ICON: Record<PlanTarget, string> = {
   product: 'box', customer: 'users', vendor: 'factory', invoice: 'invoice',
-  purchase_bill: 'cart', other: 'x',
+  purchase_bill: 'cart', credit_note: 'credit-note', debit_note: 'debit-note', other: 'x',
 }
 const STATUS_TONE: Record<PlanStatus, 'green' | 'red' | 'blue' | 'grey'> = {
   ready: 'green', blocked: 'red', already: 'blue', skipped: 'grey',
@@ -72,7 +73,7 @@ const STATUS_FILTERS = [
 /** What the page reads from the register before planning a file. */
 interface PartyRow { id: string; name: string; gstin: string | null; state_code: string | null; phone: string | null }
 interface ProductRow { id: string; name: string; hsn_sac: string | null; sku: string | null; unit: string | null }
-interface DocRow { id: string; number: string | null; date: string | null; party: string | null; grand_total: number | null; notes: string | null }
+interface DocRow { id: string; number: string | null; date: string | null; party_name: string | null; grand_total: number | null; notes: string | null }
 
 /** The columns a Tally voucher needs, which is a wider set than the register lists show. */
 interface ExportInvoiceRow {
@@ -206,7 +207,7 @@ function TallyPageInner() {
 
   /** The names and numbers an import must not duplicate. */
   const readRegister = useCallback(async (oid: string): Promise<Existing> => {
-    const [cust, vend, prod, inv, bills] = await Promise.all([
+    const [cust, vend, prod, inv, bills, cns, dns] = await Promise.all([
       supabase.from('customers').select('id, name, gstin, state_code, phone')
         .eq('organization_id', oid).eq('is_active', true).limit(5000),
       supabase.from('vendors').select('id, name, gstin, state_code, phone')
@@ -217,25 +218,37 @@ function TallyPageInner() {
         .eq('organization_id', oid).order('invoice_date', { ascending: false }).limit(2000),
       supabase.from('purchase_bills').select('id, bill_number, bill_date, vendor_name, grand_total, notes')
         .eq('organization_id', oid).order('bill_date', { ascending: false }).limit(2000),
+      supabase.from('credit_notes').select('id, credit_note_number, credit_note_date, customer_name, grand_total, notes')
+        .eq('organization_id', oid).order('credit_note_date', { ascending: false }).limit(2000),
+      supabase.from('debit_notes').select('id, debit_note_number, debit_note_date, vendor_name, grand_total, notes')
+        .eq('organization_id', oid).order('debit_note_date', { ascending: false }).limit(2000),
     ])
-    setError(cust.error || vend.error || prod.error || inv.error || bills.error
+    setError(cust.error || vend.error || prod.error || inv.error || bills.error || cns.error || dns.error
       ? 'Could not read the register, so nothing here can be matched against what you already have.'
       : '')
 
     const asParty = (rows: PartyRow[] | null) => (rows || []).map(r => ({ id: r.id, name: r.name, gstin: r.gstin, state_code: r.state_code, phone: r.phone }))
-    const asDoc = (rows: DocRow[] | null): DocRow[] =>
-      (rows || []).map(r => ({ id: r.id, number: r.number, date: r.date, party: r.party, grand_total: r.grand_total ? Number(r.grand_total) : 0, notes: r.notes }))
+    const asDoc = (rows: { id: string; number: string | null; date: string | null; party_name: string | null; grand_total: number | null; notes: string | null }[]): DocRow[] =>
+      (rows || []).map(r => ({ id: r.id, number: r.number, date: r.date, party_name: r.party_name, grand_total: r.grand_total ? Number(r.grand_total) : 0, notes: r.notes }))
 
     return {
       customers: asParty((cust.data || []) as PartyRow[]),
       vendors: asParty((vend.data || []) as PartyRow[]),
       products: ((prod.data || []) as ProductRow[]).map(p => ({ id: p.id, name: p.name, hsn_sac: p.hsn_sac, sku: p.sku, unit: p.unit })),
       invoices: asDoc((inv.data || []).map(r => ({
-        id: r.id, number: r.invoice_number, date: r.invoice_date, party: r.customer_name,
+        id: r.id, number: r.invoice_number, date: r.invoice_date, party_name: r.customer_name,
         grand_total: Number(r.grand_total) || 0, notes: r.notes,
       }))),
       bills: asDoc((bills.data || []).map(r => ({
-        id: r.id, number: r.bill_number, date: r.bill_date, party: r.vendor_name,
+        id: r.id, number: r.bill_number, date: r.bill_date, party_name: r.vendor_name,
+        grand_total: Number(r.grand_total) || 0, notes: r.notes,
+      }))),
+      creditNotes: asDoc((cns.data || []).map(r => ({
+        id: r.id, number: r.credit_note_number, date: r.credit_note_date, party_name: r.customer_name,
+        grand_total: Number(r.grand_total) || 0, notes: r.notes,
+      }))),
+      debitNotes: asDoc((dns.data || []).map(r => ({
+        id: r.id, number: r.debit_note_number, date: r.debit_note_date, party_name: r.vendor_name,
         grand_total: Number(r.grand_total) || 0, notes: r.notes,
       }))),
     }
@@ -317,7 +330,7 @@ function TallyPageInner() {
     () => (plan ? writeOrder(plan, expandSelection(plan, picked)) : []),
     [plan, picked],
   )
-  const writeDocs = useMemo(() => writeSet.filter(i => i.target === 'invoice' || i.target === 'purchase_bill'), [writeSet])
+  const writeDocs = useMemo(() => writeSet.filter(i => i.target === 'invoice' || i.target === 'purchase_bill' || i.target === 'credit_note' || i.target === 'debit_note'), [writeSet])
   const writeMasters = writeSet.length - writeDocs.length
   const writeRupees = useMemo(() => writeDocs.reduce((s, i) => s + i.rupees, 0), [writeDocs])
 
@@ -404,7 +417,7 @@ function TallyPageInner() {
     const made = new Map<string, string>()
     const broken = new Map<string, string>()
     const out: WriteResult[] = []
-    const tally = { customer: 0, vendor: 0, product: 0, invoice: 0, purchase_bill: 0 }
+    const tally = { customer: 0, vendor: 0, product: 0, invoice: 0, purchase_bill: 0, credit_note: 0, debit_note: 0 }
 
     for (const item of writeSet) {
       const waitingOn = item.requires.find(r => broken.has(r.key))
@@ -441,7 +454,7 @@ function TallyPageInner() {
             detail: stock ? `Added, opening stock ${stock}` : 'Added to the product register',
             href: `/products?q=${encodeURIComponent(String(item.fields.name || ''))}`,
           })
-        } else {
+        } else if (item.target === 'invoice' || item.target === 'purchase_bill') {
           const isSale = item.target === 'invoice'
           const fields: Record<string, unknown> = { ...item.fields }
           const idField = isSale ? 'customer_id' : 'vendor_id'
@@ -467,6 +480,39 @@ function TallyPageInner() {
             tally.purchase_bill++
             out.push({ key: item.key, target: 'purchase_bill', title: item.title, ok: true, detail: `Booked as ${billNumber}`, href: `/bills?q=${encodeURIComponent(billNumber)}` })
           }
+        } else if (item.target === 'credit_note' || item.target === 'debit_note') {
+          const isCredit = item.target === 'credit_note'
+          const fields: Record<string, unknown> = { ...item.fields }
+          const partyField = isCredit ? 'customer_id' : 'vendor_id'
+          if (!fields[partyField]) {
+            const req = item.requires.find(r => r.key.startsWith(`${isCredit ? 'customer' : 'vendor'}:`))
+            const id = req ? made.get(req.key) : ''
+            if (id) fields[partyField] = id
+          }
+          const originalField = isCredit ? 'invoice_id' : 'bill_id'
+          if (!fields[originalField]) {
+            // The note may reverse a document raised earlier in this same import —
+            // its plan key is in `requires`, and `made` holds the id by now.
+            const req = item.requires.find(r => r.key.startsWith(`${isCredit ? 'invoice' : 'purchase_bill'}:`))
+            const id = req ? made.get(req.key) : ''
+            if (id) fields[originalField] = id
+          }
+          const lines = item.lines.map(line => {
+            if (line.product_id) return line
+            const id = made.get(planKey('product', String(line.item_name || '')))
+            return id ? { ...line, product_id: id } : line
+          })
+
+          const { noteNumber } = isCredit
+            ? await createCreditNote(supabase, orgId, fields, lines)
+            : await createDebitNote(supabase, orgId, fields, lines)
+          if (isCredit) tally.credit_note++
+          else tally.debit_note++
+          out.push({
+            key: item.key, target: item.target, title: item.title, ok: true,
+            detail: `Raised as ${noteNumber}`,
+            href: `/${isCredit ? 'credit' : 'debit'}-notes?q=${encodeURIComponent(noteNumber)}`,
+          })
         }
       } catch (e) {
         broken.set(item.key, (e as Error).message)
@@ -489,15 +535,17 @@ function TallyPageInner() {
       products: tally.product,
       invoices: tally.invoice,
       bills: tally.purchase_bill,
+      credit_notes: tally.credit_note,
+      debit_notes: tally.debit_note,
       skipped: plan.summary.skipped,
-      note: `${tally.invoice + tally.purchase_bill} document(s), ${tally.customer + tally.vendor + tally.product} master(s)`
+      note: `${tally.invoice + tally.purchase_bill + tally.credit_note + tally.debit_note} document(s), ${tally.customer + tally.vendor + tally.product} master(s)`
         + (flagged ? ` · ${flagged} carried a look-at-this` : '')
         + (failed ? ` · ${failed} failed` : ''),
     })
     setLog(stamped)
     setFlash(failed
       ? `${out.length - failed} row(s) written, ${failed} failed — the file is still here, so the rest can go after a fix.`
-      : `${tally.invoice + tally.purchase_bill} document(s) and ${tally.customer + tally.vendor + tally.product} master(s) written from this file.`)
+      : `${tally.invoice + tally.purchase_bill + tally.credit_note + tally.debit_note} document(s) and ${tally.customer + tally.vendor + tally.product} master(s) written from this file.`)
     setImporting(false)
   }
 
@@ -840,7 +888,7 @@ function TallyPageInner() {
                   sub={`${plan.summary.ledgers} ledgers · ${plan.summary.stockItems} items · ${plan.summary.vouchers} vouchers`}
                   icon="book" tone="blue" />
                 <StatCard label="Ready to write" value={String(plan.summary.ready)}
-                  sub={`${plan.summary.byTarget.invoice.count + plan.summary.byTarget.purchase_bill.count} document(s) · ${money(plan.summary.byTarget.invoice.rupees + plan.summary.byTarget.purchase_bill.rupees)}`}
+                  sub={`${plan.summary.byTarget.invoice.count + plan.summary.byTarget.purchase_bill.count + plan.summary.byTarget.credit_note.count + plan.summary.byTarget.debit_note.count} document(s) · ${money(plan.summary.byTarget.invoice.rupees + plan.summary.byTarget.purchase_bill.rupees + plan.summary.byTarget.credit_note.rupees + plan.summary.byTarget.debit_note.rupees)}`}
                   icon="check" tone="green" />
                 <StatCard label="Blocked" value={String(plan.summary.blocked)}
                   sub="the file never named what they need" icon="alert" tone="red" />
@@ -1168,6 +1216,8 @@ function TallyPageInner() {
                     <div className="tb-cols">
                       {!!r.invoices && <span className="tb-chip-2">{r.invoices} invoice(s)</span>}
                       {!!r.bills && <span className="tb-chip-2">{r.bills} bill(s)</span>}
+                      {!!r.credit_notes && <span className="tb-chip-2">{r.credit_notes} credit note(s)</span>}
+                      {!!r.debit_notes && <span className="tb-chip-2">{r.debit_notes} debit note(s)</span>}
                       {!!r.customers && <span className="tb-chip-2">{r.customers} customer(s)</span>}
                       {!!r.vendors && <span className="tb-chip-2">{r.vendors} vendor(s)</span>}
                       {!!r.products && <span className="tb-chip-2">{r.products} product(s)</span>}
