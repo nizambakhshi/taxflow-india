@@ -4,7 +4,7 @@ GST billing, invoicing and compliance for Indian businesses (₹2–20 crore) �
 
 **Stack:** Next.js 16 (App Router, Turbopack) · React 19 · TypeScript · Supabase (Postgres + Auth, browser client) · Tailwind v4 tokens + a small custom design system in `src/app/globals.css`.
 
-**Status:** Round 1 (7 competitive features) and Round 2 through R2-23 are shipped — 56 pages and 42 pure domain libraries. See `5-Project-Tasks.md` for the backlog, `1-PRD.md` for scope and `7-Competitor-Comparison.md` for where the product stands against Tally, Zoho Books, Vyapar, myBillBook, Busy, Marg, ClearTax and Refrens.
+**Status:** Round 1 (7 competitive features) and Round 2 through R2-24 are shipped — 57 pages and 43 pure domain libraries. See `5-Project-Tasks.md` for the backlog, `1-PRD.md` for scope and `7-Competitor-Comparison.md` for where the product stands against Tally, Zoho Books, Vyapar, myBillBook, Busy, Marg, ClearTax and Refrens.
 
 ---
 
@@ -52,7 +52,7 @@ node --experimental-strip-types --no-warnings --loader /tmp/ts-loader.mjs /tmp/<
 
 ## What the app does
 
-**Day-to-day:** business setup, customers, vendors, products, sales invoices (B2B/B2C/Export/SEZ), purchase bills, expenses, payments, quotations, credit/debit notes, delivery challans with the Rule 55 reason handling, sales and purchase orders that convert into a real invoice or a real bill, inventory with stock movements, batch/expiry lots drawn FEFO by the invoice itself, one-row-per-unit serial numbers with warranty derived from the latest sale, a godown register where a transfer is a lot split, recurring invoice schedules that bill into the financial year they belonged to, foreign-currency deals kept beside the rupee books, settings.
+**Day-to-day:** business setup, customers, vendors, products, sales invoices (B2B/B2C/Export/SEZ), purchase bills, expenses, payments, quotations, credit/debit notes, delivery challans with the Rule 55 reason handling, sales and purchase orders that convert into a real invoice or a real bill, inventory with stock movements, batch/expiry lots drawn FEFO by the invoice itself, one-row-per-unit serial numbers with warranty derived from the latest sale, a godown register where a transfer is a lot split, a recipe book where a recipe stores quantities and a build draws them through the same stock RPC — with a demand tab that names the component stopping today's run, recurring invoice schedules that bill into the financial year they belonged to, foreign-currency deals kept beside the rupee books, settings.
 
 **GST:** dashboard, GSTR-1 and GSTR-3B workpapers, GSTR-2B ↔ books reconciliation, e-invoice (IRN) + e-way bill payloads, GSTR-9/9C annual workpaper, GSTR-4/CMP-08 composition workpaper, job-work register with the section 143 return clock and the four ITC-04 grids, compliance calendar with late-fee estimates, statutory registers (party-wise, HSN/SAC, B2B, state-wise, e-way bill, order flow).
 
@@ -68,7 +68,7 @@ node --experimental-strip-types --no-warnings --loader /tmp/ts-loader.mjs /tmp/<
 
 ```
 src/app/            routes (App Router), api/gsp + api/pdf-worker, globals.css
-src/components/     BarcodeScanner, CommandPalette, Icons, InvoiceDocument, PwaRegister, ui
+src/components/     AuthShell, BarcodeScanner, CommandPalette, Icons, InvoiceDocument, OrderDocument, OrderRegister, PwaRegister, ui
 src/lib/            pure domain libraries (GST engine, registers, GSTR-9, POS, AI, …)
 public/             sw.js, offline.html, manifest assets, icons
 ```

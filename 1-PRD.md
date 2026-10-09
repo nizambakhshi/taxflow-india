@@ -46,6 +46,7 @@ Indian businesses struggle with:
 8. The AI features run in the browser: a supplier's bill is never uploaded, and every answer traces back to the rows it came from
 9. Bank reconciliation without a bank feed: any statement layout is read in the browser and each line is pointed at the document it matches, with the score explained — software that charges for this needs a paid feed
 10. Withholding tax read straight out of the purchase books: which section each supplier falls under, what crosses the limit, when the deposit was due and what the delay costs — the depth that costs extra in the ERPs
+11. Knows the shop's own making as well as its buying: recipes that roll their cost up from the product master, a build log that prints the wastage instead of smoothing it, and a materials board that says *which run today's shelf cannot cover* — not merely which parts are short
 
 ---
 
@@ -84,7 +85,7 @@ Round 1, closed:
 - Camera barcode scan + counter sale POS (`/pos`)
 - Bill OCR scanning and natural-language reporting (`/ai/scan-bill`, `/ai/ask`)
 
-Round 2, R2-1 … R2-11:
+Round 2, R2-1 … R2-24:
 - Design system v1 (tokens, UI kit, app shell)
 - Party ledger accounts and statements of account (`/ledger`)
 - Compliance calendar with late-fee estimation and `.ics` export (`/gst/calendar`)
@@ -96,12 +97,24 @@ Round 2, R2-1 … R2-11:
 - GSTR-9 / 9C annual workpaper (`/gst/gstr9`)
 - Bank statement import with scored matching to invoices, bills and recorded payments (`/bank`)
 - TDS & 194Q withholding workpaper with deposit calendar and interest (`/tds`)
+- Every page migrated onto the kit — 48 pages on the shared primitives, the three auth surfaces on one `AuthShell`, the public portal page counted the same way
+- Order flow: delivery challans under rule 55, sales orders, purchase orders, and conversion into a real invoice or bill (`/challans`, `/sales-orders`, `/purchase-orders`)
+- Batch/expiry register with FEFO drawdown, serial-number register (one row per physical unit), godown register with transfers as lot splits (`/inventory/batches`, `/inventory/serials`, `/inventory/godowns`)
+- Customer portal: a statement of account that travels inside its own share link, read from the URL fragment with nothing stored server-side (`/portal`)
+- GSTR-4 / CMP-08 composition workpaper (`/gst/gstr4`)
+- Recurring invoices as a schedule that accrues, with catch-up back into the FY it belonged to (`/recurring`)
+- Foreign-currency deals over a dated, source-stamped rate ledger (`/fx`)
+- Job work / rule 45 outbound with the section 143 return clock and the ITC-04 workpaper (`/gst/job-work`)
+- Cost centres: an allocation stores a share, the rupees re-read from the documents (`/cost-centres`)
+- Tally bridge: import a Tally export into a plan with reasons, and export vouchers back (`/tally`)
+- Projects & time: hours measured, whole documents attached by id, labour priced not costed, rule 47 window cited (`/projects`)
+- Manufacturing: recipes and builds, and the answer to *what the shelf cannot run today* (`/inventory/recipes`)
 
 Still to come:
 - Real GSP submission for e-invoice / e-way bill (blocked on paid GSP provider — see `6-Project-Memory.md`)
 - Email invoices directly from the app
 - Multi-user with roles (invite accountant/staff)
-- Manufacturing / BOM, payroll, e-commerce channel integrations, document attachments, an API — the rest of `7-Competitor-Comparison.md` §8, each needing a contract, a schema change or a platform decision
+- Payroll, e-commerce channel integrations, document attachments, an API — the rest of `7-Competitor-Comparison.md` §8, each needing a contract, a schema change or a platform decision
 
 ### Enterprise / Future
 - Multi-company management
@@ -240,6 +253,8 @@ Still to come:
 - Auto-update on purchase bill (increase)
 - Editing a product must never rewrite stock from opening stock — `current_stock` is seeded on insert only
 - Reorder levels, lead time and demand cover per product (see 3.24)
+- Lot-level stock with FEFO and expiry watch, one row per physical unit, and named places stock stands in (see 3.34)
+- What a finished good is made of, and what making it did to the stock (see 3.42)
 
 ### 3.11 GST Dashboard
 - Period selector (by month)
@@ -446,6 +461,17 @@ Still to come:
 - Hours with no rate anywhere yield **no rupee figure rather than a ₹0 one**, a document deleted from the books leaves its tag as an orphan that says so and contributes nothing, and an invoice number the books do not have is accepted but reported as unmatched
 - The cost-centre boundary is printed on both pages: **a centre splits one document by percentage; a project collects whole documents and adds the hours a centre cannot express**
 - v1 has no timesheet approval, no expense claim, and no calendar sync; the scanned *paper* behind a document still needs Storage (gap #12), so a project attaches the document, not a file
+
+### 3.42 Manufacturing — Recipes & Builds (R2-24)
+- `/inventory/recipes` keeps **what a thing is made of** (a recipe: components, the quantity drawn per run, the waste a shop actually gets) and **what making it did to the stock** (a build: the units produced and what the drum actually said), in `taxflow:bom:<orgId>`
+- **The headline answer is the one the incumbents do not give:** *what you cannot make today*. Every live recipe card states how many runs the shelf would cover and, when the answer is not enough, names the component that limits it — a bill of materials that only prints is half the feature
+- **A recipe stores quantities, never a rupee.** Material value is rolled up on every load from `products.purchase_price` — the field `/accounting` already values stock at — so a price corrected on the master re-values every recipe that uses it, and nothing here can hold a stale amount
+- **A component with no cost yields no rupee figure, not a ₹0 one**, same rule as an unpriced hour at `/projects`: ₹0 reads as "this costs nothing", which is a different and wrong statement from "nobody has recorded what this costs". Margin against `selling_price` prints only when both sides are priced
+- **A build records what was drawn, not what the recipe hoped**, and the difference is printed as a variance rather than smoothed away — that number is wastage, and wastage is what recipes lie about
+- **Stock moves only through `record_stock_movement`**, components out and finished units in on the two adjustment types that already exist with the `JOB-<FY>-NNNN` reference in the note: no new movement type, no schema change (ADR-013). A run whose movements failed to land stays a *plan*, and whatever already applied is reversed rather than left half-written
+- **A build is not a supply.** Making something inside your own registered place moves no GST; the tax happens when the finished good is sold at `/invoices/new`, at the HSN/SAC and rate of the *finished good*, not of its parts — so the page checks the output has an HSN/SAC and says so while there is still time to fix the master. Materials handed to somebody else are job work, and `/gst/job-work` is where that lives with its section 143 clock
+- Four tabs — **Recipe book** (cards: cost per unit, margin, "Can make now" and what limits it, variance history, findings), **Build log** (per-FY job numbers, planned → built → cancelled with the reversal kept on the log), **Materials board** (open sales orders demanded against recipes, shortages merged into one shopping list, a per-recipe plan that explodes sub-assemblies), **Where used** (which recipes draw a component, what has been consumed against it, whether the shelf could still cover them) — plus four CSV exports
+- v1 has no production scheduling, no work-in-progress account, no labour or overhead absorption (the roll-up is *material* value and the page says so), no batch/serial issuance into a build, no scrap *sale*, and **no back-flush** — nothing consumes materials automatically when an invoice is raised, because a finished unit may equally have come from opening stock or from a purchase, and guessing which is exactly how stock books get cooked
 
 ---
 

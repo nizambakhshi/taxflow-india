@@ -93,6 +93,7 @@ taxflow-india/
 │   │   ├── globals.css             design tokens + .tf-* utilities
 │   │   ├── page.tsx                redirects to /login
 │   │   ├── login/  signup/  setup/ public pages (setup = business wizard)
+│   │   ├── portal/                 public statement of account, read from the URL fragment
 │   │   ├── api/
 │   │   │   ├── gsp/ewaybill/       GSP adapter route (mock provider)
 │   │   │   └── pdf-worker/         version-locked pdf.js worker for bill scan
@@ -103,20 +104,31 @@ taxflow-india/
 │   │       ├── pos/                counter sale with camera barcode scan
 │   │       ├── quotations/  credit-notes/  debit-notes/
 │   │       ├── bills/  expenses/
+│   │       ├── challans/           delivery challans (rule 55) · [id]
+│   │       ├── sales-orders/  purchase-orders/   order registers · [id] detail pages
 │   │       ├── payments/           receivables + payables
 │   │       ├── payments/links/     UPI deep links + WhatsApp reminders
 │   │       ├── bank/               statement import and auto-match
 │   │       ├── customers/  vendors/  products/
 │   │       ├── inventory/          stock levels and movements
 │   │       ├── inventory/reorder/  (s,S) suggestions, supplier-wise POs
+│   │       ├── inventory/batches/  lot-level in/out, FEFO, expiry watch
+│   │       ├── inventory/serials/  one row per physical unit, warranty trail
+│   │       ├── inventory/godowns/  named places, per-place stock, transfers as splits
+│   │       ├── inventory/recipes/  recipes, build log, materials board, where-used
 │   │       ├── gst/                GST hub
-│   │       │   ├── gstr1/  gstr3b/  gstr9/
-│   │       │   ├── reconciliation/  einvoice/  calendar/
+│   │       │   ├── gstr1/  gstr3b/  gstr9/  gstr4/
+│   │       │   ├── reconciliation/  einvoice/  calendar/  job-work/
 │   │       ├── reports/            business reports
 │   │       ├── reports/registers/  statutory registers
 │   │       ├── reports/targets/    plan vs achievement
 │   │       ├── ledger/             party statements of account
 │   │       ├── accounting/         P&L and balance sheet
+│   │       ├── recurring/          recurring invoice schedules and catch-up runs
+│   │       ├── fx/                 foreign-currency deals and the rate ledger
+│   │       ├── cost-centres/       document splits held as shares
+│   │       ├── projects/           jobs, hours, unbilled register, attached documents
+│   │       ├── tally/              Tally import plan and voucher export
 │   │       ├── tds/                withholding workpaper and deposit calendar
 │   │       ├── offline/            outbox status and replay
 │   │       ├── ai/scan-bill/       OCR bill capture
@@ -128,22 +140,30 @@ taxflow-india/
 │   │   ├── CommandPalette.tsx      ⌘K overlay
 │   │   ├── BarcodeScanner.tsx      camera + keyboard-wedge fallback
 │   │   ├── InvoiceDocument.tsx     modern / minimal print skins
+│   │   ├── OrderRegister.tsx  OrderDocument.tsx   one register, both order directions
+│   │   ├── AuthShell.tsx           the shared chrome for login / signup / setup
 │   │   └── PwaRegister.tsx
 │   └── lib/                        pure, testable, no React
-│       ├── supabase.ts  constants.ts  format.ts  words.ts
-│       ├── gst-engine.ts           the tax engine
+│       ├── supabase.ts  constants.ts  format.ts  words.ts  pdf-export.ts
+│       ├── gst-engine.ts  gst-rates.ts   the tax engine and its rate tables
 │       ├── create-invoice.ts  create-bill.ts   the only document write paths
-│       ├── gstr2b.ts  gstr9.ts  einvoice.ts  registers.ts  compliance.ts
+│       ├── gstr2b.ts  gstr9.ts  gstr4.ts  einvoice.ts  registers.ts  compliance.ts
 │       ├── ledger.ts  party-ledger.ts  reports.ts  targets.ts  reorder.ts
 │       ├── payments.ts  barcode.ts  outbox.ts  ocr.ts  bill-text.ts  ask.ts
 │       ├── commands.ts  nav.ts  deep-link-search.ts  bank-statement.ts
 │       ├── tds.ts                  withholding workpaper
+│       ├── orderflow.ts            challans, sales orders, purchase orders, conversion
+│       ├── batches.ts  serials.ts  godowns.ts    lot, unit and place registers
+│       ├── recurring.ts  fx.ts  jobwork.ts        cadence, currency deals, rule 45 / s.143
+│       ├── costcentres.ts  projects.ts  tally.ts   the share register, the hour register, the file bridge
+│       ├── bom.ts                  recipes, builds, requirement maths, where-used explosion
+│       ├── portal.ts               the statement encoded inside its own share link
 │       └── gsp/                    provider adapter: types, index, mock
 ├── public/
 │   ├── sw.js                       service worker (offline shell)
 │   ├── offline.html                offline fallback page
 │   └── icons/                      PWA icons
-├── 1-PRD.md … 6-Project-Memory.md  project documentation
+├── 1-PRD.md … 7-Competitor-Comparison.md  project documentation
 ├── AGENTS.md                       read by the coding agent before every change
 ├── .env.local                      Supabase credentials (never commit)
 ├── package.json
@@ -567,6 +587,7 @@ Called when:
 - Invoice is saved (reduces stock)
 - Purchase bill is saved (increases stock)
 - Manual adjustment is made
+- A build is recorded at `/inventory/recipes` — components out and finished units in as `adjustment_out` / `adjustment_in`, with `p_reference_type: 'manual'`, the `JOB-<FY>-NNNN` number in `reference_number` and spelled out again in `notes` ("Build JOB-… — 3 of Sauce A drawn for 12 of Product X"). The schema has no `build` movement type, and inventing one is a schema change, so the log reads as a named manual adjustment rather than a fiction (ADR-031)
 
 Does:
 1. Gets current stock for product
@@ -606,11 +627,12 @@ Features that need somewhere to put information the schema does not have use one
 | `taxflow:ccentres:<orgId>` | Cost centres | The centre list and, per document, one `{centre → share}` — **percentages only**; the rupees are re-read from five document tables on every load (ADR-028) |
 | `taxflow:projects:<orgId>` | Projects & time | Projects, hour rows, and whole documents attached **by id** — **measurements only**; revenue, spend, contribution and the unbilled months are re-read through the same `bookDocs()` the cost centres use, and an hour carries the rate you would bill it at, not what it cost (ADR-030) |
 | `taxflow:tally:<orgId>` | Tally bridge | **Only the log** of an import — which file, when, how many of each kind. The parsed dump, the plan and the exported XML live in memory and on disk, never here (ADR-029) |
+| `taxflow:bom:<orgId>` | Recipes & builds | Recipes (component **quantities**, output per run, waste) and builds (what the shop actually **drew**), plus the per-FY `JOB-<FY>-NNNN` high-water mark — **never a rupee**: material value is rolled up from `products.purchase_price` on every load, the same field `/accounting` values stock at (ADR-031) |
 | `taxflow:palette-recents:<orgId>` | ⌘K | Recently opened records |
 
 Rules that make this safe:
 - The key is namespaced by `orgId`, so a shared browser cannot leak one business's plan into another.
-- Money records are never stored here. If a number belongs on a return, it comes from the database; local storage holds opinions, settings and declarations. Two registers are held to a stricter reading of that rule because their whole subject is money: a cost centre stores a **share** and a project stores **measurements**, and both re-read their rupees from the documents on load — through one shared reader (`costcentres.bookDocs`), so a cancelled row or a signed credit note cannot have two opinions about what they mean.
+- Money records are never stored here. If a number belongs on a return, it comes from the database; local storage holds opinions, settings and declarations. Three registers are held to a stricter reading of that rule because their whole subject is money: a cost centre stores a **share**, a project stores **measurements** and a recipe stores **quantities** — and all three re-read their rupees from the documents on load — a cost centre and a project through one shared reader (`costcentres.bookDocs`), so a cancelled row or a signed credit note cannot have two opinions about what they mean, and a recipe from `products.purchase_price`, so a price corrected on the master re-values every recipe that uses it. Nothing saved here can rot.
 - Every writer keeps a `version` field and a `updatedAt`, so a future shape change can migrate instead of crash.
 - Clearing browser storage is a real user risk, so anything a user would grieve losing is either reconstructible from documents (registers, ledger, statements) or surfaced as an export they can keep (CSV, `.ics`, JSON).
 
@@ -661,6 +683,7 @@ Because replay uses the production write path, an offline invoice cannot diverge
 | `/inventory/batches` | `batches.ts`, `godowns.ts` | Lot-level in/out, FEFO draw order, expiry watch |
 | `/inventory/serials` | `serials.ts` | One row per unit; warranty read from the latest sale |
 | `/inventory/godowns` | `godowns.ts`, `batches.ts` | A transfer is a lot split, never a second stock ledger |
+| `/inventory/recipes` | `bom.ts`, `orderflow.ts` (`loadStore`) | A recipe stores **quantities** and re-reads cost from `products.purchase_price`; a build stores what was drawn and moves stock only through `record_stock_movement` |
 | `/recurring` | `recurring.ts`, `orderflow.ts` | Cadence → a real invoice, billed back into the FY it belonged to |
 | `/fx` | `fx.ts` | Dated rate ledger; realised and unrealised kept beside, not inside, the rupee books |
 | `/gst/job-work` | `jobwork.ts` | Section 143 return clock and the four ITC-04 grids |
