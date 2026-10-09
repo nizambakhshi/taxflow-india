@@ -415,6 +415,7 @@ export default function ReorderPlannerPage() {
       <div className="tf-row tf-wrap" style={{ gap: 12, fontSize: 12, color: 'var(--muted)', marginTop: '1rem' }}>
         <span>Only items with stock tracking on are planned.</span>
         <Link href="/inventory" style={{ color: 'var(--brand)', textDecoration: 'none' }}>Adjust stock →</Link>
+        <Link href="/inventory/recipes" style={{ color: 'var(--brand)', textDecoration: 'none' }}>Recipes & builds →</Link>
         <Link href="/products" style={{ color: 'var(--brand)', textDecoration: 'none' }}>Products →</Link>
         <Link href="/bills" style={{ color: 'var(--brand)', textDecoration: 'none' }}>Enter a purchase bill →</Link>
       </div>

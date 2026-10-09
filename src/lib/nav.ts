@@ -61,6 +61,7 @@ export const NAV_ITEMS: NavSection[] = [
       { label: 'Batches & Expiry', href: '/inventory/batches', icon: 'clock' },
       { label: 'Godowns', href: '/inventory/godowns', icon: 'warehouse' },
       { label: 'Serial Numbers', href: '/inventory/serials', icon: 'hash' },
+      { label: 'Recipes & Builds', href: '/inventory/recipes', icon: 'recipe' },
     ]
   },
   {

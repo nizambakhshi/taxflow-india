@@ -304,6 +304,14 @@ const P: Record<string, React.ReactNode> = {
     <line x1="2.5" y1="12.5" x2="21.5" y2="12.5" />
     <line x1="12" y1="15" x2="12" y2="17" />
   </>),
+  // The measure jar: what a run is mixed in. A recipe is quantities, so the glyph carries a fill
+  // line and a graduation rather than a coin — the rupee on the card is read from the catalogue.
+  recipe: (<>
+    <path d="M9 3h6" />
+    <path d="M10.4 3v4.4L5.7 17.3A2.3 2.3 0 0 0 7.8 20.7h8.4a2.3 2.3 0 0 0 2.1-3.4L13.6 7.4V3" />
+    <line x1="7.6" y1="14.2" x2="16.4" y2="14.2" />
+    <circle cx="10.6" cy="17.4" r="0.9" />
+  </>),
 }
 
 export type IconName = keyof typeof P
