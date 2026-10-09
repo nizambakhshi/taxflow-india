@@ -156,6 +156,7 @@ taxflow-india/
 │       ├── batches.ts  serials.ts  godowns.ts    lot, unit and place registers
 │       ├── recurring.ts  fx.ts  jobwork.ts        cadence, currency deals, rule 45 / s.143
 │       ├── costcentres.ts  projects.ts  tally.ts   the share register, the hour register, the file bridge
+│       ├── creditnote.ts            one write path for both note registers (page forms + Tally bridge)
 │       ├── bom.ts                  recipes, builds, requirement maths, where-used explosion
 │       ├── exports.ts              zero-rating routes, dated FEMA bands, realisation join to /fx
 │       ├── invoice-template.ts     the invoice template id + its loader (shared by the vault spec)
@@ -694,7 +695,7 @@ Because replay uses the production write path, an offline invoice cannot diverge
 | `/gst/exports` | `exports.ts`, `fx.ts`, `recurring.ts` (`addMonthsISO`, `daysBetween`) | Two clocks per consignment: the undertaking that made it zero-rated and the dated FEMA window the proceeds have to land inside. Band tables carry their instrument and their disagreement; the calendar reads the same `watchRows()` |
 | `/cost-centres` | `costcentres.ts` | Stores a **share**; rupees re-read from documents through `bookDocs` |
 | `/projects` | `projects.ts`, `costcentres.ts` (`bookDocs`) | Stores hours and document ids; labour priced not costed, rule 47 window cited not settled |
-| `/tally` | `tally.ts`, `create-invoice.ts`, `create-bill.ts` | Parse → plan with blocked rows and reasons → replay through the normal write path; export builds the XML envelope |
+| `/tally` | `tally.ts`, `create-invoice.ts`, `create-bill.ts`, `creditnote.ts` | Parse → plan with blocked rows and reasons → replay through the normal write path; note vouchers plan against the document they name — register or same file, never invented — and write through the same creators the note pages use; export builds the XML envelope |
 | `/vault` | `vault.ts` (every register's `save*`/`load*`) | Thirty named specs into one portable file; restore writes through the owner and reads back through its own loader, `from → seen` per register |
 | `/portal` (public) | `portal.ts` | The whole statement encoded in the URL fragment — nothing stored server-side |
 | `/pos` | `barcode.ts`, `create-invoice.ts` | GS1 check digits, EAN/UPC variants, cash sale write |
