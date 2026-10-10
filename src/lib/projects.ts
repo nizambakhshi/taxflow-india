@@ -23,13 +23,24 @@
 //    up per entry with the project's own rate behind it. When neither is recorded the hours
 //    count as hours and contribute **no rupees** — and the page says "N hours have no rate
 //    recorded" rather than inventing a rate. An unpriced hour is a gap, not a zero.
-//  * **The labour value is not revenue, and never gets subtracted from it.** On a time &
-//    material job the hours are what will be billed; on a fixed-price job the package is what
-//    is billed and the hour value is only a check on the price you agreed. Either way this
-//    module has no idea what a salary costs — there is no payroll here — so the number the
-//    project cards print is `revenue − spend`, labelled contribution, and the hours sit
-//    beside it rather than inside it. A "profit" that charged your own time at your own
-//    billing rate would be double counting with extra steps.
+//  * **A costed hour names whose hour it was.** An entry may carry an `employee_id` — a
+//    person picked from the payroll register — and then its hours are *costed* at that
+//    person's own employer cost for the entry's own month: `costHours()` joins the entries
+//    against the `HourCost` rows the payroll register computes, and this module re-derives
+//    no rupee (it imports no payroll code; the rows arrive as data, the same way the books
+//    do). An entry with a typed name only stays priced, never costed, and is counted as
+//    such — never guessed onto a person. A linked person the register cannot price for that
+//    month is printed with the register's own reason: a refusal, not a zero.
+//  * **The labour value is not revenue, and the cost never rewrites contribution.** On a
+//    time & material job the hours are what will be billed; on a fixed-price job the package
+//    is what is billed and the hour value is only a check on the price you agreed. The
+//    register's own figure stays `revenue − spend`, labelled contribution; the costed hour
+//    is a **reading beside it** (`contribution − labour_cost`, labelled *after named hours*
+//    and marked *partial* while linked hours remain unstated) — never absorbed silently,
+//    because if the same wages were also attached here as a bill, subtracting them twice
+//    would invent a loss. A "profit" that charged your own time at your own billing rate
+//    would be double counting with extra steps; a cost is not a rate, and the page keeps
+//    them apart.
 //  * **A project is not a legal person either.** Nothing on this page reaches a return. The
 //    one place the register becomes a statutory question is unbilled work past the rule 47
 //    window, and there it is printed as *a date, a rule, and a link to the workpaper that
@@ -45,12 +56,14 @@
 //    same rule the cost-centre register follows, for the same reason: a quiet disappearance
 //    is worse than an ugly row.
 //
-// What v1 deliberately does NOT claim: it does not know who is paid what, so there is no
-// wage cost and no true margin. It does not schedule or raise an invoice — the unbilled work
-// is grouped, priced and handed to `/invoices/new` as text, never written from here. It does
-// not read a project's customer from the `customers` table by id: the client name travels on
-// the project, because matching a free-text master to a stored id is a schema conversation
-// (ADR-013), and a wrong link is worse than a typed name.
+// What v1 deliberately does NOT claim: the costed hour is a *reading*, not a posting — no
+// wage rupee is stored here and none is journaled anywhere, so the figure is partial by
+// construction and the page says which hours it could not state. It does not schedule or
+// raise an invoice — the unbilled work is grouped, priced and handed to `/invoices/new` as
+// text, never written from here. It does not read a project's customer from the `customers`
+// table by id: the client name travels on the project, because matching a free-text master
+// to a stored id is a schema conversation (ADR-013), and a wrong link is worse than a typed
+// name.
 
 import { newId, todayISO } from '@/lib/batches'
 import { addDaysISO, daysBetween } from '@/lib/recurring'
@@ -160,6 +173,13 @@ export interface TimeEntry {
   /** The day the work was actually done — this is the date of supply the window runs from. */
   date: string
   person: string
+  /**
+   * The payroll-register person these hours belonged to, when the shop says so. `''` = a typed
+   * name only: the hour is priced at its rate and never costed. The id is kept even if the
+   * person later leaves the register — an entry keeps its link and the register's own reason
+   * is printed, because a quiet unlink is worse than an ugly row.
+   */
+  employee_id: string
   hours: number
   /** ₹/hour for this entry. 0 = use the project's rate. */
   rate: number
@@ -216,6 +236,7 @@ export function newEntry(projectId: string, date = todayISO()): TimeEntry {
     project_id: projectId,
     date,
     person: '',
+    employee_id: '',
     hours: 1,
     rate: 0,
     note: '',
@@ -297,6 +318,7 @@ function parseEntry(raw: unknown): TimeEntry | null {
     project_id: str(e.project_id),
     date: e.date,
     person: str(e.person),
+    employee_id: str(e.employee_id),
     hours: round2(hours),
     rate: Math.max(0, num(e.rate)),
     note: str(e.note),
@@ -586,6 +608,81 @@ export function entryValue(entry: TimeEntry, project: Project): number {
   return rate > 0 ? round2(entry.hours * rate) : 0
 }
 
+// ── the costed hour: what the payroll register says it cost ───────────────────
+
+/**
+ * One person, one month, priced by the payroll register — a structural subset of payroll's own
+ * `HourCost`, so the page hands those rows straight in and this module imports no payroll code.
+ * `cost_per_hour: null` is a refusal carrying its reason; a row existing does not mean a rupee.
+ */
+export interface HourCostRow {
+  employee_id: string
+  name: string
+  month: string
+  cost_per_hour: number | null
+  /** What the figure is made of. '' when there is no figure. */
+  basis: string
+  /** Why there is no figure. '' when there is one. */
+  why: string
+}
+
+/** What one logged day cost the shop — or why that cannot be stated. */
+export interface EntryCost {
+  entry_id: string
+  /** Whether the entry names a person on the payroll register at all. */
+  linked: boolean
+  /** The register's name for the person; the typed name when there is no link to resolve. */
+  name: string
+  /** Rupees, or null with `why` — never a zero standing in for "cannot say". */
+  cost: number | null
+  basis: string
+  why: string
+}
+
+/**
+ * Join entries to the payroll register's hour costs by (person, month of the entry). Pure
+ * arithmetic over rows that already exist: this module re-derives no wage, and an entry the
+ * register cannot price keeps a null cost and the register's own sentence for why.
+ */
+export function costHours(entries: TimeEntry[], costs: HourCostRow[]): Map<string, EntryCost> {
+  const byKey = new Map(costs.map(c => [`${c.employee_id}:${c.month}`, c]))
+  const out = new Map<string, EntryCost>()
+  for (const e of entries) {
+    if (!e.employee_id) {
+      out.set(e.id, {
+        entry_id: e.id,
+        linked: false,
+        name: e.person,
+        cost: null,
+        basis: '',
+        why: 'No person named from the payroll register — a typed name is not a wage link, so this hour is priced only.',
+      })
+      continue
+    }
+    const row = byKey.get(`${e.employee_id}:${periodOf(e.date)}`)
+    if (!row || row.cost_per_hour === null) {
+      out.set(e.id, {
+        entry_id: e.id,
+        linked: true,
+        name: row?.name || e.person || 'Person no longer on the register',
+        cost: null,
+        basis: '',
+        why: row?.why || 'The payroll register has no figure for this month.',
+      })
+      continue
+    }
+    out.set(e.id, {
+      entry_id: e.id,
+      linked: true,
+      name: row.name || e.person,
+      cost: round2(e.hours * row.cost_per_hour),
+      basis: row.basis,
+      why: '',
+    })
+  }
+  return out
+}
+
 /**
  * Unbilled hours, grouped per project per calendar month of supply, because that is the shape
  * the invoice takes: a month of consulting goes out as one paper, and a day of it is already
@@ -710,6 +807,16 @@ export interface ProjectView {
   labour_value: number
   unbilled_value: number
   unpriced_hours: number
+  /** What the hours named to payroll people cost the shop — a reading from that register. */
+  labour_cost: number
+  /** Hours inside `labour_cost`. */
+  costed_hours: number
+  /** Linked hours the payroll register could not price for their own month. */
+  uncosted_hours: number
+  /** Hours carrying a typed name only — no payroll link, so no cost is read for them. */
+  unlinked_hours: number
+  /** contribution − labour_cost, marked partial on the page while hours remain unstated. */
+  after_labour: number
   revenue: number
   cost: number
   contribution: number
@@ -737,6 +844,7 @@ export function projectView(
   tags: ProjectTag[],
   docs: BookDoc[],
   today: string,
+  costs: HourCostRow[] = [],
 ): ProjectView {
   const mine = entries.filter(e => e.project_id === project.id)
   const mineTags = tags.filter(t => t.project_id === project.id)
@@ -758,11 +866,17 @@ export function projectView(
     }
   }
 
+  const costMap = costHours(mine, costs)
   let hours = 0
   let unbilledHours = 0
   let labour = 0
   let unbilledValue = 0
   let unpriced = 0
+  let labourCost = 0
+  let costedHours = 0
+  let uncostedHours = 0
+  let unlinkedHours = 0
+  const uncostedWhys: string[] = []
   const invoiceNumbers = new Set(docs.filter(d => d.kind === 'invoice').map(d => d.number))
   const unmatched = new Set<string>()
   for (const e of mine) {
@@ -777,6 +891,16 @@ export function projectView(
       unbilledHours += e.hours
       if (priced) unbilledValue += v
     }
+    const c = costMap.get(e.id)
+    if (c && c.cost !== null) {
+      labourCost += c.cost
+      costedHours += e.hours
+    } else if (c && c.linked) {
+      uncostedHours += e.hours
+      if (c.why) uncostedWhys.push(c.why)
+    } else {
+      unlinkedHours += e.hours
+    }
   }
 
   const groups = unbilledGroups([project], mine, today)
@@ -786,6 +910,8 @@ export function projectView(
   const days_since_last = last ? daysBetween(today, last) : null
 
   const contribution = round2(revenue - cost)
+  const labour_cost = round2(labourCost)
+  const after_labour = round2(contribution - labour_cost)
   const budget_used_pct = project.budget_value > 0 ? Math.round((cost / project.budget_value) * 100) : null
 
   const findings: Finding[] = []
@@ -801,6 +927,20 @@ export function projectView(
     findings.push({
       tone: 'grey',
       text: `${round2(unpriced)} h have no rate recorded, on the entry or on the project — they count as hours and contribute no rupees. Nothing has been assumed for them.`,
+    })
+  }
+  if (uncostedHours > 0) {
+    findings.push({
+      tone: 'amber',
+      text: `${round2(uncostedHours)} h are named to a person the payroll register could not price for that month${uncostedWhys[0] ? ` — ${uncostedWhys[0]}` : ''} The cost figures state only what the register could compute; nothing has been assumed for the rest.`,
+      link: 'Payroll',
+      href: '/payroll',
+    })
+  }
+  if (unlinkedHours > 0 && (costedHours > 0 || uncostedHours > 0)) {
+    findings.push({
+      tone: 'grey',
+      text: `${round2(unlinkedHours)} h carry a typed name only, so no cost is read for them — pick the person from the payroll register and those hours are costed too.`,
     })
   }
   if (unmatched.size) {
@@ -838,6 +978,11 @@ export function projectView(
     labour_value: round2(labour),
     unbilled_value: round2(unbilledValue),
     unpriced_hours: round2(unpriced),
+    labour_cost,
+    costed_hours: round2(costedHours),
+    uncosted_hours: round2(uncostedHours),
+    unlinked_hours: round2(unlinkedHours),
+    after_labour,
     revenue: round2(revenue),
     cost: round2(cost),
     contribution,
@@ -855,11 +1000,11 @@ export function projectView(
   }
 }
 
-export function projectViews(store: ProjectStore, docs: BookDoc[], today: string): ProjectView[] {
+export function projectViews(store: ProjectStore, docs: BookDoc[], today: string, costs: HourCostRow[] = []): ProjectView[] {
   const projIds = new Set(store.projects.map(p => p.id))
   const entries = store.entries.filter(e => projIds.has(e.project_id))
   const tags = store.tags.filter(t => projIds.has(t.project_id))
-  return store.projects.map(p => projectView(p, entries, tags, docs, today))
+  return store.projects.map(p => projectView(p, entries, tags, docs, today, costs))
 }
 
 const STATUS_RANK: Record<ProjectStatus, number> = { active: 0, on_hold: 1, completed: 2, archived: 3 }
@@ -882,6 +1027,11 @@ export interface ProjectSummary {
   entries: number
   hours: number
   labour_value: number
+  labour_cost: number
+  costed_hours: number
+  uncosted_hours: number
+  unlinked_hours: number
+  after_labour: number
   unbilled_hours: number
   unbilled_value: number
   at_risk: number
@@ -901,6 +1051,11 @@ export function summarise(views: ProjectView[]): ProjectSummary {
     entries: 0,
     hours: 0,
     labour_value: 0,
+    labour_cost: 0,
+    costed_hours: 0,
+    uncosted_hours: 0,
+    unlinked_hours: 0,
+    after_labour: 0,
     unbilled_hours: 0,
     unbilled_value: 0,
     at_risk: 0,
@@ -916,6 +1071,11 @@ export function summarise(views: ProjectView[]): ProjectSummary {
     s.entries += v.entry_count
     s.hours = round2(s.hours + v.hours)
     s.labour_value = round2(s.labour_value + v.labour_value)
+    s.labour_cost = round2(s.labour_cost + v.labour_cost)
+    s.costed_hours = round2(s.costed_hours + v.costed_hours)
+    s.uncosted_hours = round2(s.uncosted_hours + v.uncosted_hours)
+    s.unlinked_hours = round2(s.unlinked_hours + v.unlinked_hours)
+    s.after_labour = round2(s.after_labour + v.after_labour)
     s.unbilled_hours = round2(s.unbilled_hours + v.unbilled_hours)
     s.unbilled_value = round2(s.unbilled_value + v.unbilled_value)
     s.at_risk = round2(s.at_risk + v.at_risk)
@@ -1059,6 +1219,7 @@ export const PROJECT_CSV_HEADERS = [
   'Entries',
   'Hours',
   'Hour value',
+  'Named hours cost',
   'Unbilled hours',
   'Unbilled value',
   'Billed revenue (taxable)',
@@ -1084,6 +1245,7 @@ export function projectCsvRows(views: ProjectView[]): (string | number)[][] {
       v.entry_count,
       v.hours,
       v.labour_value,
+      v.labour_cost,
       v.unbilled_hours,
       v.unbilled_value,
       v.revenue,
@@ -1099,16 +1261,18 @@ export function projectCsvRows(views: ProjectView[]): (string | number)[][] {
   })
 }
 
-export const ENTRY_CSV_HEADERS = ['Date', 'Project', 'Client', 'Person', 'Hours', 'Rate', 'Value', 'Billed invoice', 'Window state', 'Invoice due', 'Note']
+export const ENTRY_CSV_HEADERS = ['Date', 'Project', 'Client', 'Person', 'Hours', 'Rate', 'Value', 'Cost', 'Cost basis', 'Billed invoice', 'Window state', 'Invoice due', 'Note']
 
-export function entryCsvRows(store: ProjectStore, today: string): (string | number)[][] {
+export function entryCsvRows(store: ProjectStore, today: string, costs: HourCostRow[] = []): (string | number)[][] {
   const projects = byId(store.projects)
   const groups = new Map(unbilledGroups(store.projects, store.entries, today).map(g => [g.key, g]))
+  const costMap = costHours(store.entries, costs)
   return [...store.entries]
     .sort((a, b) => (a.date === b.date ? a.person.localeCompare(b.person) : a.date < b.date ? -1 : 1))
     .map(e => {
       const p = projects.get(e.project_id)
       const g = p && !e.billed_ref ? groups.get(`${p.id}:${periodOf(e.date)}`) : undefined
+      const c = costMap.get(e.id)
       return [
         e.date,
         p?.name || '',
@@ -1117,6 +1281,8 @@ export function entryCsvRows(store: ProjectStore, today: string): (string | numb
         e.hours,
         p ? rateOf(e, p) : e.rate,
         p ? entryValue(e, p) : 0,
+        c && c.cost !== null ? c.cost : '',
+        c && c.cost !== null ? c.basis : c && c.linked ? c.why : '',
         e.billed_ref,
         g ? WATCH_META[g.state].label : e.billed_ref ? 'Billed' : '',
         g ? g.due_date : '',
