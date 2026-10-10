@@ -97,7 +97,7 @@ Round 2, R2-1 … R2-30:
 - GSTR-9 / 9C annual workpaper (`/gst/gstr9`)
 - Bank statement import with scored matching to invoices, bills and recorded payments (`/bank`)
 - TDS & 194Q withholding workpaper with deposit calendar and interest (`/tds`)
-- Every page migrated onto the kit — 48 pages on the shared primitives, the three auth surfaces on one `AuthShell`, the public portal page counted the same way
+- Every page migrated onto the kit — 51 pages on the shared primitives, the three auth surfaces on one `AuthShell`, the public portal page counted the same way
 - Order flow: delivery challans under rule 55, sales orders, purchase orders, and conversion into a real invoice or bill (`/challans`, `/sales-orders`, `/purchase-orders`)
 - Batch/expiry register with FEFO drawdown, serial-number register (one row per physical unit), godown register with transfers as lot splits (`/inventory/batches`, `/inventory/serials`, `/inventory/godowns`)
 - Customer portal: a statement of account that travels inside its own share link, read from the URL fragment with nothing stored server-side (`/portal`)
@@ -111,12 +111,13 @@ Round 2, R2-1 … R2-30:
 - Manufacturing: recipes and builds, the answer to *what the shelf cannot run today*, and — since R2-30 — the vendor-grouped purchase-order drafts that shortage turns into (`/inventory/recipes`)
 - Exports: the undertaking clock and the FEMA realisation window on every consignment, with the refund limitation beside them (`/gst/exports`)
 - The books vault: every device-side register — batches, serials, godowns, LUTs, workpapers, settings — backed up into one portable file and restored through the pages that own the data, each proved by reading back through its own loader (`/vault`)
+- Payroll: the salary register — six components per person, the month run, section 192 walked over the year, the dues a month owes and the rupee an hour costs (`/payroll`)
 
 Still to come:
 - Real GSP submission for e-invoice / e-way bill (blocked on paid GSP provider — see `6-Project-Memory.md`)
 - Email invoices directly from the app
 - Multi-user with roles (invite accountant/staff)
-- Payroll, e-commerce channel integrations, document attachments, an API — the rest of `7-Competitor-Comparison.md` §8, each needing a contract, a schema change or a platform decision
+- E-commerce channel integrations, document attachments, an API — the rest of `7-Competitor-Comparison.md` §8, each needing a contract, a schema change or a platform decision
 
 ### Enterprise / Future
 - Multi-company management
@@ -124,7 +125,7 @@ Still to come:
 - API access
 - Mobile app (iOS + Android)
 - Server-side AI (expense categorisation, GST error detection)
-- Payroll
+- Payroll *as a payment system* — payslips delivered, salary actually paid, the old-regime opt-out computed and Form 16 Part A pulled from TRACES. `/payroll` (R2-31) computes the register; the money still leaves at `/expenses`
 - Full accounting with a posted journal ledger
 
 ---
@@ -332,7 +333,7 @@ Still to come:
 
 ### 3.21 Compliance Calendar
 - Filing profile: monthly / QRMP / composition × TDS × employees × audit × professional tax
-- Generated FY of GST, TDS, income-tax and payroll due dates with countdowns
+- Generated FY of GST, TDS, income-tax and payroll due dates with countdowns — and since R2-31 the salary rows are *read from the payroll register* (`payrollEvents()`) rather than guessed from the filing profile, which retires the profile's monthly PF/PT tick-box for every month the books actually ran
 - Late-fee estimator: ₹50/day capped ₹5,000 (₹20 nil), 234E ₹200/day, 18% GST interest
 - `.ics` export and Google Calendar links; filing state per organisation in local storage
 
@@ -458,7 +459,7 @@ Still to come:
 ### 3.41 Projects & Time Tracking (R2-23)
 - `/projects` keeps a job, the hours spent on it, and the whole invoices and bills that belong to it — attached **by id**, never retyped — in `taxflow:projects:<orgId>`
 - **The register stores measurements, not money.** Revenue, spend, ITC, contribution and every unbilled month are re-read from the books on load, so amending or cancelling an invoice changes a project's figures by itself and nothing saved here can rot
-- **Hours are priced, not costed.** An hour carries the rate you would bill it at. There is no payroll, so contribution is billed revenue less attached spend and the hour value sits beside that number rather than inside it — a margin that charged you your own billing rate would be double counting
+- **Hours are priced, not costed.** An hour carries the rate you would bill it at, and contribution stays billed revenue less attached spend with the hour value beside that number rather than inside it — a margin that charged you your own billing rate would be double counting. Since R2-31 the app can compute what an hour *costs* (`costPerHour()` in `src/lib/payroll.ts`, printed on `/payroll`'s own Cost tab), but **this page has not taken the figure** — no import, no column: the hours logged on a job were not necessarily those people's, and a shop that wants them folded in says so when the attendance link exists
 - **Marking hours billed is a reference stamp.** It records the invoice you raised at `/invoices/new` (the only path that allocates a number and moves stock); it neither creates that invoice nor receives the money, which still arrives only through `/payments`
 - **The unbilled register is per project-month** and carries the invoice date rule 47 asks for — 30 days from the supply of a service, printed with its source and treated as *cited, not settled*. Internal work has no recipient, so no supply and no window to miss. A late row yields a date, a rule and a link to the GSTR-3B workpaper, never a tax figure
 - Hours with no rate anywhere yield **no rupee figure rather than a ₹0 one**, a document deleted from the books leaves its tag as an orphan that says so and contributes nothing, and an invoice number the books do not have is accepted but reported as unmatched
@@ -500,15 +501,29 @@ Still to come:
 
 ### 3.44 The Books Vault — Backup & Restore (R2-26)
 
-- `/vault` writes **every device-side register into one file the user owns** — `taxflow-vault-<org>-<date>.json` — because ADR-013's registers (batches, serials, godowns, LUTs, FX deals, job-work lots, cost centres, projects, recipes, exports, targets, splits, workpapers, the invoice template) live in one browser and nowhere else, and a cleared cache or a changed laptop loses them all. No cloud competitor offers the inverse: a portable file rather than an export inside someone's cloud
-- **A backup walks a named list, never a sweep.** `REGISTERS` in `src/lib/vault.ts` is thirty `RegisterSpec`s — twenty-five restorable, five evidence-only — and sweeping localStorage instead would catch the Supabase auth keys (`sb-*`) beside the books. Credentials are never in the file; that is the reason the walk exists
+- `/vault` writes **every device-side register into one file the user owns** — `taxflow-vault-<org>-<date>.json` — because ADR-013's registers (batches, serials, godowns, LUTs, FX deals, job-work lots, cost centres, projects, recipes, exports, salaries, targets, splits, workpapers, the invoice template) live in one browser and nowhere else, and a cleared cache or a changed laptop loses them all. No cloud competitor offers the inverse: a portable file rather than an export inside someone's cloud
+- **A backup walks a named list, never a sweep.** `REGISTERS` in `src/lib/vault.ts` is thirty-one `RegisterSpec`s — twenty-six restorable, five evidence-only — and sweeping localStorage instead would catch the Supabase auth keys (`sb-*`) beside the books. Credentials are never in the file; that is the reason the walk exists
 - **Restore goes through the owner and proves it.** Each register is written back through its own save path (never a direct `setItem`, which would bypass every parser and version check), then read back through its own loader, and the plan prints `from → seen` per register — rows a parser dropped are counted, not lost
 - **The plan comes before the write.** Nine states per register — new, replace, blank, same, foreign, damaged, absent, evidence, unknown — with `blank` selectable but never pre-ticked, because two empty registers and a wiped one look identical from outside and that is the user's call; the page demands explicit confirmation whenever the restore would replace or clear anything
 - **Damage is named, not guessed.** Every block carries its own FNV-1a checksum, so a truncated or hand-edited block is refused by name even when it still parses; an unreadable file yields one of five fault sentences, and an unreadable block is kept as text with a note rather than discarded
 - **Evidence is shown, never written.** The offline outbox, e-way bills, the Tally import log, palette recents and the compliance profile ride in the file for reference; putting a pending invoice back into the outbox would replay a sync and bill the same sale twice
 - Restore is **not a transaction** — registers apply one by one and the run stops nowhere — which is why the plan is the page's main product and why the vault's own log (`taxflow:vault:<orgId>`) records refused runs too. That log is deliberately not in the vault itself: a backup that recorded its backups would grow every time it was restored
-- Four tabs — **backup** (what would travel, days since the last one, the download), **restore** (drop/paste, the fault card, the plan table, the risk confirmation, the result flash), **registers** (the thirty specs as a reference), **not in this file** (the server-held documents, payments and evidence, and credentials) — plus a Settings card and a cross-note on `/offline`
+- Four tabs — **backup** (what would travel, days since the last one, the download), **restore** (drop/paste, the fault card, the plan table, the risk confirmation, the result flash), **registers** (the thirty-one specs as a reference), **not in this file** (the server-held documents, payments and evidence, and credentials) — plus a Settings card and a cross-note on `/offline`
 - v1 keeps no server copy: the file is the backup, and a scheduled cloud copy would need a server route the schema rule forbids; future-version files are refused with the version named, never partially read
+
+### 3.45 Payroll — the Salary Register (R2-31)
+
+- `/payroll` keeps **what a person is paid** and **what a month took**, in `taxflow:payroll:<orgId>` (ADR-013 — no employee table, no salary table, and a salary is the most private record a business keeps). Six monthly components per person (basic, dearness, HRA, conveyance, medical, special) each carrying its PF-carrying and ESI-carrying flag, plus an age band, a state, joining and leaving dates, hours a day and a professional-tax figure; four numbers per month (lost days, arrears, bonus, recovery). **Every other rupee on the page is computed on load** — gross, employer cost, net pay, tax, dues — so correcting a component re-prices the whole year rather than leaving a stale row behind
+- **Section 192 is a method, not a percentage.** `taxWalk()` runs April forward: elapsed months add their actual wages, later months are projected at the current month's rate, the estimate sheds the standard deduction (₹75,000, capped at the estimate) and the *year's* professional tax under section 16(iii), `taxBreakdown()` computes the year's tax on the residue (bands, the 87A rebate of up to ₹60,000 to ₹12,00,000 with its marginal relief, surcharge from ₹50 lakh measured at the foot of the band, 4% cess), and the balance divides over the on-roll months still to come. A June bonus therefore lifts July onward, and the March row absorbs whatever the estimate under-collected — twelve instalments that add up to the year's tax is a property of the walk, not of the data
+- **The rates know their own dates.** `PF_WAGE_CEILINGS` moves ₹15,000 → ₹25,000 from **17-09-2026** (S.O. 5109(E)) and a run picks the ceiling in force on *its own* salary month — the month CSV carries *PF ceiling used* as a column so a CA can see which figure this is. The employer's 12% splits 8.33% to EPS and 3.67% to EPF, with EDLI and administrative charges at 0.5% each. `ESI_BANDS` stayed at ₹21,000 (₹25,000 for a person with disability) at 0.75% employee and 3.25% employer, so the two statutes disagree on the same slip and the page prints that as a finding rather than harmonising it away
+- **Four refusals, each with its own sentence.** A financial year the tax tables do not hold returns no tax figure; an employee aged 60 or above is refused a figure rather than given the general schedule (the senior bands were in none of the sources fetched); a lost-day count above the month's own length is refused instead of clipped, because clipping produces a negative salary; and a person with months recorded is **not deletable** — they leave the rolls by date, since deleting them would leave their PF and challan computed against a structure that no longer exists
+- **Absence is a dash, zero is a claim.** `pt: number | null` — unset prints *not recorded*, a real `0` prints zero. Professional tax is a state subject and the fetched state tables contradict one another, so there is **no national PT table**: the dues card prints *Due on the state's own date*, section 16(iii)'s ₹2,500 annual cap is the one national number that applies, and the calendar files that row in a *State dates* rail rather than inventing a 21st of the month
+- **The dues are read, not typed.** `statutoryDues()` names the heads a month owes — PF by ECR, ESI to the ESIC, tax on salary under challan 281 with a link to `/tds` — against deposit dates the 15th (PF/ESI) and the 7th (salary TDS, March until 30 April), with Form 16 by 15 June; `missingHeads()` says which heads are absent and why. Nothing here pays anything: the money leaves at `/expenses`, the challans are paid on the EPFO, ESIC and income-tax portals
+- **The compliance calendar reads these books.** `payrollEvents()` emits an ECR / ESIC / salary-TDS row for each month actually run, one ESI return per contribution period touched and one Form 16 row for the year, and `/gst/calendar` **drops its own monthly PF/PT guess** for any month the register files — matching on the row id, stepping back a month because a guessed row names the deposit month and the register names the salary month
+- **An hour finally has a cost.** `costPerHour()` divides a month's *employer* cost by that person's paid days and their own *hours a day* (a per-employee field, default 8, which the card says is only used for this division); `blendedHourCost()` weights the month instead of averaging averages. The figure is printed on this register's own **Cost** tab, per person and blended. `/projects` has **not** taken it — no import, no column, and contribution stays billed revenue less attached spend, because the hours logged on a job were not necessarily these people's. ADR-030's *priced, not costed* sentence therefore still holds until a shop links attendance to a job
+- **Unsettled questions stay questions.** Whether the *pensionable* salary for EPS moved with the September ceiling is settled by no document fetched, so `settings.eps_pension_ceiling` is the owner's call (₹15,000 by default) and every slip prints the figure it used; the four labour codes' 50% wage floor (in force 21-11-2025) is a flag with its citation, not an add-back to the PF base
+- Five tabs — **People** (the structure, on the rolls, off the rolls), **Month** (one run, one slip per person, the year-walk unfolded per row, 27-column CSV), **Dues** (what the month owes, the absent heads, 7-column CSV), **Annual** (the sheet shaped like Form 16 Part B and labelled as not one, its own 19-column CSV), **Cost** (the rupee an hour costs, per person and blended) — three CSVs, four ⌘K actions, and the register is `/vault`'s thirty-first spec
+- v1 computes the **default regime only** (section 115BAC: HRA not exempt, investments no shelter), and says so; no NPS, LTA, perquisite valuation or 80CCD(2), no overtime, no gratuity or leave-encashment provision, no attendance import, no per-day or contract labour, no accrual or work-in-progress posting, no Form 16 Part A (it comes out of TRACES), no challan numbers — which is why `/tds` cannot see salary TDS and the dues card links there instead of claiming the statement is complete
 
 ---
 
@@ -548,8 +563,8 @@ Still to come:
 - Direct GST portal filing (requires GSP authorization) — the app prepares and exports workpapers only
 - Live IRP/GSP submission (e-invoice and e-way bill ship as build → download → paste-back)
 - Bank feeds / account aggregation — statement *import* shipped in R2-10 (`/bank` reads any pasted or uploaded layout), but there is still no live connection to a bank
-- Payroll
-- The *cost* of an hour — `/projects` (R2-23) prices labour at the rate you would bill it and never at what it took to do the work, because costing needs payroll and this register has no salary data to read
+- Payroll *as a payment system* — `/payroll` (R2-31) computes the salary register in the browser and files nothing: no money moves, no challan is numbered, no payslip is delivered, Form 16 Part A stays inside TRACES, and the old regime is not computed. The rupees still leave at `/expenses`
+- Putting a costed hour inside a project's contribution — `/projects` (R2-23) prices labour at the rate you would bill it, and since R2-31 the salary register can compute what the hour actually cost (`costPerHour()`, printed on `/payroll`'s Cost tab and taken by no other page). The two are kept apart on purpose: the hours logged on a job were not necessarily the registered employees', and folding a reading into a margin would be a costing claim this app cannot prove
 - TDS / TCS return filing — `/tds` builds the withholding workpaper and deposit calendar, but no Form 26Q or 24Q is filed, and TCS under 206C is not covered
 - Revaluing a statutory invoice in a foreign currency — `/fx` (R2-19) keeps a dated rate ledger *beside* the rupee books; the invoice a return reads stays in rupees
 - The customs and bank side of an export — `/gst/exports` (R2-25) tracks the shipping bill, the e-BRC/FIRA and the realisation window as typed evidence; nothing is fetched from ICEGATE or an AD bank, and no condonation representation is drafted for a window that has closed

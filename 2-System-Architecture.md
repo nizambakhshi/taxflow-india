@@ -61,7 +61,7 @@ The rule that follows from this: **a new feature rides on existing tables plus l
 │                                                              │
 │  Pure domain libraries (src/lib/*)  ← all calculation lives  │
 │    gst-engine  gstr2b  gstr9  einvoice  registers  here      │
-│    ledger  party-ledger  targets  reorder  compliance        │
+│    ledger  party-ledger  targets  reorder  payroll           │
 │    ask  bill-text  ocr  barcode  payments  words  format     │
 │                                                              │
 │  localStorage  taxflow:<feature>:<orgId>                     │
@@ -128,6 +128,7 @@ taxflow-india/
 │   │       ├── fx/                 foreign-currency deals and the rate ledger
 │   │       ├── cost-centres/       document splits held as shares
 │   │       ├── projects/           jobs, hours, unbilled register, attached documents
+│   │       ├── payroll/            salary register: people, month run, dues, annual sheet, hour cost
 │   │       ├── tally/              Tally import plan and voucher export
 │   │       ├── tds/                withholding workpaper and deposit calendar
 │   │       ├── offline/            outbox status and replay
@@ -159,8 +160,9 @@ taxflow-india/
 │       ├── creditnote.ts            one write path for both note registers (page forms + Tally bridge)
 │       ├── bom.ts                  recipes, builds, dated shop rates, full-cost legs, where-used explosion, FEFO lot issuance, the shortage fold + vendor-grouped shopping plan
 │       ├── exports.ts              zero-rating routes, dated FEMA bands, realisation join to /fx
+│       ├── payroll.ts              the salary register: dated PF/ESI bands, the section 192 year-walk, dues and hour cost — stores structure, computes every rupee
 │       ├── invoice-template.ts     the invoice template id + its loader (shared by the vault spec)
-│       ├── vault.ts                the books vault: 30 register specs, checksums, plan-then-restore
+│       ├── vault.ts                the books vault: 31 register specs (26 restorable), checksums, plan-then-restore
 │       ├── portal.ts               the statement encoded inside its own share link
 │       └── gsp/                    provider adapter: types, index, mock
 ├── public/
@@ -633,11 +635,12 @@ Features that need somewhere to put information the schema does not have use one
 | `taxflow:tally:<orgId>` | Tally bridge | **Only the log** of an import — which file, when, how many of each kind. The parsed dump, the plan and the exported XML live in memory and on disk, never here (ADR-029) |
 | `taxflow:bom:<orgId>` | Recipes & builds | Recipes (component **quantities**, output per run, waste) and builds (what the shop actually **drew**, and — since R2-29 — **which lot** each draw came off, as `{batch_id, batch_no, qty, expiry_date}` picks on the build line, plus the `output_batch_id` of the lot the finished units landed in), plus the per-FY `JOB-<FY>-NNNN` high-water mark — **never a rupee**: material value is rolled up from `products.purchase_price` on every load, the same field `/accounting` values stock at, and the lot quantities are a *copy of a decision*, re-checked against `taxflow:batches:` + `taxflow:batchmoves:` before a run is written, never trusted as the lot's balance (ADR-031). **R2-30 stores nothing here**: the shopping plan is a *reading* — `mergedShortages()` over the plans, `shoppingPlan()` joining live `vendors` / `purchase_bills` / `purchase_bill_items` on demand — and the orders it raises are rows of the order-flow register below, never a field of this one |
 | `taxflow:exports:<orgId>` | Exports | Undertakings, the shipping-bill / advance / refund paperwork a consignment has to prove, and the realisation credits typed here — **never the invoice value or the IGST paid**, which are re-read from `invoices`. Where `/fx` holds a deal for the same invoice number, its receipts are the counted figure and a credit typed here is printed as *not counted* |
+| `taxflow:payroll:<orgId>` | Payroll | Each person's **structure** — six monthly components with their PF/ESI flags, age band, state, joining and leaving dates, hours a day, a professional-tax figure — plus four exceptions per month (lost days, arrears, bonus, recovery). **No rupee is stored at all**: gross, both statutory legs, net pay, the employer's cost and the salary tax are recomputed on every load, the tax by walking the financial year (section 192) rather than by deducting a monthly percentage, and the rates are dated bands that read the ceiling in force on the run's own month (ADR-034) |
 | `taxflow:palette-recents:<orgId>` | ⌘K | Recently opened records |
 
 Rules that make this safe:
 - The key is namespaced by `orgId`, so a shared browser cannot leak one business's plan into another.
-- Money records are never stored here. If a number belongs on a return, it comes from the database; local storage holds opinions, settings and declarations. Three registers are held to a stricter reading of that rule because their whole subject is money: a cost centre stores a **share**, a project stores **measurements** and a recipe stores **quantities** — and all three re-read their rupees from the documents on load — a cost centre and a project through one shared reader (`costcentres.bookDocs`), so a cancelled row or a signed credit note cannot have two opinions about what they mean, and a recipe from `products.purchase_price`, so a price corrected on the master re-values every recipe that uses it. Nothing saved here can rot.
+- Money records are never stored here. If a number belongs on a return, it comes from the database; local storage holds opinions, settings and declarations. Four registers are held to a stricter reading of that rule because their whole subject is money: a cost centre stores a **share**, a project stores **measurements**, a recipe stores **quantities and minutes** and a salary register stores **structure and exceptions** — the first three re-read their rupees from the documents on load (a cost centre and a project through one shared reader, `costcentres.bookDocs`, so a cancelled row or a signed credit note cannot have two opinions about what they mean; a recipe from `products.purchase_price`, so a price corrected on the master re-values every recipe that uses it) and the fourth recomputes every figure on a slip from its own components, the dated rate bands and a walk of the financial year. Nothing saved here can rot.
 - Every writer keeps a `version` field and a `updatedAt`, so a future shape change can migrate instead of crash.
 - Clearing browser storage is a real user risk, so anything a user would grieve losing is either reconstructible from documents (registers, ledger, statements) or surfaced as an export they can keep (CSV, `.ics`, JSON).
 
@@ -672,7 +675,7 @@ Because replay uses the production write path, an offline invoice cannot diverge
 |-------|------------------------|--------------------------|
 | `/gst/reconciliation` | `gstr2b.ts` | Parse the portal's 2B statement, classify each credit |
 | `/gst/einvoice` | `einvoice.ts`, `gsp/*` | NIC v1.10 JSON shape, validation, GSP payload |
-| `/gst/calendar` | `compliance.ts` | Filing profile → FY of due dates → late-fee estimate |
+| `/gst/calendar` | `compliance.ts`, `jobwork.ts`, `exports.ts`, `payroll.ts` | Filing profile → FY of due dates → late-fee estimate; the rows a register owns are **read from that register** — job work, exports, and since R2-31 the salary dues (`payrollEvents()`), whose arrival retires the profile's guessed monthly PF/PT tick-box for every month the books ran |
 | `/gst/gstr9` | `gstr9.ts` | Annual tables from documents + declared 3B, 180-day watch, 9C recon |
 | `/gst/gstr4` | `gstr4.ts`, `gstr9.ts` | Quarterly CMP-08 grids from documents, composition rate ceilings |
 | `/reports/registers` | `registers.ts` | Party-wise, HSN/SAC, B2B, state-wise, e-way bill registers |
@@ -694,9 +697,10 @@ Because replay uses the production write path, an offline invoice cannot diverge
 | `/gst/job-work` | `jobwork.ts` | Section 143 return clock and the four ITC-04 grids |
 | `/gst/exports` | `exports.ts`, `fx.ts`, `recurring.ts` (`addMonthsISO`, `daysBetween`) | Two clocks per consignment: the undertaking that made it zero-rated and the dated FEMA window the proceeds have to land inside. Band tables carry their instrument and their disagreement; the calendar reads the same `watchRows()` |
 | `/cost-centres` | `costcentres.ts` | Stores a **share**; rupees re-read from documents through `bookDocs` |
-| `/projects` | `projects.ts`, `costcentres.ts` (`bookDocs`) | Stores hours and document ids; labour priced not costed, rule 47 window cited not settled |
+| `/projects` | `projects.ts`, `costcentres.ts` (`bookDocs`) | Stores hours and document ids; labour priced not costed — `payroll.ts` has offered `costPerHour()` since R2-31 and this page has **not** taken it: the hour's cost is printed on `/payroll`'s own Cost tab, and the project register still carries only the rate you would bill, so contribution stays billed revenue less attached spend (rule 47 window cited not settled) |
+| `/payroll` | `payroll.ts` | Stores structure and exceptions and **no rupee**: components → gross → PF/ESI → net → tax are recomputed per load, the tax by walking the financial year under section 192 (elapsed months actual, later months projected, the balance spread over the months left), the rates from dated bands that read the ceiling in force on the run's own month; dues, ESI returns and Form 16 emerge as calendar events, and the month's employer cost divides into the hour cost this register prints on its own Cost tab — offered to `/projects` and deliberately not taken there |
 | `/tally` | `tally.ts`, `create-invoice.ts`, `create-bill.ts`, `creditnote.ts` | Parse → plan with blocked rows and reasons → replay through the normal write path; note vouchers plan against the document they name — register or same file, never invented — and write through the same creators the note pages use; export builds the XML envelope |
-| `/vault` | `vault.ts` (every register's `save*`/`load*`) | Thirty named specs into one portable file; restore writes through the owner and reads back through its own loader, `from → seen` per register |
+| `/vault` | `vault.ts` (every register's `save*`/`load*`) | Thirty-one named specs — twenty-six restorable, five evidence-only — into one portable file; restore writes through the owner and reads back through its own loader, `from → seen` per register |
 | `/portal` (public) | `portal.ts` | The whole statement encoded in the URL fragment — nothing stored server-side |
 | `/pos` | `barcode.ts`, `create-invoice.ts` | GS1 check digits, EAN/UPC variants, cash sale write |
 | `/offline` | `outbox.ts`, `create-invoice.ts` | Queue, replay, sequence numbering |
@@ -718,4 +722,6 @@ node --experimental-strip-types --no-warnings --loader /tmp/ts-loader.mjs /tmp/<
 ```
 
 Then in the browser at `http://localhost:3000`: load the page, exercise the golden path with real data, check the console for errors, and check the layout at both a desktop width and a phone width. Pages that prerender and use `useSearchParams` need the `XPageInner` + `<Suspense>` split.
+
+The phone check is **ancestor-aware**: an element whose `scrollWidth` exceeds its `clientWidth` is only a problem if no ancestor clips or scrolls horizontally (`overflow: hidden` on a header swallows its own decorative `::after`; an `overflow-x: auto` tab bar is allowed to scroll). Measure the *document* — `docScrollWidth == clientWidth` at 355px — and pin a same-origin iframe at the target width to read it, rather than blaming the widest child.
 

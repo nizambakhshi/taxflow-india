@@ -461,7 +461,7 @@ function PayrollPageInner() {
         .pr-year-cell span { font-size: 11px; color: var(--muted); line-height: 1.4; }
         .pr-year-cell em { font-size: 12.5px; font-style: normal; font-weight: 700; color: var(--brand); font-variant-numeric: tabular-nums; }
 
-        .pr-modal { position: fixed; inset: 0; background: rgba(15, 25, 45, .5); display: grid; place-items: center;
+        .pr-modal { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); display: grid; place-items: center;
           padding: 18px; z-index: 60; overflow-y: auto; }
         .pr-modal-card { background: var(--surface); border-radius: 16px; border: 1px solid var(--line);
           box-shadow: var(--shadow-lg); width: min(760px, 100%); max-height: min(88vh, 900px); overflow-y: auto; }
@@ -727,7 +727,7 @@ function EmployeeEditor({ draft, month, existing, onSave, onClose }: {
               <label htmlFor="pr-hours">Hours a day</label>
               <input id="pr-hours" type="number" min={0} step={0.5} value={form.hours_per_day}
                 onChange={e => set('hours_per_day', Number(e.target.value) || 0)} />
-              <span>Only used to divide a day of employer cost into an hour, which is what the cost tab and the projects register need.</span>
+              <span>Only used to divide a day of employer cost into an hour, which is what this register’s Cost tab does. `/projects` still prices an hour at what you would bill it — folding a costed hour into a job is a separate decision, not an automatic one.</span>
             </div>
             <div className="pr-field">
               <label htmlFor="pr-active">On the rolls</label>
