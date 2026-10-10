@@ -363,7 +363,7 @@ Use `--loader`, not `--import` — `--import` does not register the ESM resolve 
 
 Assertions are written against the domain, not the implementation: FY-weighted splits must sum to exactly the annual plan, a credit note must reduce the month it is dated in, `csvFromRows` must quote a field containing a comma, a PF ceiling must change on the 17th of September and not the day before.
 
-**Suites are per-round throwaways in `/tmp` and are never committed** (`/tmp/payroll-test.mjs` is 435 assertions over the salary register, its R2-32 attendance half `/tmp/attendance-test.mjs` is 212, the R2-33 document half `/tmp/payslip-test.mjs` is 394, and the R2-30 shopping suite is 95). `/tmp` gets wiped mid-project — it happened twice, and the second time took seventeen suites with it — so a round records **its own** assertion count and says plainly that the older ones were not re-run, rather than quoting a running total it cannot prove. A suite is cheap to rewrite from the library's own exports, and the claim worth keeping in the docs is *which rule each assertion polices*, not the number.
+**Suites are per-round throwaways in `/tmp` and are never committed** (`/tmp/payroll-test.mjs` is 435 assertions over the salary register, its R2-32 attendance half `/tmp/attendance-test.mjs` is 212, the R2-33 document half `/tmp/payslip-test.mjs` is 394, its R2-34 kept-page half `/tmp/daybook-test.mjs` is 247, and the R2-30 shopping suite is 95). `/tmp` gets wiped mid-project — it happened twice, and the second time took seventeen suites with it — so a round records **its own** assertion count and says plainly that the older ones were not re-run, rather than quoting a running total it cannot prove. A suite is cheap to rewrite from the library's own exports, and the claim worth keeping in the docs is *which rule each assertion polices*, not the number.
 
 ---
 
@@ -464,7 +464,7 @@ Consequences to respect when the next register appears:
 
 ## Rule 32 — A Pasted Sheet Is Planned, Approved and Thrown Away
 
-A shop does not keep payroll; it keeps an attendance sheet. R2-32 turned that paste into lost days on `/payroll`, and the shape it took is the pattern for every sheet this app will be asked to read afterwards.
+A shop does not keep payroll; it keeps an attendance sheet. R2-32 turned that paste into lost days on `/payroll`, and the shape it took is the pattern for every sheet this app will be asked to read afterwards. R2-34 then gave the days that pattern reads somewhere to live — a kept **day book** (Rule 34) — without changing anything below: the month run still reads a paste for one figure and stores no sheet.
 
 The engine splits into two functions with a click between them. `planAttendance(store, month, text)` is pure: it returns the delimiter it settled on, every column with its role, the **basis** with the sentence that justifies it, the matches, the refusals, the findings, and the sheet-level blockers. `applyAttendance(orgId, month, plan)` is **the only door**, and it re-checks the plan's own month against the screen's before writing a row — a preview read against September must not land on the October run. Nothing is written while a blocker stands, "Do not apply" has to write literally nothing, and the page must be able to show both.
 
@@ -473,7 +473,7 @@ Four refusals are non-negotiable, and each exists because the alternative was a 
 - **A number with no direction is refused, never defaulted.** `LOP_HEADERS` and `PRESENT_HEADERS` decide which way a column points, `AMBIGUOUS_HEADERS` (`days`, `total`, `count`) name a number without pointing it anywhere, and `SERIAL_HEADERS` are excluded from identity on purpose — reading `Sl. No` as a payroll code would match strangers. A lone column of numbers produces a blocker instead of a payroll.
 - **The sheet's own basis outranks the shop's setting.** A `24/26` cell states its month length, so `AttendanceBasis.kind` becomes `sheet` and the setting is not consulted; when a row carries *both* a present and a lost column they must agree to the day, and when they do not, the row is refused — `“the register will not choose between two numbers that contradict each other”`. Blank means *the sheet does not say*, which is not zero: a person on the rolls the sheet never mentions keeps the lost days they had and is printed as a finding naming them.
 - **Nothing is written that the register's own form would refuse.** Every candidate row goes back through `validateInput()` *inside* the write, because the People tab may have moved a joining date between the preview and the click. A row that no longer passes is skipped and named in the receipt rather than force-fitted.
-- **A paste is read, not kept.** The bytes that reach `taxflow:payroll:<orgId>` are one `lop_days` number and a `[attendance <month>]` sentence stamped into that month row's note — re-importing a month **replaces** that segment (`stampAttendanceNote`) instead of stacking a second answer to the same month, and text the owner typed after the em dash survives. No new key, no new register, no version bump, and the vault spec's `what` line says the sheet itself is never kept.
+- **A paste is read, not kept.** The bytes that reach `taxflow:payroll:<orgId>` are one `lop_days` number and a `[attendance <month>]` sentence stamped into that month row's note — re-importing a month **replaces** that segment (`stampAttendanceNote`) instead of stacking a second answer to the same month, and text the owner typed after the em dash survives. No new key, no new register, no version bump, and the vault spec's `what` line says the sheet itself is never kept. Since R2-34 the *days* a date-ruled page names can be kept — that is the day book, and it is a different write through its own door (Rule 34); the paste's bytes still never reach storage.
 
 Two conventions come with it. **Reuse the reader you have**: `planAttendance` calls `detectDelimiter()` and `splitRow()` from `bank-statement.ts` rather than writing a third parser for a comma-or-tab paste — Rule 16's economy applied inside `src/lib`. And **print the sheet you want back**: `attendanceTemplate(store, month, grid)` rules the month's roster with the register's *own* codes, so a paste can fail on a missing line but not on a spelling.
 
@@ -502,6 +502,20 @@ Four conventions travel with any sheet this app prints:
 Print and PDF must be **the same document**: the capture region is padded so its padding becomes the A4 margin (`@page { size: A4 portrait; margin: 15mm }`, everything else hidden), and a pack goes through `downloadElementsAsPdf()` — one file, a page per region, a missing region skipped rather than the whole pack failing.
 
 **Rule 26 caught what the suite could not.** The 394 assertions could not see the page-level branch that made a refused month print *"net payable ₹0.00"* with Print enabled, because the header builds its subtitle out of document fields. When a page has a *no-figures* branch, drive that branch in the browser.
+
+---
+
+## Rule 34 — A Kept Record Is Evidence; One Deliberate Pull Moves It
+
+R2-34's day book (`src/lib/attendance.ts`, `/payroll`'s *Day book* tab) is the app's first **kept** record that is neither a document nor a money register: one attendance mark per person per day — `{employee_id, date, mark, source, note, written_at}` — stored as evidence and holding no rupee. It is the pattern for any future *"the shop wrote it down"* register.
+
+Five conventions come with it:
+
+- **The doctrine is data, not decoration.** *Unwritten days are not absent days* is `DayBook.doctrine`, printed on the page and enforced everywhere the book touches money: a blank day is counted nowhere, a person the book never wrote is `untouched` by the pull **rather than zeroed**, and an empty book **refuses** to pull at all — *"an empty book is not a month of absents — nothing is pulled, and nothing is deducted."*
+- **A refusal is data too — carry the `kind`, never parse the sentence.** The sheet reader's refusals cross into the marks bridge by their machine-readable `kind` (`identity` / `scale` / `mark` / `blank` / `figure`): every kind stops the whole page, because a book with a silent gap in it looks complete — the one exception is `blank`, which is the sheet agreeing with the book's own doctrine, so it is noted and skipped as *not a refusal either*. A bridge that matched on the refusal's wording would have refused the register's own ruled template the day its trailing note changed.
+- **One door for the write, one click for the money.** `markDay()` refuses rather than guesses (a day that has not happened, before joining / after leaving, an inactive person, a mark the register cannot read) and an empty mark is a legal **clear**. `pullMonthFromBook()` is the only click on the tab that can change a salary figure, and it re-runs the month form's own `validateInput()` — a kept record can never smuggle past the month's rules.
+- **The kept page is erasable, labellable and printable.** `clearMonthMarks()` erases one person-month and touches no month row; provenance shows on the grid (a mark read from a pasted sheet is outlined in dots); `dayBookCsv()` downloads the ruled page with its findings and its closing sentence, and `attendanceTemplate(…, grid = true)` rules a blank page that pastes back a year later.
+- **Boundary, printed: it is a book, not a clock.** No device or biometric feed, no shift timings, no overtime priced from the marks, no per-day wage ledger, nothing filed — the marks are what the shop wrote, and the pull is the only thing they can move.
 
 ---
 
