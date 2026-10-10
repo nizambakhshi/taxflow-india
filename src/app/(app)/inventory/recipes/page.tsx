@@ -29,6 +29,16 @@
 // whose shelf moves but whose lots cannot cover it names no lot and says so, because a lot drawn
 // below zero is a invented history. And a cancelled run refuses to reverse when units have already
 // been sold out of the lot it made — that lot is somebody else's evidence now.
+//
+// And since R2-30 the materials board can hand its shortage to the register that buys: "Build the
+// shopping list" reads the live purchase bills and the vendor cards behind them, groups what the
+// shelf cannot cover under the vendor that last supplied each part at the rate that bill paid, and
+// "Raise N order drafts" writes them through `orderflow`'s own high-water numbering. The page takes
+// no shortcut through either: `bom.ts` folds the shortage and refuses what cannot be routed (a part
+// no bill supplies, a supplier who has left the master, a vendor card with no state), and this screen
+// hands each grouped order to the register as a *draft*, where prices and dates stay editable and a
+// wrong one can be cancelled. An order with an unpriced line prints no value — here, on the draft and
+// in the CSV alike — because a sum of the priced lines would read as *the* figure.
 
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
@@ -40,18 +50,22 @@ import { toCsv } from '@/lib/registers'
 import { download } from '@/lib/party-ledger'
 import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
 import { fyLabel, fyStartYear } from '@/lib/targets'
-import { loadStore, type FlowDoc } from '@/lib/orderflow'
+import { getFinancialYear } from '@/lib/gst-engine'
+import { loadStore, saveStore, newDoc, raiseDrafts, validateDoc, type FlowDoc } from '@/lib/orderflow'
 import {
   BUILD_CSV_HEADERS, BUILD_STATUS_META, MAX_MINUTES_PER_RUN, MAX_UNITS_PER_BUILD, PLAN_CSV_HEADERS,
-  RECIPE_CSV_HEADERS, RECIPE_STATUSES, RECIPE_STATUS_META, allocateLots, allocateRef, buildCsvRows, buildViews,
+  RECIPE_CSV_HEADERS, RECIPE_STATUSES, RECIPE_STATUS_META, SHOPPING_CSV_HEADERS,
+  allocateLots, allocateRef, buildCsvRows, buildViews,
   cancelBuild, consumedOf, demandAgainstRecipes, drawnElsewhereFrom, findCycle, fmtMinutes, indexProducts, loadBom,
-  lotWritesFor, movementsFor, newBuild, newComponent, newRate, newRecipe, peekRef, perUnitNeed, planBuild, planCsvRows,
+  lotWritesFor, mergedShortages, movementsFor, newBuild, newComponent, newRate, newRecipe, orderNote, peekRef,
+  perUnitNeed, planBuild, planCsvRows,
   producedLot, rateFor, recipeCsvRows, recipeView, recipeViews, removeBuild, removeRate, removeRecipe, requirement,
-  reverseLotWritesFor, reverseMovementsFor, saveBom, sortBuilds, sortRecipeViews, stampCost, summarise, upsertBuild,
+  reverseLotWritesFor, reverseMovementsFor, saveBom, shoppingCsvRows, shoppingPlan, sortBuilds, sortRecipeViews,
+  stampCost, summarise, upsertBuild,
   upsertRate, upsertRecipe, validateBuild, validateLotIssues, validateRate, validateRecipe, whereUsed,
   type BomProduct, type BomStore, type Build, type BuildLine, type BuildView, type CostRate,
   type LotPick, type LotRow, type ProducedLot,
-  type PlanRow, type Recipe, type RecipeView, type StockWrite,
+  type PlanRow, type Recipe, type RecipeView, type StockWrite, type SupplyReading, type SupplierParty,
 } from '@/lib/bom'
 import {
   appendMoves, batchViews, loadBatches, loadMoves, newBatch, newId, newMove, upsertBatch,
@@ -149,6 +163,17 @@ function RecipesPageInner() {
   // remaining quantity, but every row it writes goes through `batches.ts`'s own append/upsert.
   const [batches, setBatches] = useState<Batch[]>([])
   const [lotMoves, setLotMoves] = useState<BatchMove[]>([])
+
+  // The shopping list's own readings, pulled lazily the first time the board is asked to turn a
+  // shortage into paper: who last supplied each short part and at what rate (`supply`, off the bills
+  // this register already trusts), and which of those suppliers are still live vendors it can write
+  // to (`suppliers`, off the vendor master). `supplyState` is 'idle' until that read runs, so the
+  // board never blocks on two queries the shop may not need.
+  const [supply, setSupply] = useState<SupplyReading[]>([])
+  const [suppliers, setSuppliers] = useState<SupplierParty[]>([])
+  const [supplyState, setSupplyState] = useState<'idle' | 'loading' | 'ready'>('idle')
+  // Drafts this screen raised, kept only to link the shop onward to the order register.
+  const [raised, setRaised] = useState<{ number: string; id: string; vendor: string }[]>([])
 
   const [tab, setTab] = useState<Tab>('recipes')
   const [search, setSearch] = useSearchDeepLink()
@@ -315,19 +340,118 @@ function RecipesPageInner() {
     ? views.filter(v => v.recipe.status === 'active')
     : views.filter(v => v.recipe.id === planRecipe)), [views, planRecipe])
 
-  // Merged shortage across the recipes on the board, so "All recipes" reads as one shelf.
-  const boardShort = useMemo(() => {
-    const map = new Map<string, { id: string; name: string; unit: string; short: number; for: string[] }>()
-    for (const v of planViews) {
-      for (const s of v.plan.shortages) {
-        const prev = map.get(s.product_id) || { id: s.product_id, name: s.name, unit: s.unit, short: 0, for: [] }
-        prev.short += s.short
-        prev.for.push(v.recipe.name || 'Untitled')
-        map.set(s.product_id, prev)
+  // Merged shortage across the recipes on the board, so "All recipes" reads as one shelf. The fold
+  // is the engine's own (`mergedShortages`) — the same list the stat card counts and the shopping
+  // orders are raised from, so the board, the card and the paper can never disagree about what is short.
+  const boardShort = useMemo(() => mergedShortages(planViews), [planViews])
+
+  // The shopping plan reads the live recipes only — a draft recipe has no orders waiting on it — and
+  // only once the bills and vendors have been read. Before that it is null and the board just lists.
+  const shopping = useMemo(
+    () => (supplyState === 'ready'
+      ? shoppingPlan(views.filter(v => v.recipe.status === 'active'), products, supply, suppliers)
+      : null),
+    [supplyState, views, products, supply, suppliers],
+  )
+
+  // The first read of the bills and vendors, done only when the shop asks to turn a shortage into an
+  // order. Short parts scope the item query so the board reads only what a shortage could name.
+  async function ensureSupply() {
+    if (supplyState !== 'idle' || !orgId) return
+    setSupplyState('loading')
+    const shortIds = [...new Set(planViews.flatMap(v => v.plan.shortages.map(s => s.product_id)))]
+    try {
+      const [vend, bills] = await Promise.all([
+        supabase.from('vendors')
+          .select('id, name, gstin, state_code, address_line1, city, state')
+          .eq('organization_id', orgId).eq('is_active', true).order('name'),
+        supabase.from('purchase_bills')
+          .select('id, bill_date, vendor_id, vendor_name')
+          .eq('organization_id', orgId).neq('status', 'cancelled'),
+      ])
+      const parties: SupplierParty[] = ((vend.data || []) as Record<string, unknown>[]).map(v => ({
+        vendor_id: String(v.id),
+        vendor_name: String(v.name ?? ''),
+        gstin: (v.gstin as string) || undefined,
+        state_code: (v.state_code as string) || undefined,
+        address: [v.address_line1, v.city, v.state].filter(Boolean).join(', ') || undefined,
+      }))
+      const billRows = (bills.data || []) as { id: string; bill_date: string | null; vendor_id: string | null; vendor_name: string | null }[]
+      const billById = new Map(billRows.map(b => [b.id, b]))
+      const readings: SupplyReading[] = []
+      if (shortIds.length > 0) {
+        // Items come in id batches — a year of bills is more than one `in` filter can carry — and each
+        // batch is narrowed to the short parts, so a big book of bills never floods the board.
+        const shortSet = new Set(shortIds)
+        for (let i = 0; i < billRows.length; i += 500) {
+          const batch = billRows.slice(i, i + 500).map(b => b.id)
+          const { data: items } = await supabase.from('purchase_bill_items')
+            .select('bill_id, product_id, rate').in('bill_id', batch).in('product_id', shortIds)
+          for (const it of (items || []) as { bill_id: string; product_id: string | null; rate: number | null }[]) {
+            if (!it.product_id || !shortSet.has(it.product_id)) continue
+            const b = billById.get(it.bill_id)
+            readings.push({
+              product_id: it.product_id,
+              vendor_id: b?.vendor_id ?? null,
+              vendor_name: b?.vendor_name ?? null,
+              rate: it.rate ?? null,
+              date: b?.bill_date ?? null,
+            })
+          }
+        }
       }
+      setSuppliers(parties)
+      setSupply(readings)
+      setSupplyState('ready')
+    } catch {
+      setSupplyState('idle')
+      warn('Could not read your bills and vendors, so the shopping list cannot be grouped yet.')
     }
-    return [...map.values()].sort((a, b) => b.short - a.short || a.name.localeCompare(b.name))
-  }, [planViews])
+  }
+
+  // Turn each grouped order into a draft the register already knows how to number, then hand the whole
+  // board's worth of drafts to `raiseDrafts` in one write. A draft that the register would refuse (no
+  // place of supply, no usable line) is left out and named, never forced through.
+  function raiseShopping() {
+    if (!shopping || !orgId) return
+    const fy = getFinancialYear(new Date(`${day}T00:00:00`))
+    const drafts: FlowDoc[] = []
+    const skipped: string[] = []
+    for (const o of shopping.orders) {
+      const candidate: FlowDoc = {
+        ...newDoc('purchase_order', '', day),
+        party_id: o.vendor_id || null,
+        party_name: o.vendor_name,
+        party_gstin: o.gstin,
+        party_address: o.address,
+        party_state: o.state_code,
+        place_of_supply: o.state_code,
+        lines: o.lines.map(l => ({
+          product_id: l.product_id, item_name: l.name, hsn_sac: l.hsn_sac,
+          quantity: l.qty, unit: l.unit, rate: l.rate ?? 0,
+          discount_percent: 0, gst_rate: 18, cess_rate: 0,
+        })),
+        notes: orderNote(o, day),
+      }
+      const problems = validateDoc(candidate)
+      if (problems.length) { skipped.push(`${o.vendor_name} — ${problems[0]}`); continue }
+      drafts.push(candidate)
+    }
+    if (drafts.length === 0) {
+      warn(skipped.length ? `None of the drafts pass the register: ${skipped.join(' · ')}` : 'There is nothing grouped to order yet.')
+      return
+    }
+    const next = raiseDrafts('purchase_order', loadStore('purchase_order', orgId), fy, drafts)
+    saveStore('purchase_order', orgId, next.store)
+    setRaised(next.docs.map(d => ({ number: d.number, id: d.id, vendor: d.party_name })))
+    flash(`${next.docs.length} purchase order${next.docs.length === 1 ? '' : 's'} drafted${skipped.length ? ` — ${skipped.length} skipped` : ''}. Open one on the register to confirm it.`)
+  }
+
+  function exportShopping() {
+    if (!shopping) return
+    download(`taxflow-shopping-list-${day}.csv`, toCsv(SHOPPING_CSV_HEADERS, shoppingCsvRows(shopping)))
+  }
+
 
   function flash(message: string) { setNotice({ msg: message, bad: false }) }
   function warn(message: string) { setNotice({ msg: message, bad: true }) }
@@ -1408,14 +1532,14 @@ function RecipesPageInner() {
               ) : (
                 <div className="rc-grid">
                   {boardShort.map(s => (
-                    <div key={s.id} className="rc-short">
+                    <div key={s.product_id} className="rc-short">
                       <div className="rc-short-head">
                         <span className="rc-item-name">{s.name}</span>
                         <span className="rc-short-qty">short {fmtQty(s.short, s.unit)}</span>
                       </div>
-                      <p className="rc-short-for">wanted by {s.for.join(' · ')}</p>
+                      <p className="rc-short-for">wanted by {s.for_recipes.join(' · ')}</p>
                       <div className="rc-short-foot">
-                        <Button variant="ghost" size="sm" icon="search" onClick={() => { setComponentId(s.id); setTab('whereused'); setSearch('') }}>Where used</Button>
+                        <Button variant="ghost" size="sm" icon="search" onClick={() => { setComponentId(s.product_id); setTab('whereused'); setSearch('') }}>Where used</Button>
                         <Button variant="ghost" size="sm" icon="cart" href="/inventory/reorder">Reorder planner</Button>
                       </div>
                     </div>
@@ -1480,6 +1604,120 @@ function RecipesPageInner() {
                       : <>The shelf cannot cover a run — <strong>{planViews[0].plan.limited_by}</strong> is the reason. Buy it in at <Link href="/bills">bills</Link> or <Link href="/purchase-orders">purchase orders</Link>, then come back.</>}
                   </span>
                 </div>
+              )}
+            </div>
+          )}
+
+          {planRecipe === 'all' && boardShort.length > 0 && (
+            <div className="rc-section">
+              <div className="rc-section-head">
+                <h2><Icon name="cart" size={15} />Turn the shortage into paper</h2>
+                <span className="rc-section-sub">
+                  Each short part is grouped under the vendor it last came in from, priced at what that bill paid — or the catalogue price when no bill names one. Raising them writes drafts to your purchase-order register, numbered the way that register numbers everything else.
+                </span>
+                {shopping && (
+                  <Button variant="ghost" size="sm" icon="download" onClick={exportShopping}
+                    disabled={shopping.orders.length === 0 && shopping.unrouted.length === 0}>Shopping CSV</Button>
+                )}
+              </div>
+
+              {supplyState === 'idle' && (
+                <Card>
+                  <div className="rc-shop-ask">
+                    <span>
+                      The list reads your purchase bills and vendor cards to know who to write to, and at what the shop last paid. Nothing is read until you ask — and raising the orders is a separate, deliberate step after that.
+                    </span>
+                    <Button size="sm" icon="cart" onClick={ensureSupply}>Build the shopping list</Button>
+                  </div>
+                </Card>
+              )}
+              {supplyState === 'loading' && (
+                <div className="rc-busy"><Icon name="clock" size={14} /> Reading your bills and vendors…</div>
+              )}
+
+              {shopping && (
+                <>
+                  {raised.length > 0 && (
+                    <div className="rc-raised">
+                      <Icon name="check" size={14} strokeWidth={2.2} />
+                      <span>
+                        Drafted{' '}
+                        {raised.map((r, i) => (
+                          <span key={r.id}>{i > 0 ? ', ' : ''}<Link href={`/purchase-orders/${r.id}`}>{r.number}</Link></span>
+                        ))}{' '}
+                        — open one on the register to set prices, dates and confirm it.
+                      </span>
+                      <button type="button" className="rc-notice-x" onClick={() => setRaised([])} aria-label="Dismiss">✕</button>
+                    </div>
+                  )}
+
+                  {shopping.orders.length === 0 && shopping.unrouted.length === 0 && (
+                    <div className="rc-clear">
+                      <Icon name="shield" size={14} strokeWidth={2.2} />
+                      Nothing is short of a vendor to order from.
+                    </div>
+                  )}
+
+                  {shopping.orders.map(o => (
+                    <div key={o.vendor_id} className="rc-po">
+                      <div className="rc-po-head">
+                        <span className="rc-po-vendor">{o.vendor_name}</span>
+                        <span className="rc-po-value">{o.value === null ? '— no value yet' : money(o.value)}</span>
+                      </div>
+                      <div className="rc-po-sub">
+                        {o.gstin ? `GSTIN ${o.gstin}` : 'No GSTIN on the vendor card'} · place of supply {o.state_code}
+                        {o.address ? ` · ${o.address}` : ''}
+                      </div>
+                      <div className="rc-po-lines">
+                        {o.lines.map(l => (
+                          <div key={l.product_id} className="rc-po-line">
+                            <span className="rc-po-name">
+                              <span className="rc-item-name">{l.name}</span>
+                              <span className="rc-sub">for {l.for_recipes.join(' · ')}</span>
+                            </span>
+                            <span className="rc-num rc-po-qty">{fmtQty(l.qty, l.unit)}</span>
+                            <span className="rc-po-rate">
+                              <span className="rc-num">{price(l.rate)}</span>
+                              <span className="rc-sub">{l.rate_source || 'no price recorded'}</span>
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      {o.unpriced.length > 0 && (
+                        <p className="rc-po-hole">
+                          No price yet for {o.unpriced.join(', ')} — the draft carries 0 until you set it, so this order has no value rather than a partial one.
+                        </p>
+                      )}
+                    </div>
+                  ))}
+
+                  {shopping.orders.length > 0 && (
+                    <div className="rc-po-raise">
+                      <Button size="sm" icon="check" onClick={raiseShopping}>
+                        Raise {shopping.orders.length} order draft{shopping.orders.length === 1 ? '' : 's'}
+                      </Button>
+                      <span className="rc-sub">Each becomes a draft purchase order on your register — nothing is sent or billed, and you can cancel one there.</span>
+                    </div>
+                  )}
+
+                  {shopping.unrouted.length > 0 && (
+                    <div className="rc-unrouted">
+                      <div className="rc-unrouted-head">
+                        <Icon name="alert" size={13} strokeWidth={2.2} />
+                        Cannot be raised as an order yet — {shopping.unrouted.length} line{shopping.unrouted.length === 1 ? '' : 's'}, printed not dropped
+                      </div>
+                      {shopping.unrouted.map(u => (
+                        <div key={u.line.product_id} className="rc-unrouted-row">
+                          <span className="rc-po-name">
+                            <span className="rc-item-name">{u.line.name}</span>
+                            <span className="rc-sub">short {fmtQty(u.line.qty, u.line.unit)}{u.line.rate !== null ? ` · ${price(u.line.rate)} ${u.line.rate_source}` : ''}</span>
+                          </span>
+                          <span className="rc-unrouted-why">{u.why}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -2354,6 +2592,38 @@ function RecipesPageInner() {
         .rc-short-for { font-size: 11px; color: var(--faint); margin: 0; line-height: 1.5; }
         .rc-short-foot { display: flex; gap: 6px; flex-wrap: wrap; margin-top: auto; }
 
+        /* The shopping list — the shortage folded into one draft per vendor. A card holds the vendor
+           across the top, its lines beneath, and the money to the right. A value that cannot be summed
+           prints words, never a partial rupee. */
+        .rc-shop-ask { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); line-height: 1.55; }
+        .rc-raised { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 11px; font-size: 12.5px;
+          color: var(--green); background: var(--green-soft); }
+        .rc-raised svg { flex-shrink: 0; }
+        .rc-raised a { color: var(--green); font-weight: 650; text-decoration: underline; text-underline-offset: 2px; }
+        .rc-po { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg);
+          padding: 13px 15px; display: flex; flex-direction: column; gap: 9px; box-shadow: var(--shadow-xs); }
+        .rc-po-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+        .rc-po-vendor { font-size: 14px; font-weight: 650; color: var(--ink); overflow-wrap: anywhere; }
+        .rc-po-value { font-size: 13.5px; font-weight: 700; color: var(--brand); font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .rc-po-sub { font-size: 11px; color: var(--faint); line-height: 1.5; overflow-wrap: anywhere; }
+        .rc-po-lines { display: flex; flex-direction: column; gap: 2px; border-top: 1px dashed var(--line); padding-top: 8px; }
+        .rc-po-line { display: grid; grid-template-columns: minmax(0, 1.8fr) 96px 130px; gap: 10px; align-items: baseline;
+          padding: 5px 0; border-bottom: 1px solid var(--line-soft); font-size: 12.5px; }
+        .rc-po-line:last-child { border-bottom: none; }
+        .rc-po-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+        .rc-po-qty, .rc-po-rate { text-align: right; }
+        .rc-po-rate { display: flex; flex-direction: column; gap: 1px; align-items: flex-end; }
+        .rc-po-hole { font-size: 11.5px; color: var(--amber); margin: 0; line-height: 1.5; }
+        .rc-po-raise { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .rc-unrouted { border: 1px solid var(--line-soft); border-radius: var(--radius-lg); padding: 11px 13px; background: var(--surface-2);
+          display: flex; flex-direction: column; gap: 7px; }
+        .rc-unrouted-head { display: flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 700; letter-spacing: 0.05em;
+          text-transform: uppercase; color: var(--amber); }
+        .rc-unrouted-head svg { flex-shrink: 0; }
+        .rc-unrouted-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+          font-size: 12.5px; padding-top: 5px; border-top: 1px solid var(--line-soft); }
+        .rc-unrouted-why { font-size: 11.5px; color: var(--muted); line-height: 1.5; max-width: 440px; }
+
         .rc-recipes-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
         .rc-strip { flex: 0 0 auto; display: flex; flex-direction: column; gap: 2px; text-align: left; cursor: pointer;
           background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 9px 12px; min-height: 0; }
@@ -2482,6 +2752,9 @@ function RecipesPageInner() {
           .rc-grid, .rc-grid-wide { grid-template-columns: 1fr; }
           .rc-grid2, .rc-part, .rc-parts-head, .rc-parts-head-edit, .rc-parts-head-draw, .rc-part-edit, .rc-draw, .rc-vrow, .rc-used { grid-template-columns: 1fr; }
           .rc-rate-row { grid-template-columns: 1fr 1fr; }
+          .rc-po-line { grid-template-columns: 1fr; gap: 2px; }
+          .rc-po-qty, .rc-po-rate { text-align: left; }
+          .rc-po-rate { align-items: flex-start; }
           .rc-lots { padding-left: 8px; }
           .rc-lots-select { width: 100%; max-width: none; }
           .rc-parts-head span:nth-child(n+2) { text-align: left; }
