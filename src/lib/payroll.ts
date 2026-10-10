@@ -57,9 +57,15 @@
 //    to provident fund calculations, and the EPFO office that administers yours settles it — so
 //    an employee whose basic is under half their salary gets a flag with that citation, and their
 //    PF stays computed on basic + dearness allowance.
+//  * **The attendance sheet is read, never kept.** A pasted table — a days-present column, a
+//    days-lost column, or a day-by-day grid of P / A / H marks — becomes lost days on the month rows
+//    and nothing else. No new key, no new register, no stored sheet: only `lop_days` and a stamped
+//    note change. A number that no header names is *refused* rather than guessed at, a person the
+//    sheet never mentions keeps the lost days they already had, and every candidate row passes the
+//    same `validateInput()` the month form passes through.
 //
 // What v1 deliberately does NOT claim: no work-in-progress or accrual posting (the priced reading
-// is not a journal entry), no attendance import, no per-day wage labour or contract labour, no
+// is not a journal entry), no per-day wage labour or contract labour, no
 // overtime rate (which is a 2× statutory multiplier under the Payment of Wages Act and an
 // establishment-level question), no gratuity or leave encashment provision, no LTA, no perquisite
 // valuation for cars or accommodation, no old-regime computation, no NPS, no PT challan, no Form
@@ -70,6 +76,9 @@
 
 import { newId, todayISO } from '@/lib/batches'
 import { round2 } from '@/lib/costcentres'
+// The sheet is a delimited paste, exactly like a bank statement — so the same two readers are used
+// rather than writing a third CSV splitter into this register.
+import { detectDelimiter, splitRow } from '@/lib/bank-statement'
 
 const KEY_PAYROLL = 'taxflow:payroll:'
 /** Today's shape. A stored envelope with a different version is read as empty, not guessed at. */
@@ -285,6 +294,7 @@ export const PAYROLL_RULES: RuleNote[] = [
   { head: 'Rebate and marginal relief', body: 'Section 87A gives a rebate of up to ₹60,000 when total income does not exceed ₹12,00,000, and marginal relief makes the tax on income just above that limit no more than the excess itself — which is why the relief binds only up to about ₹12,70,588 and disappears after it. Surcharge relief works the same way at ₹50 lakh, ₹1 crore and ₹2 crore.' },
   { head: 'Professional tax', body: 'A state subject. There is no national rate to ship, and the state tables fetched for this file contradict one another, so the owner types what their state charges — or `0` when it charges nothing. Section 16(iii) caps the deduction at ₹2,500 a year.' },
   { head: 'The 50% wage rule', body: WAGE_CODE_50.cite },
+  { head: 'The attendance sheet', body: 'A pasted sheet is read for one figure only: lost days. A column headed Present is subtracted from the month’s basis — the calendar’s own days, or 26 when the register is set to the convention — and the basis is printed on the row so the arithmetic is visible. A column headed LOP is taken as it stands; a day grid counts A, LOP, UL and half-days, and treats H, PL, SL and W as neither worked nor lost. A number with no header naming its direction, a mark outside the table, the same person twice on one sheet, or a figure the month’s own rules refuse is printed as a refusal beside the line it came from. Nobody the sheet omits has their lost days reset — a blank row is not attendance.' },
 ]
 
 // ── the register ──────────────────────────────────────────────────────────────
@@ -917,6 +927,608 @@ export function inputsByMonth(inputs: PayInput[]): Map<string, Map<string, PayIn
 export function monthsWithData(store: PayrollStore): string[] {
   const set = new Set(store.inputs.map(i => i.month))
   return [...set].sort((a, b) => b.localeCompare(a))
+}
+
+// ── attendance: the shop's sheet becomes lost days, and nothing else ──────────
+//
+// A shop does not keep payroll. It keeps an attendance sheet — a page ruled with names down one
+// side and days across the top, or a WhatsApp photo of a table with a "Present" column, typed into
+// Excel once a month and pasted here. Turning that sheet into `lop_days` is the whole of what the
+// register can honestly do with it: the sheet says who was absent, the register already knows what
+// an absent day costs.
+//
+// Three rules hold this together:
+//
+//  * **The number has to say which way it points.** A lone column of numbers is either days
+//    present or days lost, and the two produce opposite salaries, so a column that no header names
+//    is *refused* — never guessed at, never defaulted. An explicit lost-day column is used as it
+//    stands; a present-day column is subtracted from the month's own basis (`settings.working_days`:
+//    the calendar days in the month, or the 26-day convention), and the basis is printed on every
+//    row so the owner can see the arithmetic that changed their money.
+//  * **Nothing is written that the register would refuse.** Every candidate row is passed through
+//    the same `validateInput()` the month form uses, so a sheet cannot smuggle past the lost-days
+//    length, the joining window or the future-month rules.
+//  * **Silence is not zero.** A person on the rolls whom the sheet never mentions keeps the lost
+//    days they already had, and is printed as a finding naming them. An absent column of blanks
+//    would otherwise wipe a month's deductions because somebody forgot a line.
+//
+// The sheet is read, never stored: there is no new key, no new register and no new version — the
+// only bytes that reach localStorage are the `lop_days` of a row that already had a door, plus a
+// stamped note saying where the figure came from.
+
+const MAX_ATTENDANCE_ROWS = 1500
+
+/** The day-count header words, checked in this order: a "Days lost of pay" must not land on present. */
+const LOP_HEADERS = ['lop', 'lopdays', 'lopday', 'loss', 'lossdays', 'lossofpay', 'daysloss', 'dayslost',
+  'absent', 'absentdays', 'daysabsent', 'short', 'shortdays', 'shortfall', 'unpaid', 'unpaiddays',
+  'daysunpaid', 'nlw', 'notonduty', 'leavelop', 'lopno', 'nooflop', 'nooflofdays']
+const PRESENT_HEADERS = ['present', 'presentdays', 'dayspresent', 'nopresent', 'noofdayspresent', 'worked',
+  'daysworked', 'workeddays', 'attendance', 'att', 'attended', 'pd', 'wd']
+/** Headers that name a number but not its direction — the register asks instead of choosing. */
+const AMBIGUOUS_HEADERS = ['days', 'day', 'noofdays', 'numberofdays', 'total', 'totaldays', 'd', 'n', 'count', 'value']
+const CODE_HEADERS = ['code', 'empcode', 'employeecode', 'empno', 'employeeno', 'employeeid', 'empid', 'id',
+  'payrollno', 'payrollnumber', 'pn', 'personno', 'pin', 'pfno', 'pfnumber', 'esicno', 'token', 'workerno']
+const NAME_HEADERS = ['name', 'employeename', 'empname', 'workername', 'person', 'employee', 'staff']
+const NOTE_HEADERS = ['note', 'notes', 'remark', 'remarks', 'comment', 'comments', 'description']
+/** A serial number is not anybody's payroll code — reading one as an identity would match strangers. */
+const SERIAL_HEADERS = ['sl', 'sno', 'sr', 'srno', 'serial', 'no', 'index', '#']
+
+/** What the marks in a day-by-day sheet mean. Anything outside this table is refused by name. */
+export const ATTENDANCE_MARKS: { mark: string; means: 'present' | 'loss' | 'neutral'; reads: string }[] = [
+  { mark: 'P', means: 'present', reads: 'present, on duty' },
+  { mark: 'A', means: 'loss', reads: 'absent — a lost day' },
+  { mark: 'LOP', means: 'loss', reads: 'loss of pay' },
+  { mark: 'UL', means: 'loss', reads: 'unpaid leave' },
+  { mark: '0.5', means: 'loss', reads: 'a half day, written as a number' },
+  { mark: 'H', means: 'neutral', reads: 'holiday — neither worked nor lost' },
+  { mark: 'PL', means: 'neutral', reads: 'paid leave — the salary is not cut' },
+  { mark: 'SL', means: 'neutral', reads: 'sick leave at full pay' },
+  { mark: 'W', means: 'neutral', reads: 'the week off' },
+]
+
+/** Day-grid marks. Kept as a lookup so an unreadable mark can be named rather than counted twice. */
+const MARK_MEANING: Record<string, 'present' | 'loss' | 'neutral'> = {
+  p: 'present', pr: 'present', pre: 'present', present: 'present', pd: 'present', on: 'present',
+  '\u2713': 'present', '\u2714': 'present',
+  a: 'loss', abs: 'loss', absent: 'loss', l: 'loss', lop: 'loss', ld: 'loss', ul: 'loss', nlw: 'loss',
+  'notonduty': 'loss',
+  h: 'neutral', ph: 'neutral', pl: 'neutral', sl: 'neutral', el: 'neutral', cl: 'neutral', ll: 'neutral',
+  w: 'neutral', wo: 'neutral', 'w/o': 'neutral', of: 'neutral', wk: 'neutral', '-': 'neutral', '\u2014': 'neutral',
+  jp: 'neutral', vw: 'neutral',
+}
+
+export type AttendanceRole = 'code' | 'name' | 'day' | 'present' | 'loss' | 'ambiguous' | 'note' | 'other'
+
+export interface AttendanceColumn {
+  index: number
+  header: string
+  role: AttendanceRole
+  /** Only set on `day` columns: the day of the month this column carries. */
+  day: number | null
+}
+
+export interface AttendanceBasis {
+  kind: 'calendar' | 'convention_26' | 'sheet'
+  days: number
+  why: string
+}
+
+export interface AttendanceMatch {
+  line: number
+  /** The row exactly as it was read, for the preview. */
+  cells: string[]
+  employee_id: string
+  name: string
+  code: string
+  matched_on: 'code' | 'name' | 'approximate'
+  /** Which kind of column the sheet offered. */
+  via: 'loss' | 'present' | 'grid'
+  /** The cell or mark count the figure came from, in the shop's own words. */
+  read: string
+  basis: number
+  basis_kind: AttendanceBasis['kind']
+  /** What the month row carried before the sheet — `null` when the month has no row yet. */
+  before: number | null
+  lop_days: number
+  changed: boolean
+  /** More days present than the basis has: a full month, never a negative deduction. */
+  overflow: boolean
+  /** The sentence stamped into the row's note. */
+  detail: string
+}
+
+export interface AttendanceRefusal {
+  line: number
+  text: string
+  reason: string
+}
+
+export interface AttendanceFinding {
+  employee_id: string
+  name: string
+  message: string
+}
+
+export interface AttendancePlan {
+  month: string
+  delimiter: string
+  /** Sheet-level refusals: while any of these stands, nothing at all is written. */
+  blockers: string[]
+  columns: AttendanceColumn[]
+  basis: AttendanceBasis
+  grid: boolean
+  matches: AttendanceMatch[]
+  refusals: AttendanceRefusal[]
+  findings: AttendanceFinding[]
+  rows_read: number
+  /** Matches whose lost-day count already equals the sheet's — listed so "nothing changed" is provable. */
+  unchanged: number
+}
+
+function tight(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+function markKey(s: string): string {
+  return s.trim().toLowerCase().replace(/[.\s]/g, '')
+}
+
+function headerRole(header: string): AttendanceRole {
+  const t = tight(header)
+  if (!t) return 'other'
+  if (LOP_HEADERS.includes(t)) return 'loss'
+  if (PRESENT_HEADERS.includes(t)) return 'present'
+  if (/^\d{1,2}$/.test(t) || /^d\d{1,2}$/.test(t) || /^day\d{1,2}$/.test(t)) return 'day'
+  if (SERIAL_HEADERS.includes(t)) return 'other'
+  if (CODE_HEADERS.includes(t)) return 'code'
+  if (NAME_HEADERS.includes(t)) return 'name'
+  if (NOTE_HEADERS.includes(t)) return 'note'
+  if (AMBIGUOUS_HEADERS.includes(t)) return 'ambiguous'
+  return 'other'
+}
+
+function dayNumber(header: string): number {
+  const t = tight(header)
+  const n = Number(t.replace(/^d(?:ay)?/, ''))
+  return Number.isFinite(n) ? n : 0
+}
+
+/** Numbers inside a cell, in order: "24/26" gives the count and the basis the sheet itself states. */
+function cellNumbers(s: string): number[] {
+  const found = s.replace(/[^\d.]/g, ' ').match(/\d+(?:\.\d+)?/g)
+  return found ? found.map(Number) : []
+}
+
+function rowText(cells: string[]): string {
+  return cells.join(' · ')
+}
+
+/** The month's own basis for turning days-present into days-lost, with the sentence that justifies it. */
+export function attendanceBasis(store: PayrollStore, month: string): AttendanceBasis {
+  if (store.settings.working_days === 'convention_26') {
+    return {
+      kind: 'convention_26',
+      days: 26,
+      why: `A day of pay is 1/26 of the monthly salary — the 26-day convention this register is set to — so ${monthLabel(month)}’s basis is 26 days however many the calendar has.`,
+    }
+  }
+  const days = daysInMonthKey(month)
+  return {
+    kind: 'calendar',
+    days,
+    why: `${monthLabel(month)} has ${days} calendar days, and this register is set to count the calendar. A present-day column is subtracted from ${days}. Switch the basis to the 26-day convention in Settings if your shop pays that way.`,
+  }
+}
+
+/**
+ * Read a pasted or uploaded attendance sheet and say exactly what writing it would do. Pure — the
+ * shop still has to click, and the click goes through `applyAttendance`, which is the only door.
+ */
+export function planAttendance(store: PayrollStore, month: string, text: string): AttendancePlan {
+  const basis = attendanceBasis(store, month)
+  const plan: AttendancePlan = {
+    month,
+    delimiter: ',',
+    blockers: [],
+    columns: [],
+    basis,
+    grid: false,
+    matches: [],
+    refusals: [],
+    findings: [],
+    rows_read: 0,
+    unchanged: 0,
+  }
+  if (!isMonth(month)) {
+    plan.blockers.push('Pick the month the sheet belongs to first — the register will not read attendance against a month it cannot name.')
+    return plan
+  }
+
+  const lines = (text || '').replace(/\r\n?/g, '\n').split('\n')
+    .map(l => l.trim())
+    .filter(l => l.length > 0 && tight(l) !== '' && !/^[|—\s]+$/.test(l))
+  if (lines.length === 0) {
+    plan.blockers.push('The sheet is empty. Paste the table from Excel or a text file, or download the month’s blank sheet and fill it on paper first.')
+    return plan
+  }
+
+  const delim = detectDelimiter(lines)
+  plan.delimiter = delim
+  const cells = lines.map(l => splitRow(l, delim))
+
+  // A bank-style preamble ("Attendance — September", a title, a blank) is skipped by looking for the
+  // first line whose cells name a role this register understands. A lone number does not count — one
+  // numeric cell is a day figure on a data row far more often than it is the header of a day grid.
+  let headerAt = -1
+  let roles: AttendanceRole[] = []
+  for (let i = 0; i < Math.min(6, cells.length); i++) {
+    const r = cells[i].map(h => headerRole(h))
+    const named = r.filter(x => x === 'code' || x === 'name' || x === 'present' || x === 'loss').length
+    const days = r.filter(x => x === 'day').length
+    if (named >= 1 || days >= 3) { headerAt = i; roles = r; break }
+  }
+  if (headerAt < 0) {
+    plan.blockers.push(`No header row was found in the first ${Math.min(6, cells.length)} lines. A column of bare numbers is refused, because “26” could be days present or days lost and the two give opposite salaries — name the column, or paste the blank sheet this register prints below.`)
+    return plan
+  }
+
+  const dayCols = roles.filter(r => r === 'day').length
+  plan.grid = dayCols >= 3
+  const monthDays = daysInMonthKey(month)
+  plan.columns = cells[headerAt].map((h, index) => ({
+    index,
+    header: h,
+    role: roles[index],
+    day: roles[index] === 'day' ? dayNumber(h) : null,
+  }))
+
+  if (plan.grid) {
+    for (const c of plan.columns) {
+      if (c.role === 'day' && (c.day === null || c.day < 1 || c.day > monthDays)) {
+        plan.blockers.push(`The sheet has a column headed “${c.header}”, and ${monthLabel(month)} has no such day — it runs to the ${monthDays}${ordinal(monthDays)}. Either the month is wrong on this screen or the sheet is from another month.`)
+      }
+    }
+    if (plan.blockers.length) return plan
+    // A day grid with no identity column: the first non-day, non-note column has to be the name.
+    if (!plan.columns.some(c => c.role === 'code' || c.role === 'name')) {
+      const first = plan.columns.find(c => c.role !== 'day')
+      if (first) { first.role = 'name'; plan.findings.push({ employee_id: '', name: '', message: `The sheet names no identity column, so “${first.header}” is being read as the person.` }) }
+    }
+  } else {
+    let lossCol = plan.columns.find(c => c.role === 'loss')
+    let presentCol = plan.columns.find(c => c.role === 'present')
+    if (!lossCol && !presentCol) {
+      const amb = plan.columns.find(c => c.role === 'ambiguous')
+      const stray = plan.columns.find(c => c.role === 'day')
+      plan.blockers.push(amb
+        ? `The column “${amb.header}” gives a number but not its direction. Days present and days lost are opposite figures, so the register will not choose between them — rename the column to “Present” or “LOP days”, or fill in the blank sheet this register prints.`
+        : stray
+          ? `The sheet has a column headed “${stray.header}”, which reads as a date rather than a count, and no column that says days present or days lost. A month needs one number per person, named for which way it points.`
+          : 'The sheet has no day column at all. The register reads either a count of days present or a count of days lost — a month’s worth of names proves nothing about money.')
+      return plan
+    }
+    const extras = plan.columns.filter(c => (c.role === 'loss' && lossCol && c.index !== lossCol.index) || (c.role === 'present' && presentCol && c.index !== presentCol.index))
+    for (const x of extras) {
+      plan.findings.push({ employee_id: '', name: '', message: `The sheet has a second day column, “${x.header}”. Only the first of each kind is read, so this one is ignored.` })
+      x.role = 'other'
+    }
+    lossCol = plan.columns.find(c => c.role === 'loss')
+    presentCol = plan.columns.find(c => c.role === 'present')
+    if (!lossCol && !presentCol) { plan.blockers.push('The day columns this register could read were all shadowed by earlier ones; nothing is left to apply.'); return plan }
+  }
+
+  if (!plan.columns.some(c => c.role === 'code' || c.role === 'name')) {
+    plan.blockers.push('Nothing on the sheet identifies a person. A code column, a name column, or both — the register will not match salaries by row order.')
+    return plan
+  }
+
+  const roster = rosterFor(store, month)
+  const byId = employeeById(store.employees)
+  const byCode = new Map<string, Employee[]>()
+  const byName = new Map<string, Employee[]>()
+  for (const e of store.employees) {
+    if (e.code.trim()) byCode.set(tight(e.code), [...(byCode.get(tight(e.code)) || []), e])
+    byName.set(tight(e.name), [...(byName.get(tight(e.name)) || []), e])
+  }
+  const existingByEmployee = new Map<string, PayInput>()
+  for (const i of store.inputs.filter(x => x.month === month)) existingByEmployee.set(i.employee_id, i)
+
+  const claimed = new Map<string, number>()
+  const named = new Set<string>()
+  let rows = 0
+
+  for (let i = headerAt + 1; i < cells.length; i++) {
+    const line = i + 1
+    const row = cells[i]
+    if (row.every(c => !c.trim())) continue
+    rows++
+    if (rows > MAX_ATTENDANCE_ROWS) {
+      plan.refusals.push({ line, text: rowText(row), reason: `More than ${MAX_ATTENDANCE_ROWS} rows on one sheet. This register reads a month of people, not a database — split it.` })
+      continue
+    }
+    const cellAt = (role: AttendanceRole) => {
+      const c = plan.columns.find(x => x.role === role)
+      return c ? (row[c.index] || '') : ''
+    }
+    const codeCell = cellAt('code')
+    const nameCell = cellAt('name')
+    if (!codeCell.trim() && !nameCell.trim()) {
+      plan.refusals.push({ line, text: rowText(row), reason: 'A row with neither a code nor a name. Nobody’s salary is being changed on the strength of a blank identity.' })
+      continue
+    }
+
+    // Identity: the payroll code decides it if the sheet carries one; otherwise the name, exactly;
+    // otherwise one unique substring — which is reported as an approximate match, never silently.
+    let who: Employee | null = null
+    let matched_on: AttendanceMatch['matched_on'] = 'name'
+    const codeTight = tight(codeCell)
+    if (codeTight && byCode.has(codeTight)) {
+      const cands = byCode.get(codeTight) || []
+      if (cands.length === 1) { who = cands[0]; matched_on = 'code' }
+      else plan.refusals.push({ line, text: rowText(row), reason: `Two people on the register carry the code “${codeCell}”. Fix the code on the People tab — the sheet cannot say which of them was absent.` })
+    }
+    if (!who) {
+      const nameTight = tight(nameCell)
+      if (!nameTight) {
+        if (!plan.refusals.some(r => r.line === line)) plan.refusals.push({ line, text: rowText(row), reason: `The code “${codeCell}” is not on the register and the row carries no name to fall back on.` })
+        continue
+      }
+      const exact = byName.get(nameTight) || []
+      if (exact.length === 1) { who = exact[0]; matched_on = 'name' }
+      else if (exact.length > 1) {
+        plan.refusals.push({ line, text: rowText(row), reason: `${exact.length} people on the register are called exactly “${nameCell}”. Give the sheet a code column.` })
+      } else {
+        const partial = [...byName.entries()].filter(([k]) => k.includes(nameTight) || nameTight.includes(k))
+        const flat = partial.flatMap(([, v]) => v)
+        if (flat.length === 1) { who = flat[0]; matched_on = 'approximate' }
+        else if (flat.length > 1) {
+          plan.refusals.push({ line, text: rowText(row), reason: `“${nameCell}” could be ${flat.slice(0, 3).map(e => e.name).join(', ')}${flat.length > 3 ? ', …' : ''}. The register will not pick a salary out of a guess.` })
+        } else {
+          const codeless = codeTight && !byCode.has(codeTight)
+            ? `Neither the code “${codeCell}” nor the name “${nameCell}”`
+            : `“${nameCell || codeCell}”`
+          plan.refusals.push({ line, text: rowText(row), reason: `${codeless} is on the payroll register. Add the person on the People tab, or correct the sheet.` })
+        }
+      }
+    }
+    if (!who) continue
+
+    const why = offRosterWhy(who, month)
+    if (why) {
+      plan.refusals.push({ line, text: rowText(row), reason: `${who.name} is not on the rolls for ${monthLabel(month)} — ${why} The sheet’s figure is dropped rather than run against a month they were not paid for.` })
+      continue
+    }
+    const twice = claimed.get(who.id)
+    if (twice !== undefined) {
+      plan.refusals.push({ line, text: rowText(row), reason: `${who.name} appears again, on line ${twice} as well as here. The register read the first line and refuses this one — it will not add, average or last-write-wins two numbers for one person.` })
+      continue
+    }
+
+    let via: AttendanceMatch['via'] = 'loss'
+    let read = ''
+    let lop: number | null = null
+    let useBasis = basis
+    let overflow = false
+
+    if (plan.grid) {
+      let loss = 0
+      let present = 0
+      let neutral = 0
+      let marks = 0
+      let unknown: string | null = null
+      let unknownDay = 0
+      for (const c of plan.columns) {
+        if (c.role !== 'day' || c.day === null) continue
+        const raw = (row[c.index] || '').trim()
+        if (!raw) continue
+        marks++
+        const numOnly = cellNumbers(raw)
+        if (numOnly.length === 1 && numOnly[0] <= 1 && raw.replace(/[^\d.]/g, '') === raw) {
+          loss += numOnly[0]
+          continue
+        }
+        const meaning = MARK_MEANING[markKey(raw)]
+        if (!meaning) { if (!unknown) { unknown = raw; unknownDay = c.day } continue }
+        if (meaning === 'loss') loss += 1
+        else if (meaning === 'present') present += 1
+        else neutral += 1
+      }
+      if (unknown !== null) {
+        plan.refusals.push({ line, text: rowText(row), reason: `Day ${unknownDay} for ${who.name} is marked “${unknown}”, which this register does not read. Accepted marks are ${ATTENDANCE_MARKS.map(m => m.mark).join(', ')} — an ambiguous mark is refused instead of counted as an absence.` })
+        continue
+      }
+      if (marks === 0) {
+        plan.refusals.push({ line, text: rowText(row), reason: `${who.name} is named on the sheet but no day carries a mark. A row of blanks is not a month of full attendance — the register leaves their lost days exactly as they stand.` })
+        continue
+      }
+      via = 'grid'
+      read = `${present} present, ${loss} lost, ${neutral} holiday or paid leave across ${marks} marked day${marks === 1 ? '' : 's'}`
+      lop = round2(loss)
+    } else {
+      const lossCell = cellAt('loss')
+      const presentCell = cellAt('present')
+      const lossNums = cellNumbers(lossCell)
+      const presentNums = cellNumbers(presentCell)
+      const hasLoss = lossCell.trim() !== '' && lossNums.length >= 1
+      const hasPresent = presentCell.trim() !== '' && presentNums.length >= 1
+      if (lossCell.trim() && !hasLoss) {
+        plan.refusals.push({ line, text: rowText(row), reason: `The lost-days cell for ${who.name} reads “${lossCell}”, which is not a number of days.` })
+        continue
+      }
+      if (presentCell.trim() && !hasPresent) {
+        plan.refusals.push({ line, text: rowText(row), reason: `The present-days cell for ${who.name} reads “${presentCell}”, which is not a number of days.` })
+        continue
+      }
+      if (!hasLoss && !hasPresent) {
+        plan.refusals.push({ line, text: rowText(row), reason: `Neither a lost-day nor a present-day figure for ${who.name}. Blank means “the sheet does not say”, never “zero”.` })
+        continue
+      }
+      // A cell like "24/26" states its own basis, which outranks the shop's setting.
+      const stated = (hasPresent && presentNums.length >= 2) ? presentNums[1]
+        : (hasLoss && lossNums.length >= 2 ? lossNums[1] : null)
+      if (stated !== null && stated >= 1 && stated <= 31) {
+        useBasis = { kind: 'sheet', days: round2(stated), why: `The sheet states its own month length (${stated} days) beside the count, so that is the basis rather than the setting.` }
+      }
+      if (hasLoss && hasPresent) {
+        const implied = round2(useBasis.days - presentNums[0])
+        if (Math.abs(implied - lossNums[0]) > 0.01) {
+          plan.refusals.push({ line, text: rowText(row), reason: `${who.name}’s row says ${presentNums[0]} days present and ${lossNums[0]} days lost, which does not add up across a ${useBasis.days}-day month. The register will not choose between two numbers that contradict each other.` })
+          continue
+        }
+        via = 'loss'
+        read = `${lossNums[0]} lost of ${useBasis.days} (the present count agrees)`
+        lop = round2(lossNums[0])
+      } else if (hasLoss) {
+        via = 'loss'
+        read = `${lossNums[0]} day${lossNums[0] === 1 ? '' : 's'} lost on the sheet`
+        lop = round2(lossNums[0])
+      } else {
+        via = 'present'
+        lop = round2(Math.max(0, useBasis.days - presentNums[0]))
+        overflow = presentNums[0] > useBasis.days
+        read = `${presentNums[0]} day${presentNums[0] === 1 ? '' : 's'} present of ${useBasis.days}`
+      }
+    }
+
+    if (lop === null || !Number.isFinite(lop)) {
+      plan.refusals.push({ line, text: rowText(row), reason: `The day figure for ${who.name} could not be read.` })
+      continue
+    }
+
+    const current = existingByEmployee.get(who.id) || null
+    const candidate: PayInput = current ? { ...current, lop_days: lop } : { ...newInput(who.id, month), lop_days: lop }
+    const blocked = validateInput(candidate, byId.get(who.id) || null, month).find(x => x.level === 'block')
+    if (blocked) {
+      plan.refusals.push({ line, text: rowText(row), reason: `The sheet’s figure for ${who.name} is refused by the register’s own rules: ${blocked.message}` })
+      continue
+    }
+
+    claimed.set(who.id, line)
+    named.add(who.id)
+    const before = current ? current.lop_days : null
+    const changed = before !== lop
+    if (!changed) plan.unchanged++
+    plan.matches.push({
+      line,
+      cells: row,
+      employee_id: who.id,
+      name: who.name,
+      code: who.code,
+      matched_on,
+      via,
+      read,
+      basis: useBasis.days,
+      basis_kind: useBasis.kind,
+      before,
+      lop_days: lop,
+      changed,
+      overflow,
+      detail: `${read} → ${formatDays(lop)} lost`,
+    })
+  }
+
+  plan.rows_read = rows
+  for (const e of roster.on) {
+    if (named.has(e.id)) continue
+    const current = existingByEmployee.get(e.id)
+    plan.findings.push({
+      employee_id: e.id,
+      name: e.name,
+      message: `${e.name} is on the rolls for ${monthLabel(month)} but the sheet never names them. Their lost days ${current ? `stay at ${formatDays(current.lop_days)}` : 'stay unset'}. Silence on a sheet is not attendance.`,
+    })
+  }
+  return plan
+}
+
+function ordinal(n: number): string {
+  if (n % 10 === 1 && n % 100 !== 11) return 'st'
+  if (n % 10 === 2 && n % 100 !== 12) return 'nd'
+  if (n % 10 === 3 && n % 100 !== 13) return 'rd'
+  return 'th'
+}
+
+function formatDays(n: number): string {
+  return Number.isInteger(n) ? `${n} day${n === 1 ? '' : 's'}` : `${n} days`
+}
+
+/** The stamped half of a row's note — a tag the register can find and replace, not stack. */
+const ATTENDANCE_TAG = /\[attendance \d{4}-\d{2}\][^—]*?(?:—\s*|$)/g
+
+export function attendanceStamp(month: string, detail: string): string {
+  return `[attendance ${month}] ${detail}`
+}
+
+/**
+ * A re-import replaces the sheet's own sentence rather than appending a second one — two attendance
+ * notes on one row would be two answers to the same month. Anything the owner typed by hand after
+ * the em dash survives; only the attendance segment is dropped.
+ */
+export function stampAttendanceNote(existing: string, month: string, detail: string): string {
+  const rest = (existing || '').replace(ATTENDANCE_TAG, '').trim()
+  const stamp = attendanceStamp(month, detail)
+  return rest ? `${stamp} — ${rest}` : stamp
+}
+
+export interface AttendanceApplyResult {
+  written: number
+  unchanged: number
+  skipped: { name: string; reason: string }[]
+  store: PayrollStore
+}
+
+/**
+ * The only door a sheet has. Each match is re-validated inside the write, because the People tab
+ * may have moved a joining date between the preview and the click; a row that no longer passes is
+ * skipped and named rather than written. Arrears, bonus and recovery are never touched — an
+ * attendance sheet says nothing about money.
+ */
+export function applyAttendance(orgId: string, month: string, plan: AttendancePlan): AttendanceApplyResult {
+  const skipped: AttendanceApplyResult['skipped'] = []
+  if (plan.blockers.length) {
+    return { written: 0, unchanged: 0, skipped: [{ name: 'the whole sheet', reason: plan.blockers[0] }], store: loadPayroll(orgId) }
+  }
+  if (plan.month !== month) {
+    return { written: 0, unchanged: 0, skipped: [{ name: 'the whole sheet', reason: `That preview was read against ${plan.month || 'no month'}, and this screen is on ${monthLabel(month)}. Re-read the sheet before writing.` }], store: loadPayroll(orgId) }
+  }
+  let unchanged = 0
+  const store = mutate(orgId, s => {
+    let inputs = s.inputs
+    for (const m of plan.matches) {
+      const employee = s.employees.find(e => e.id === m.employee_id) || null
+      const current = inputs.find(i => i.employee_id === m.employee_id && i.month === month) || null
+      const candidate: PayInput = current ? { ...current, lop_days: m.lop_days } : { ...newInput(m.employee_id, month), lop_days: m.lop_days }
+      const blocked = validateInput(candidate, employee, month).find(x => x.level === 'block')
+      if (blocked) { skipped.push({ name: m.name, reason: blocked.message }); continue }
+      const noteBefore = current?.note || ''
+      const stamped = stampAttendanceNote(noteBefore, month, m.detail)
+      const next: PayInput = { ...candidate, note: stamped }
+      inputs = inputs.some(i => i.id === next.id) ? inputs.map(i => (i.id === next.id ? next : i)) : [...inputs, next]
+      if (current && current.lop_days === m.lop_days) unchanged++
+    }
+    return { ...s, inputs }
+  })
+  return { written: plan.matches.length - skipped.length, unchanged, skipped, store }
+}
+
+/**
+ * The month's own blank sheet: everybody on the rolls, already ruled, ready to print and pin up.
+ * Filled on paper and pasted back is the whole loop — which is why the roster comes pre-named and
+ * the codes are the register's own, so a match cannot fail on a spelling.
+ */
+export function attendanceTemplate(store: PayrollStore, month: string, grid = false): string {
+  const roster = rosterFor(store, month)
+  const days = daysInMonthKey(month)
+  const head = grid
+    ? ['Code', 'Name', ...Array.from({ length: days }, (_, i) => String(i + 1))]
+    : ['Code', 'Name', 'Present', 'LOP days', 'Note']
+  const rows = roster.on.map(e => grid
+    ? [e.code || '', e.name, ...Array.from({ length: days }, () => '')]
+    : [e.code || '', e.name, '', '', ''])
+  const lines = [head.join(','), ...rows.map(r => r.map(c => (/[",]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c)).join(','))]
+  if (roster.off.length) {
+    lines.push('', `Not on the rolls for ${monthLabel(month)}: ${roster.off.map(o => `${o.employee.name} (${o.why})`).join('; ')}`)
+  }
+  return lines.join('\n')
 }
 
 // ── the money side: computed on every load ────────────────────────────────────
