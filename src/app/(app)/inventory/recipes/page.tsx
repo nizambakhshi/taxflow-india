@@ -8,7 +8,7 @@
 // page is the register: the recipe book, the run log, the materials board, and the reverse lookup
 // that tells you where a component goes.
 //
-// Three things the screen is careful about, because the library is:
+// What the screen is careful about, because the library is:
 //  * **Rupees are read, never typed.** The cost on a recipe card is rolled up from the components'
 //    own cost in `products` — the same field `/accounting` values stock at — so the card and the
 //    balance sheet cannot drift. A missing price prints as a gap, not as ₹0.
@@ -19,6 +19,16 @@
 //  * **A build is not a supply.** Nothing here touches a return; the tax happens when the finished
 //    good is sold. The page says so on the footer, and sends materials handed to somebody else to
 //    `/gst/job-work`, where the section 143 clock lives.
+//
+// And since R2-29 a rule the first three do not cover: **a draw names the lot it came off.**
+// The quantity answer lives on the
+// product row; the *physical* answer lives on `/inventory/batches`, and this screen now speaks to
+// both. The picks are proposed by `batches.ts`'s own FEFO — this page never restates that maths and
+// never writes a lot row of its own: it asks `allocateLots` for the split, prints it, lets the shop
+// overrule it with one named lot, and writes the moves only when the shelf actually moves. A run
+// whose shelf moves but whose lots cannot cover it names no lot and says so, because a lot drawn
+// below zero is a invented history. And a cancelled run refuses to reverse when units have already
+// been sold out of the lot it made — that lot is somebody else's evidence now.
 
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
@@ -33,15 +43,20 @@ import { fyLabel, fyStartYear } from '@/lib/targets'
 import { loadStore, type FlowDoc } from '@/lib/orderflow'
 import {
   BUILD_CSV_HEADERS, BUILD_STATUS_META, MAX_MINUTES_PER_RUN, MAX_UNITS_PER_BUILD, PLAN_CSV_HEADERS,
-  RECIPE_CSV_HEADERS, RECIPE_STATUSES, RECIPE_STATUS_META, allocateRef, buildCsvRows, buildViews,
-  cancelBuild, consumedOf, demandAgainstRecipes, findCycle, fmtMinutes, indexProducts, loadBom,
-  movementsFor, newBuild, newComponent, newRate, newRecipe, peekRef, perUnitNeed, planBuild, planCsvRows,
-  rateFor, recipeCsvRows, recipeView, recipeViews, removeBuild, removeRate, removeRecipe, requirement,
-  reverseMovementsFor, saveBom, sortBuilds, sortRecipeViews, stampCost, summarise, upsertBuild,
-  upsertRate, upsertRecipe, validateBuild, validateRate, validateRecipe, whereUsed,
-  type BomProduct, type BomStore, type Build, type BuildView, type CostRate, type PlanRow,
-  type Recipe, type RecipeView, type StockWrite,
+  RECIPE_CSV_HEADERS, RECIPE_STATUSES, RECIPE_STATUS_META, allocateLots, allocateRef, buildCsvRows, buildViews,
+  cancelBuild, consumedOf, demandAgainstRecipes, drawnElsewhereFrom, findCycle, fmtMinutes, indexProducts, loadBom,
+  lotWritesFor, movementsFor, newBuild, newComponent, newRate, newRecipe, peekRef, perUnitNeed, planBuild, planCsvRows,
+  producedLot, rateFor, recipeCsvRows, recipeView, recipeViews, removeBuild, removeRate, removeRecipe, requirement,
+  reverseLotWritesFor, reverseMovementsFor, saveBom, sortBuilds, sortRecipeViews, stampCost, summarise, upsertBuild,
+  upsertRate, upsertRecipe, validateBuild, validateLotIssues, validateRate, validateRecipe, whereUsed,
+  type BomProduct, type BomStore, type Build, type BuildLine, type BuildView, type CostRate,
+  type LotPick, type LotRow, type ProducedLot,
+  type PlanRow, type Recipe, type RecipeView, type StockWrite,
 } from '@/lib/bom'
+import {
+  appendMoves, batchViews, loadBatches, loadMoves, newBatch, newId, newMove, upsertBatch,
+  type Batch, type BatchMove, type BatchView,
+} from '@/lib/batches'
 import {
   Badge, Button, Card, EmptyState, PageHeader, ProgressBar, SearchInput, Segmented, StatCard, StatRow,
 } from '@/components/ui'
@@ -113,7 +128,7 @@ interface BuildDraft {
   date: string
   notes: string
   /** Typed as text: an empty box must not become a draw of zero. */
-  lines: { product_id: string; qty: string }[]
+  lines: { product_id: string; qty: string; lot?: string }[]
 }
 
 function RecipesPageInner() {
@@ -130,6 +145,10 @@ function RecipesPageInner() {
   const [store, setStore] = useState<BomStore>({ version: 1, updatedAt: '', orgId: '', recipes: [], builds: [], rates: [], seq: {} })
   const [products, setProducts] = useState<BomProduct[]>([])
   const [orders, setOrders] = useState<FlowDoc[]>([])
+  // The batch register, read in full: this page proposes picks from it and asks it for a lot's
+  // remaining quantity, but every row it writes goes through `batches.ts`'s own append/upsert.
+  const [batches, setBatches] = useState<Batch[]>([])
+  const [lotMoves, setLotMoves] = useState<BatchMove[]>([])
 
   const [tab, setTab] = useState<Tab>('recipes')
   const [search, setSearch] = useSearchDeepLink()
@@ -181,6 +200,8 @@ function RecipesPageInner() {
       setOrgId(oid)
       setOrgName((membership.organizations as { name?: string } | null)?.name || '')
       setProducts(await loadProducts(oid))
+      setBatches(loadBatches(oid))
+      setLotMoves(loadMoves(oid))
       const bom = loadBom(oid)
       setStore(bom)
       // Only confirmed orders are demand; a draft is a quote the customer has not signed.
@@ -227,9 +248,27 @@ function RecipesPageInner() {
   const win = windowOf(period, day)
   const index = useMemo(() => indexProducts(products), [products])
 
+  // The batch register as this screen reads it: a lot's remaining quantity and its expiry state come
+  // from `batches.ts`'s own view, so a build never disagrees with `/inventory/batches` about what a
+  // lot holds. `batchedProducts` is what tells the build findings which parts *should* name a lot.
+  const lotViews = useMemo(() => batchViews(batches, lotMoves, day), [batches, lotMoves, day])
+  const lotById = useMemo(() => new Map(lotViews.map(v => [v.id, v])), [lotViews])
+  const batchedProducts = useMemo(
+    () => [...new Set(batches.map(b => b.product_id).filter((id): id is string => Boolean(id)))],
+    [batches],
+  )
+
+  /** The lots one product holds, in the order the shop reads them: soonest expiry first, undated last. */
+  function lotsOf(productId: string): BatchView[] {
+    return lotViews
+      .filter(v => v.product_id === productId)
+      .sort((a, b) => (a.expiry_date || '9999-12-31').localeCompare(b.expiry_date || '9999-12-31')
+        || a.received_date.localeCompare(b.received_date))
+  }
+
   const views = useMemo(() => sortRecipeViews(recipeViews(store, products)), [store, products])
   const buildList = useMemo(() => sortBuilds(store.builds), [store.builds])
-  const runs = useMemo(() => buildViews(store, products), [store, products])
+  const runs = useMemo(() => buildViews(store, products, { batchedProducts }), [store, products, batchedProducts])
   const summary = useMemo(() => summarise(views, store, products, day), [views, store, products, day])
   const demand = useMemo(() => {
     const lines = orders.flatMap(d => d.lines
@@ -294,6 +333,7 @@ function RecipesPageInner() {
   function warn(message: string) { setNotice({ msg: message, bad: true }) }
 
   function refreshStore() { setStore(loadBom(orgId)) }
+  function refreshLots() { setBatches(loadBatches(orgId)); setLotMoves(loadMoves(orgId)) }
 
   // ── the recipe editor ───────────────────────────────────────────────────────
   function openRecipeEditor(recipe: Recipe, isNew: boolean) {
@@ -435,6 +475,32 @@ function RecipesPageInner() {
     }
   }, [draft, draftExisting, store])
 
+  /** What the shop chose to name for one drawn part: `'auto'` (FEFO), `''` (no lot), or a lot id. */
+  function lotChoice(productId: string): string {
+    const d = draft?.lines.find(l => l.product_id === productId)
+    return d?.lot === undefined ? 'auto' : d.lot
+  }
+
+  function patchLotChoice(productId: string, lot: string) {
+    setDraft(d => (d ? { ...d, lines: d.lines.map(x => (x.product_id === productId ? { ...x, lot } : x)) } : d))
+    setDraftError('')
+  }
+
+  /**
+   * The picks a line will store when the run moves: the FEFO split the batch register proposes, one
+   * lot the shop named, or nothing at all. A FEFO proposal that cannot cover the draw names nothing —
+   * half a split would be a lot drawn below zero, which is a history the shop did not live. The line
+   * still moves the shelf; the build log and the findings say the lots were never named.
+   */
+  function picksOf(l: BuildLine, row: LotRow | undefined): LotPick[] {
+    const want = lotChoice(l.product_id)
+    if (want === 'auto') return row && row.ok ? row.picks : []
+    if (want === '') return []
+    const lot = lotById.get(want)
+    if (!lot) return []
+    return [{ batch_id: lot.id, batch_no: lot.batch_no || lot.id, qty: l.qty, expiry_date: lot.expiry_date || '' }]
+  }
+
   const draftCheck = useMemo(() => {
     if (!draft || !candidate) return null
     const errs = validateBuild(candidate, draftRecipe, products)
@@ -449,15 +515,64 @@ function RecipesPageInner() {
       }
     }
     const plan = draftRecipe ? planBuild(draftRecipe, candidate.units, products, store.recipes) : null
+
+    // The lots. `allocateLots` proposes the FEFO split over the whole run at once, so two lines of
+    // one part cannot be promised the same units; `picksOf` then applies the shop's own choice to
+    // each line. Everything downstream reads the picks, never the proposal.
+    const rows = allocateLots(candidate.lines, products, batches, lotMoves, candidate.date)
+    const linesWithLots: BuildLine[] = candidate.lines.map((l, i) => {
+      const picks = picksOf(l, rows[i])
+      return picks.length ? { ...l, lots: picks } : { ...l }
+    })
+    const drawn = linesWithLots.flatMap(l => l.lots || [])
+    const perLot = new Map<string, number>()
+    for (const p of drawn) perLot.set(p.batch_id, Math.round(((perLot.get(p.batch_id) || 0) + p.qty) * 10000) / 10000)
+    const clash: string[] = []
+    for (const [id, q] of perLot) {
+      const v = lotById.get(id)
+      if (v && q > v.left + 0.0000001) {
+        clash.push(`${v.batch_no || 'A lot'}: asked for ${fmtQty(q, v.unit)}, the lot holds ${fmtQty(v.left, v.unit)}`)
+      }
+    }
+    const unnamed = rows.filter(r => r.batched && !r.ok && lotChoice(r.product_id) === 'auto')
+      .map(r => `${r.name}: the lots hold ${fmtQty(r.covered, r.unit)} of the ${fmtQty(r.need, r.unit)} drawn, so no lot is named`)
+    const expiredPicks = drawn.filter(p => p.expiry_date && p.expiry_date < candidate.date)
+      .map(p => p.batch_no)
+
+    // The finished units land in a lot of their own — but only in a shop that keeps lots at all.
+    // Writing the first lot would enrol a business that has never used the batch register, and a
+    // sale would suddenly start drawing a lot nobody counted. So the page says it needs a receipt
+    // first instead of quietly starting one.
+    const output = draftRecipe ? index.get(draftRecipe.output_product_id) : undefined
+    const landsLot = Boolean(draftRecipe && output && output.track_inventory !== false && batches.length > 0)
+    const lotNeeds = batches.length === 0 && Boolean(output) && output?.track_inventory !== false
+      ? 'The batch register is empty, so this run lands no finished lot — record a receipt at /inventory/batches first if you keep lots.'
+      : ''
+
+    const stamped = { ...candidate, lines: linesWithLots }
+    const stamp = stampCost(candidate, draftRecipe, products, store.rates)
     return {
       errs,
       over,
       plan,
+      rows,
+      linesWithLots,
+      clash,
+      unnamed,
+      expiredPicks,
+      landsLot,
+      lotNeeds,
+      lotWrites: lotWritesFor(stamped, products),
+      produced: draftRecipe && landsLot ? producedLot(stamped, draftRecipe, output, stamp.per_unit) : null,
       writes: movementsFor(candidate, draftRecipe, products),
-      stamp: stampCost(candidate, draftRecipe, products, store.rates),
-      ok: errs.length === 0 && over.length === 0,
+      stamp,
+      ok: errs.length === 0 && over.length === 0 && clash.length === 0,
     }
-  }, [draft, candidate, draftRecipe, products, index, store.recipes, store.rates])
+    // lotChoice and picksOf are read here but are not deps: both only look at `draft.lines` and
+    // `lotById`, which are already listed, so naming the closures would rebuild this on every
+    // render of the modal without changing a single answer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft, candidate, draftRecipe, products, index, store.recipes, store.rates, batches, lotMoves, lotById])
 
   const draftPlanRows = useMemo<PlanRow[]>(() => {
     if (!draftCheck?.plan) return []
@@ -502,6 +617,42 @@ function RecipesPageInner() {
     return ''
   }
 
+  /**
+   * The lot half of a run, written *after* the shelf has moved. The batch register is device-side,
+   * so it cannot fail the way an RPC can — but it is written last on purpose: a lot ledger that
+   * names a run the stock ledger never accepted would be a fiction pointing the other way.
+   */
+  function writeLotsFor(build: Build, produced: ProducedLot | null): { count: number; lotId: string } {
+    const writes = lotWritesFor(build, products)
+    if (writes.length) appendMoves(orgId, writes.map(w => newMove(w.batch_id, w.qty, w.date, w.kind, w.doc_ref, w.note)))
+    let lotId = build.output_batch_id || ''
+    if (produced) {
+      lotId = lotId || newId()
+      upsertBatch(orgId, { ...newBatch(build.date), ...produced, id: lotId, created_at: new Date().toISOString() })
+    }
+    return { count: writes.length, lotId }
+  }
+
+  /** The reversal, and the finished lot taken back to nothing — only when nothing else touched it. */
+  function undoLotsFor(build: Build, allBatches: Batch[]): { count: number; zeroed: boolean } {
+    const writes = reverseLotWritesFor(build, products)
+    if (writes.length) appendMoves(orgId, writes.map(w => newMove(w.batch_id, w.qty, w.date, w.kind, w.doc_ref, w.note)))
+    const lotId = build.output_batch_id
+    if (!lotId) return { count: writes.length, zeroed: false }
+    const lot = allBatches.find(b => b.id === lotId)
+    if (!lot) return { count: writes.length, zeroed: false }
+    // The caller has already refused a lot that gave units to anything but this run, so the only
+    // moves standing against it are returns. A lot's `left` is qty + back − out, so taking the
+    // booked quantity back to nothing leaves exactly the units that came back — and the row stays
+    // on the register as the record that this run once made them.
+    upsertBatch(orgId, {
+      ...lot,
+      qty: 0,
+      notes: [lot.notes, `Reversed ${day} — the run was cancelled and this lot gave units to nothing else`].filter(Boolean).join(' · '),
+    })
+    return { count: writes.length, zeroed: true }
+  }
+
   async function saveBuild(asBuilt: boolean) {
     if (!candidate || !orgId) return
     const check = draftCheck
@@ -511,10 +662,30 @@ function RecipesPageInner() {
       setDraftError(`${check.over.join(' · ')} — save it as a plan and buy the material first, or correct what was drawn.`)
       return
     }
+    if (asBuilt && check.clash.length) {
+      setDraftError(`${check.clash.join(' · ')} — the lot register cannot give up that much. Name another lot, or draw the quantity the lot actually holds.`)
+      return
+    }
+    // A run whose movements are written is a record of something that happened. Editing its draws
+    // would re-write the movements on top of the ones already on the ledger — and the same twice on
+    // the lots. Only the note may change after the fact; the numbers go through cancel and a new run.
+    if (draftExisting?.moved) {
+      const same = draftExisting.units === candidate.units && draftExisting.date === candidate.date
+        && JSON.stringify(draftExisting.lines.map(l => [l.product_id, l.qty])) === JSON.stringify(candidate.lines.map(l => [l.product_id, l.qty]))
+      if (!same) {
+        setDraftError(`${draftExisting.ref} has already moved stock, so its quantities are history. Cancel it and record a fresh run — or change only the note.`)
+        return
+      }
+    }
 
-    setBusy(asBuilt ? 'Writing the stock movements…' : 'Saving the plan…')
+    setBusy(asBuilt ? 'Writing the stock movements…' : draftExisting?.moved ? 'Saving the note…' : 'Saving the plan…')
     const ref = draftExisting?.ref || candidate.ref
+    // Lots are named when the shelf moves, not before: a plan is an intent, and by the day the run
+    // happens the near-expiry lot may have been sold to somebody else.
+    const lines = asBuilt ? check.linesWithLots : candidate.lines
     let moved = false
+    let lotCount = 0
+    let producedId = ''
     if (asBuilt && check.writes.length) {
       const failure = await writeAll(check.writes)
       if (failure) {
@@ -527,9 +698,22 @@ function RecipesPageInner() {
         return
       }
       moved = true
+      const lotResult = writeLotsFor({ ...candidate, ref, lines }, check.produced)
+      lotCount = lotResult.count
+      producedId = lotResult.lotId
+      refreshLots()
     }
 
-    const saved: Build = { ...candidate, ref, status: asBuilt ? 'built' : 'planned', moved }
+    const saved: Build = {
+      ...candidate,
+      ref,
+      lines,
+      // A run that already moved stock keeps its status and its `moved` flag: saving it is a note
+      // edit, not a re-recording. Nothing here re-writes movements that are already on the ledger.
+      status: asBuilt ? 'built' : draftExisting?.moved ? draftExisting.status : 'planned',
+      moved: asBuilt ? moved : Boolean(draftExisting?.moved),
+      ...(producedId ? { output_batch_id: producedId } : {}),
+    }
     const allocated = !draftExisting
     if (allocated) {
       const { store: bumped } = allocateRef(store, candidate.date)
@@ -542,8 +726,10 @@ function RecipesPageInner() {
     setDraft(null)
     setDraftError('')
     flash(moved
-      ? `${saved.ref} recorded — ${check.writes.length} movement${check.writes.length === 1 ? '' : 's'} written to the stock ledger${check.stamp.total === null ? '' : `, worth ${money(check.stamp.total)} as the catalogue and the rate rows read`}.`
-      : `${saved.ref} is a plan on the log. No stock has moved.`)
+      ? `${saved.ref} recorded — ${check.writes.length} movement${check.writes.length === 1 ? '' : 's'} written to the stock ledger${lotCount ? `, ${lotCount} lot${lotCount === 1 ? '' : 's'} drawn down` : ''}${check.produced ? ' and the finished units landed in their own lot' : ''}${check.stamp.total === null ? '' : `, worth ${money(check.stamp.total)} as the catalogue and the rate rows read`}.`
+      : draftExisting?.moved
+        ? `${saved.ref} updated — its note only. The movements and the lot draws it already wrote stay on the ledgers.`
+        : `${saved.ref} is a plan on the log. No stock and no lot has moved.`)
   }
 
   async function recordRun(view: BuildView) {
@@ -560,34 +746,77 @@ function RecipesPageInner() {
     }
     if (over.length) { warn(`${build.ref} cannot be recorded — ${over.join(' · ')}.`); return }
 
+    // The plan named no lot on purpose; today the shelf is real, so FEFO is asked here rather than
+    // honoured from a promise made on the day the plan was written.
+    const rows = allocateLots(build.lines, products, batches, lotMoves, build.date)
+    const lines = build.lines.map((l, i) => {
+      const picks = rows[i]?.ok ? rows[i].picks : []
+      return picks.length ? { ...l, lots: picks } : { ...l }
+    })
+    const running: Build = { ...build, lines }
+    const clash: string[] = []
+    const perLot = new Map<string, number>()
+    for (const p of lines.flatMap(l => l.lots || [])) perLot.set(p.batch_id, Math.round(((perLot.get(p.batch_id) || 0) + p.qty) * 10000) / 10000)
+    for (const [id, q] of perLot) {
+      const v = lotById.get(id)
+      if (v && q > v.left + 0.0000001) clash.push(`${v.batch_no || 'A lot'}: ${fmtQty(q, v.unit)} asked, ${fmtQty(v.left, v.unit)} in it`)
+    }
+    if (clash.length) { warn(`${build.ref} cannot be recorded — the lot register disagrees: ${clash.join(' · ')}.`); return }
+    const problems = validateLotIssues(running, batches, products)
+    if (problems.length) { warn(`${build.ref} cannot be recorded — ${problems.join(' · ')}`); return }
+
+    const output = recipe ? index.get(recipe.output_product_id) : undefined
+    const lands = Boolean(recipe && output && output.track_inventory !== false && batches.length > 0)
+    const stamp = stampCost(build, recipe, products, store.rates)
+
     setBusy(`Writing ${build.ref} to the stock ledger…`)
     const failure = await writeAll(writes)
     setBusy('')
     if (failure) { warn(`The movement failed — ${failure}. ${build.ref} stays a plan.`); return }
-    upsertBuild(orgId, { ...build, status: 'built', moved: true })
+    const lotResult = writeLotsFor(running, lands && recipe ? producedLot(running, recipe, output, stamp.per_unit) : null)
+    refreshLots()
+    upsertBuild(orgId, { ...running, status: 'built', moved: true, ...(lotResult.lotId ? { output_batch_id: lotResult.lotId } : {}) })
     refreshStore()
     setProducts(await loadProducts(orgId))
-    flash(`${build.ref} moved — ${writes.length} movement${writes.length === 1 ? '' : 's'} on the stock ledger.`)
+    flash(`${build.ref} moved — ${writes.length} movement${writes.length === 1 ? '' : 's'} on the stock ledger${lotResult.count ? `, ${lotResult.count} lot${lotResult.count === 1 ? '' : 's'} drawn down` : ''}${lotResult.lotId ? ' and the finished units booked in as their own lot' : ''}.`)
   }
 
   async function cancelRun(view: BuildView) {
     const build = view.build
     const recipe = store.recipes.find(r => r.id === build.recipe_id)
     if (build.moved) {
+      // Read the lot register fresh: a sale in another tab drew from these lots since this screen
+      // was painted, and a reversal that pretends otherwise would put stock back that left the shop.
+      const freshBatches = loadBatches(orgId)
+      const freshMoves = loadMoves(orgId)
+      if (build.output_batch_id) {
+        const gone = drawnElsewhereFrom(build.output_batch_id, build.ref, freshMoves)
+        if (gone.length) {
+          const lot = freshBatches.find(b => b.id === build.output_batch_id)
+          warn(`${build.ref} cannot be cancelled — the lot it made (${lot?.batch_no || build.output_batch_id}) has already given units to ${[...new Set(gone.map(m => m.doc_ref || m.kind))].join(', ')}. Correct the sale or the lot at /inventory/batches; a run that has been sold on is history.`)
+          return
+        }
+      }
       const reversals = reverseMovementsFor(build, recipe, products)
       setBusy(`Reversing ${build.ref}…`)
       const failure = await writeAll(reversals)
       setBusy('')
       if (failure) { warn(`The reversal failed — ${failure}. ${build.ref} is still on the shelf as built.`); return }
+      const undone = undoLotsFor(build, freshBatches)
+      refreshLots()
       upsertBuild(orgId, {
         ...build,
         status: 'cancelled',
         moved: false,
-        notes: [build.notes, `Reversed ${day} — the drawn units went back and the finished units came off`].filter(Boolean).join(' · '),
+        notes: [
+          build.notes,
+          `Reversed ${day} — the drawn units went back and the finished units came off${undone.count ? `, into ${undone.count} lot${undone.count === 1 ? '' : 's'} they came from` : ''}`,
+          build.output_batch_id && !undone.zeroed ? 'The finished lot was left as it stands — something other than this run has moved against it.' : '',
+        ].filter(Boolean).join(' · '),
       })
       refreshStore()
       setProducts(await loadProducts(orgId))
-      flash(`${build.ref} cancelled and reversed — the original run and its reversal both stay in the movement log.`)
+      flash(`${build.ref} cancelled and reversed — the original run and its reversal both stay in the movement log${undone.count ? `, and ${undone.count} lot${undone.count === 1 ? '' : 's'} took the units back` : ''}.`)
       return
     }
     const result = cancelBuild(orgId, build.id)
@@ -997,7 +1226,20 @@ function RecipesPageInner() {
                       <div className="table-row rc-row">
                         <span data-label="Job" className="rc-col-job">
                           <span className="rc-mono">{r.build.ref}</span>
-                          <span className="rc-sub">{formatDateIN(r.build.date)} · {r.build.moved ? 'movements written' : 'no movements'}</span>
+                          <span className="rc-sub">
+                            {formatDateIN(r.build.date)} · {r.build.moved ? 'movements written' : 'no movements'}
+                            {r.lots.count > 0 && (
+                              // A run can be exactly the recipe and still be worth opening: which lot
+                              // the chocolate came off is the part a shop needs months later, and a
+                              // clean run has no variance line to click on.
+                              <>
+                                {' · '}
+                                <button type="button" className="rc-inline" onClick={() => setOpenRecipe(open ? '' : r.build.id)}>
+                                  {r.lots.count} lot{r.lots.count === 1 ? '' : 's'} drawn{open ? ' — hide them' : ' — see which'}
+                                </button>
+                              </>
+                            )}
+                          </span>
                         </span>
                         <span data-label="Recipe" className="rc-item">
                           <span className="rc-item-name">{r.recipe?.name || 'recipe no longer on the register'}</span>
@@ -1059,10 +1301,21 @@ function RecipesPageInner() {
                                 <div key={l.product_id} className="rc-vrow">
                                   <span className="rc-item-name">{index.get(l.product_id)?.name || l.product_id}</span>
                                   <span className="rc-sub">{index.get(l.product_id)?.track_inventory === false ? 'not stock-tracked' : `cost ${price(index.get(l.product_id)?.purchase_price)} / unit`}</span>
-                                  <span />
+                                  <span className="rc-sub">{(l.lots || []).length
+                                    ? (l.lots || []).map(x => `${x.batch_no}${x.expiry_date && x.expiry_date < r.build.date ? ' · past expiry' : ''} ${fmtQty(x.qty, index.get(l.product_id)?.unit || '')}`).join(' + ')
+                                    : batchedProducts.includes(l.product_id) && r.build.moved ? 'no lot named' : ''}</span>
                                   <span className="rc-num">{fmtQty(l.qty, index.get(l.product_id)?.unit || '')}</span>
                                 </div>
                               ))}
+                              {r.build.output_batch_id && (
+                                <p className="rc-detail-note">
+                                  Its finished units stand in lot{' '}
+                                  <Link href={`/inventory/batches?q=${encodeURIComponent(r.build.ref)}`}>{lotById.get(r.build.output_batch_id)?.batch_no || r.build.ref}</Link>
+                                  {' '}{lotById.get(r.build.output_batch_id)
+                                    ? `· ${fmtQty(lotById.get(r.build.output_batch_id)!.left, lotById.get(r.build.output_batch_id)!.unit)} left of it now`
+                                    : '· that lot is no longer on the batch register'}.
+                                </p>
+                              )}
                             </>
                           )}
                           {r.findings.length > 0 && (
@@ -1760,17 +2013,45 @@ function RecipesPageInner() {
                 const p = index.get(l.product_id)
                 const asked = draftRecipe ? requirement(draftRecipe, Number(draft.units) || 0).find(w => w.product_id === l.product_id) : undefined
                 const over = p && p.track_inventory !== false && Number(l.qty) > (Number(p.current_stock) || 0)
+                const row = draftCheck?.rows.find(r => r.product_id === l.product_id)
+                const picks = draftCheck?.linesWithLots.find(x => x.product_id === l.product_id)?.lots || []
+                const choice = l.lot === undefined ? 'auto' : l.lot
+                const unit = p?.unit || ''
+                const open_lots = lotsOf(l.product_id).filter(v => v.left > 0 || v.id === choice)
                 return (
-                  <div key={`${l.product_id}-${i}`} className="rc-draw">
-                    <span className="rc-item-name">
-                      {p?.name || l.product_id}
-                      <span className="rc-sub">{p?.track_inventory === false ? 'no stock count kept' : `${fmtQty(Number(p?.current_stock) || 0, p?.unit || '')} on the shelf · cost ${price(p?.purchase_price)}`}</span>
-                    </span>
-                    <span className={`rc-num ${asked && Number(l.qty) !== asked.qty ? 'rc-over' : ''}`}>{asked ? fmtQty(asked.qty, p?.unit || '') : 'off the recipe'}</span>
-                    <input className={`tf-input ${over ? 'rc-input-bad' : ''}`} type="number" min="0" step="any" value={l.qty}
-                      onChange={e => patchDraft({ lines: draft.lines.map((x, j) => (j === i ? { ...x, qty: e.target.value } : x)) })}
-                      aria-label={`Quantity drawn of ${p?.name || 'component'}`} />
-                    <span className={`rc-num ${over ? 'rc-over' : 'rc-sub'}`}>{over ? 'more than the shelf holds' : '—'}</span>
+                  <div key={`${l.product_id}-${i}`} className="rc-drawline">
+                    <div className="rc-draw">
+                      <span className="rc-item-name">
+                        {p?.name || l.product_id}
+                        <span className="rc-sub">{p?.track_inventory === false ? 'no stock count kept' : `${fmtQty(Number(p?.current_stock) || 0, p?.unit || '')} on the shelf · cost ${price(p?.purchase_price)}`}</span>
+                      </span>
+                      <span className={`rc-num ${asked && Number(l.qty) !== asked.qty ? 'rc-over' : ''}`}>{asked ? fmtQty(asked.qty, p?.unit || '') : 'off the recipe'}</span>
+                      <input className={`tf-input ${over ? 'rc-input-bad' : ''}`} type="number" min="0" step="any" value={l.qty}
+                        onChange={e => patchDraft({ lines: draft.lines.map((x, j) => (j === i ? { ...x, qty: e.target.value } : x)) })}
+                        aria-label={`Quantity drawn of ${p?.name || 'component'}`} />
+                      <span className={`rc-num ${over ? 'rc-over' : 'rc-sub'}`}>{over ? 'more than the shelf holds' : '—'}</span>
+                    </div>
+                    {row?.batched && (
+                      <div className="rc-lots">
+                        <span className="rc-lots-label">Which lot</span>
+                        <select className="tf-input rc-lots-select" value={choice}
+                          onChange={e => patchLotChoice(l.product_id, e.target.value)}
+                          aria-label={`Which lot ${p?.name || 'this component'} was drawn from`}>
+                          <option value="auto">First expiry first out{row.ok ? ` — ${row.picks.length} lot${row.picks.length === 1 ? '' : 's'}` : ' — the lots cannot cover it'}</option>
+                          {open_lots.map(v => (
+                            <option key={v.id} value={v.id}>
+                              {v.batch_no || 'unnamed lot'} · {fmtQty(v.left, v.unit)} left{v.status === 'expired' ? ' · expired' : ''}
+                            </option>
+                          ))}
+                          <option value="">No lot named</option>
+                        </select>
+                        <span className={`rc-lots-take ${picks.length ? '' : 'rc-warn'}`}>
+                          {picks.length
+                            ? picks.map(x => `${x.batch_no} ${fmtQty(x.qty, unit)}${x.expiry_date && x.expiry_date < draft.date ? ' · past its expiry' : ''}`).join('  +  ')
+                            : `no lot named — ${fmtQty(Number(l.qty) || 0, unit)} will leave the shelf and the lot register will not know where from`}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )
               })}
@@ -1809,6 +2090,36 @@ function RecipesPageInner() {
               </div>
             )}
 
+            {candidate && draftCheck && draftCheck.clash.length > 0 && (
+              <div className="rc-note is-hot">
+                <Icon name="alert" size={13} strokeWidth={2.2} />
+                <span>
+                  The lot register cannot give up that much: {draftCheck.clash.join(' · ')}. Recording the run would draw a lot below
+                  zero, which is a history the shop did not live — name another lot, or draw what the lot actually holds.
+                </span>
+              </div>
+            )}
+
+            {candidate && draftCheck && draftCheck.unnamed.length > 0 && (
+              <div className="rc-note">
+                <Icon name="alert" size={13} strokeWidth={2.2} />
+                <span>
+                  {draftCheck.unnamed.join(' · ')}. The run still moves the shelf; those draws will be recorded with no lot named, and the
+                  build log says so. Book the receipt at <Link href="/inventory/batches">/inventory/batches</Link> and the split appears here.
+                </span>
+              </div>
+            )}
+
+            {candidate && draftCheck && draftCheck.expiredPicks.length > 0 && (
+              <div className="rc-note">
+                <Icon name="clock" size={13} strokeWidth={2.2} />
+                <span>
+                  Past its expiry on {candidate.date}: {draftCheck.expiredPicks.join(', ')}. FEFO takes the nearest date first, so this is
+                  the lot that should have gone out — the register records what left the shelf, and flags that it happened.
+                </span>
+              </div>
+            )}
+
             {candidate && draftCheck && (
               <div className="rc-preview">
                 <div className="rc-preview-head">
@@ -1832,11 +2143,37 @@ function RecipesPageInner() {
                         <span className="rc-preview-take">{w.quantity > 0 ? '+' : ''}{fmtQty(w.quantity, index.get(w.product_id)?.unit || '')}</span>
                       </li>
                     ))}
+                    {draftCheck.lotWrites.map((w, i) => (
+                      <li key={`lot-${w.batch_id}-${i}`}>
+                        <span className="rc-dot rc-dot-red" />
+                        off lot <strong>{w.batch_no || 'unnamed'}</strong> · {index.get(w.product_id)?.name || 'the component'}
+                        <span className="rc-preview-take">{fmtQty(-w.qty, index.get(w.product_id)?.unit || '')}</span>
+                      </li>
+                    ))}
+                    {draftCheck.produced && (
+                      <li>
+                        <span className="rc-dot rc-dot-green" />
+                        the finished units booked in as their own lot <strong>{draftCheck.produced.batch_no}</strong> —{' '}
+                        {fmtQty(draftCheck.produced.qty, draftCheck.produced.unit)} at{' '}
+                        {draftCheck.produced.cost > 0 ? `${price(draftCheck.produced.cost)} a unit` : 'no cost recorded'}
+                        , no expiry and no godown until the shop names one
+                      </li>
+                    )}
                     <li>
                       <span className="rc-dot rc-dot-blue" />
                       every row goes through the same movement RPC <Link href="/inventory">/inventory</Link> writes, under {candidate.ref} —
                       the schema has no build movement type, so the job rides in the note
                     </li>
+                    {draftCheck.lotWrites.length > 0 && (
+                      <li>
+                        <span className="rc-dot rc-dot-blue" />
+                        the lot draws are written after the shelf moves, through <Link href="/inventory/batches">/inventory/batches</Link>&apos;s own
+                        register, as adjustments under {candidate.ref} — the batch shape has no issue kind and nothing here invents one
+                      </li>
+                    )}
+                    {draftCheck.lotNeeds && (
+                      <li><span className="rc-dot rc-dot-blue" />{draftCheck.lotNeeds}</li>
+                    )}
                     {draftRecipe && (draftRecipe.labour_minutes > 0 || draftRecipe.overhead_minutes > 0) && candidate.units > 0 && draftRecipe.output_qty > 0 && (
                       <li>
                         <span className="rc-dot rc-dot-blue" />
@@ -1861,10 +2198,16 @@ function RecipesPageInner() {
             <div className="rc-save">
               <Button variant="ghost" onClick={() => setDraft(null)}>Cancel</Button>
               <Button variant="subtle" icon="clock" onClick={() => saveBuild(false)} disabled={!!busy || !draftCheck || draftCheck.errs.length > 0}>
-                {draftExisting?.status === 'planned' ? 'Save the plan' : 'Save as plan'}
+                {draftExisting?.moved ? 'Save the note' : draftExisting?.status === 'planned' ? 'Save the plan' : 'Save as plan'}
               </Button>
-              <Button icon="file-check" onClick={() => saveBuild(true)} disabled={!!busy || !draftCheck || !draftCheck.ok || activeRecipes.length === 0}>
-                {draftExisting?.status === 'built' ? 'Movements already written' : 'Record build & move stock'}
+              <Button icon="file-check" onClick={() => saveBuild(true)}
+                disabled={!!busy || !draftCheck || !draftCheck.ok || activeRecipes.length === 0 || Boolean(draftExisting?.moved)}
+                title={draftExisting?.moved
+                  ? 'This run is already on the stock ledger — cancelling it writes the reversal, and a fresh run records what happened next'
+                  : draftCheck && !draftCheck.ok && draftCheck.clash.length > 0
+                    ? 'A lot cannot give up the quantity drawn'
+                    : 'Write the movements, draw the lots down and book the finished units as a lot'}>
+                {draftExisting?.moved ? 'Movements already written' : 'Record build & move stock'}
               </Button>
             </div>
           </div>
@@ -2097,6 +2440,20 @@ function RecipesPageInner() {
         .rc-remove:hover { color: var(--red); border-color: var(--red); }
         .rc-add-part { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
+        /* One drawn component: the quantities on top, and beneath them the physical lot the draw
+           came off — only when the part keeps a batch register. The strip hangs off a rule so it
+           reads as a continuation of the row above it, not a fourth column. */
+        .rc-drawline { display: flex; flex-direction: column; gap: 5px; }
+        .rc-lots { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+          border-left: 2px solid var(--line); padding-left: 10px; }
+        .rc-lots-label { font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
+          text-transform: uppercase; color: var(--faint); }
+        .rc-lots-select { width: auto; min-width: 0; max-width: 270px; padding: 6px 9px;
+          font-size: 12px; cursor: pointer; }
+        .rc-lots-take { flex: 1 1 220px; font-size: 11.5px; color: var(--muted); line-height: 1.5;
+          font-variant-numeric: tabular-nums; }
+        .rc-lots-take.rc-warn { color: var(--amber); }
+
         .rc-preview { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--surface-2); }
         .rc-preview-head { display: flex; justify-content: space-between; gap: 10px; font-size: 11px; font-weight: 700;
           letter-spacing: 0.05em; text-transform: uppercase; color: var(--faint); flex-wrap: wrap; }
@@ -2105,6 +2462,7 @@ function RecipesPageInner() {
         .rc-preview-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
         .rc-preview-list li { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; color: var(--ink-2); line-height: 1.5; }
         .rc-preview-list a { color: var(--brand); }
+        .rc-preview-list strong { color: var(--ink); font-weight: 650; font-variant-numeric: tabular-nums; }
         .rc-preview-take { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 650; color: var(--ink); }
 
         .rc-save { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
@@ -2124,6 +2482,8 @@ function RecipesPageInner() {
           .rc-grid, .rc-grid-wide { grid-template-columns: 1fr; }
           .rc-grid2, .rc-part, .rc-parts-head, .rc-parts-head-edit, .rc-parts-head-draw, .rc-part-edit, .rc-draw, .rc-vrow, .rc-used { grid-template-columns: 1fr; }
           .rc-rate-row { grid-template-columns: 1fr 1fr; }
+          .rc-lots { padding-left: 8px; }
+          .rc-lots-select { width: 100%; max-width: none; }
           .rc-parts-head span:nth-child(n+2) { text-align: left; }
           .rc-parts-head { display: none; }
           .rc-scrim { align-items: flex-end; padding: 0; }

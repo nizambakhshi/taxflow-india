@@ -1684,7 +1684,9 @@ export function reverseLotWritesFor(build: Build, products: BomProduct[]): Batch
   return lotWritesFor(build, products).map(w => ({
     ...w,
     qty: -w.qty,
-    note: w.note.replace(/^Build /, 'Cancel '),
+    // The paper keeps its shape — job, part, lot — and only the verb turns round, because a move
+    // that puts units back reads as a return and not as a second issue.
+    note: w.note.replace(/^Build /, 'Cancel ').replace(' issued from lot ', ' went back to lot '),
   }))
 }
 
