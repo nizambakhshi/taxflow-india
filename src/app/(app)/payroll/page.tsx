@@ -957,7 +957,7 @@ function EmployeeEditor({ draft, month, existing, onSave, onClose }: {
               <label htmlFor="pr-hours">Hours a day</label>
               <input id="pr-hours" type="number" min={0} step={0.5} value={form.hours_per_day}
                 onChange={e => set('hours_per_day', Number(e.target.value) || 0)} />
-              <span>Only used to divide a day of employer cost into an hour, which is what this register’s Cost tab does. `/projects` still prices an hour at what you would bill it — folding a costed hour into a job is a separate decision, not an automatic one.</span>
+              <span>Only used to divide a day of employer cost into an hour: this register’s Cost tab prints it, and `/projects` reads it when a timesheet row names one of these people. There, the hour is still priced at what you would bill it; the costed hour is a reading beside contribution, never folded into it.</span>
             </div>
             <div className="pr-field">
               <label htmlFor="pr-active">On the rolls</label>
@@ -2154,8 +2154,9 @@ function CostTab({ store, month }: { store: PayrollStore; month: string }) {
         <div className="pr-pad" style={{ paddingBottom: 0 }}>
           <p className="pr-note">The rupee an hour of each person’s time actually cost the business: the month’s employer cost — gross
             plus the employer’s own provident-fund and insurance legs — divided by the days that were paid for and the hours the shop works.
-            It is not subtracted from a project automatically: the hours logged on a job were not necessarily these people’s, and the register
-            that knows who worked is <Link href="/projects" style={{ color: 'var(--brand)' }}>Projects &amp; Time</Link>.</p>
+            Nothing here is subtracted from a project by itself: <Link href="/projects" style={{ color: 'var(--brand)' }}>Projects &amp; Time</Link> reads
+            this figure only when a timesheet row names one of these people, and prints it as a reading beside contribution — “after named hours”,
+            marked partial while hours remain unpriced. No wage rupee is stored or posted there either.</p>
         </div>
 
         {costs.length === 0 ? (

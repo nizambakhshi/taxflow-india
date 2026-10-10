@@ -14,10 +14,12 @@
 //    priced and handed over as a line you can paste at /invoices/new; the invoice itself goes
 //    through the write path that gives it a real sequence number. Marking hours "billed" records
 //    that you raised one somewhere — it does not raise it. /payments remains the only writer of money.
-//  * The hours are priced, not costed. There is no payroll here, so the rupees on an hour are what
-//    it would be billed at, not what it cost to do. Contribution is therefore revenue less spend,
-//    and the hour figure sits beside it rather than inside it — subtracting your own billing rate
-//    from your own revenue would be double counting with extra steps.
+//  * The hours are priced, not billed — and the named ones are costed. An hour carries the rate it
+//    would be billed at; that figure sits beside contribution, never inside it. When the row names
+//    a person from the payroll register, this page reads what their hour cost in the entry's own
+//    month (src/lib/payroll.ts computes it; the rows are handed across as data) and prints the
+//    reading "after named hours" — marked partial while linked or typed-only hours remain unpriced.
+//    The register's own revenue-minus-spend is never rewritten, and no wage rupee is stored here.
 //  * The thirty-day window is rule 47 as CBIC states it in the Invoicing Handbook (§2.1.2,
 //    17-06-2025). Notifications have widened it for classes of supplier. This page names the rule
 //    and prints the date; only gst.gov.in settles what applies to you.
@@ -32,15 +34,16 @@ import { toCsv } from '@/lib/registers'
 import { download } from '@/lib/party-ledger'
 import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
 import {
-  BILLING_META, type BillingMode, DUE_SOON_DAYS, ENTRY_CSV_HEADERS, entryCsvRows,
+  BILLING_META, type BillingMode, costHours, DUE_SOON_DAYS, ENTRY_CSV_HEADERS, entryCsvRows,
   invoiceLineText, invoiceWindow, loadProjects, monthlySeries, newEntry, newProject, personSeries,
-  PROJECT_CSV_HEADERS, projectCsvRows, type Project, PROJECT_STATUSES, projectViews,
+  periodOf, PROJECT_CSV_HEADERS, projectCsvRows, type Project, PROJECT_STATUSES, projectViews,
   rateOf, removeTag, setProjectStatus, summarise, sortViews, STATUS_META, SERVICE_INVOICE_DAYS,
   unbilledCsvRows, unbilledGroups, UNBILLED_CSV_HEADERS, upsertEntry, upsertProject,
   markBilled, markUnbilled, deleteProject, deleteEntry, bulkTag,
   validateEntry, validateProject, WATCH_META, watchSentence,
-  type MonthBucket, type ProjectStore, type ProjectView, type TimeEntry, type UnbilledGroup,
+  type HourCostRow, type MonthBucket, type ProjectStore, type ProjectView, type TimeEntry, type UnbilledGroup,
 } from '@/lib/projects'
+import { costPerHourFor, employeeById, loadPayroll, monthLabel, offRosterWhy, type PayrollStore } from '@/lib/payroll'
 import {
   Badge, BarChart, Button, Card, EmptyState, PageHeader, ProgressBar, SearchInput, Segmented, StatCard, StatRow,
 } from '@/components/ui'
@@ -225,7 +228,48 @@ function ProjectsPageInner() {
   const day = useMemo(() => today(), [])
   const base = fyStart()
 
-  const views = useMemo(() => sortViews(projectViews(store, docs, day)), [store, docs, day])
+  // The payroll register, read the same way this one is: from this browser, on load. It is the
+  // only place the wage arithmetic lives — this page asks it for (person, month) rows and stores
+  // none of the rupees it answers with. An empty register is a fact, not an error: every hour
+  // then reads as uncosted, loudly, and the findings point back to /payroll.
+  const payroll = useMemo<PayrollStore | null>(() => (orgId ? loadPayroll(orgId) : null), [orgId])
+
+  /** Every (person, month) this register's entries ask about — priced by payroll, or refused with its words. */
+  const costs = useMemo<HourCostRow[]>(() => {
+    if (!payroll) return []
+    const wanted = new Map<string, { employee_id: string; month: string }>()
+    for (const e of store.entries) {
+      if (!e.employee_id) continue
+      const month = periodOf(e.date)
+      wanted.set(`${e.employee_id}:${month}`, { employee_id: e.employee_id, month })
+    }
+    const people = employeeById(payroll.employees)
+    const rows: HourCostRow[] = []
+    for (const w of wanted.values()) {
+      const priced = costPerHourFor(payroll, w.month).find(c => c.employee_id === w.employee_id)
+      if (priced) { rows.push(priced); continue }
+      // The register kept this person off that month's roster (or never heard of them). Its own
+      // sentence says why; the row refuses either way — a guessed wage is the one thing this must not print.
+      const person = people.get(w.employee_id)
+      rows.push({
+        employee_id: w.employee_id, name: person?.name || '', month: w.month,
+        cost_per_hour: null, basis: '',
+        why: person ? (offRosterWhy(person, w.month) || 'The payroll register has no figure for this month.') : 'Not on the payroll register.',
+      })
+    }
+    return rows
+  }, [payroll, store.entries])
+
+  /** The register's answer for every stored row: a rupee, or a refusal carrying its reason. */
+  const costMap = useMemo(() => costHours(store.entries, costs), [store.entries, costs])
+
+  /** The people the entry modal offers; the register's own order, by name. */
+  const payrollPeople = useMemo(
+    () => (payroll ? [...payroll.employees].sort((a, b) => a.name.localeCompare(b.name)) : []),
+    [payroll],
+  )
+
+  const views = useMemo(() => sortViews(projectViews(store, docs, day, costs)), [store, docs, day, costs])
   const sum = useMemo(() => summarise(views), [views])
 
   const allGroups = useMemo(
@@ -260,6 +304,16 @@ function ProjectsPageInner() {
     })
     return [...list].sort((a, b) => (a.date === b.date ? a.person.localeCompare(b.person) : a.date < b.date ? 1 : -1))
   }, [periodEntries, projectFilter, search, store.projects])
+
+  /** The named-hours cost inside the rows in view — the strip states it only when the register could. */
+  const inViewCost = useMemo(() => {
+    let cost = 0
+    for (const e of sheetEntries) {
+      const c = costMap.get(e.id)
+      if (c && c.cost !== null) cost += c.cost
+    }
+    return Math.round(cost * 100) / 100
+  }, [sheetEntries, costMap])
 
   const groupRows = useMemo(() => {
     const scoped = new Set(periodEntries.map(e => e.id))
@@ -409,7 +463,7 @@ function ProjectsPageInner() {
     download('projects.csv', toCsv(PROJECT_CSV_HEADERS, projectCsvRows(visibleViews)))
   }
   function exportTimesheet() {
-    download('timesheet.csv', toCsv(ENTRY_CSV_HEADERS, entryCsvRows({ ...store, entries: sheetEntries }, day)))
+    download('timesheet.csv', toCsv(ENTRY_CSV_HEADERS, entryCsvRows({ ...store, entries: sheetEntries }, day, costs)))
   }
   function exportUnbilled() {
     download('unbilled-work.csv', toCsv(UNBILLED_CSV_HEADERS, unbilledCsvRows(groupRows)))
@@ -463,7 +517,7 @@ function ProjectsPageInner() {
         />
         <StatCard
           label="Contribution from the books" value={money(sum.contribution)}
-          sub={`${money(sum.revenue)} billed · ${money(sum.cost)} spent · ${liveProjects.length} live project${liveProjects.length === 1 ? '' : 's'}${sum.unpriced_hours > 0 ? ` · ${hours(sum.unpriced_hours)} unpriced` : ''}`}
+          sub={`${money(sum.revenue)} billed · ${money(sum.cost)} spent · ${liveProjects.length} live project${liveProjects.length === 1 ? '' : 's'}${sum.unpriced_hours > 0 ? ` · ${hours(sum.unpriced_hours)} unpriced` : ''}${sum.costed_hours > 0 ? ` · after named hours ${money(sum.after_labour)}${sum.costed_hours < sum.hours ? ', partial' : ''}` : ''}`}
           icon="scale" tone={sum.contribution >= 0 ? 'violet' : 'red'} delay={120}
         />
       </div>
@@ -598,9 +652,14 @@ function ProjectsPageInner() {
                   <div className="pj-card-stats">
                     <StatRow label="Hours logged" value={hours(v.hours)} />
                     <StatRow label={`Hour value (${rate})`} value={money(v.labour_value)} />
+                    {v.costed_hours > 0 && <StatRow label="Cost of named hours" value={money(v.labour_cost)} />}
                     <StatRow label="Unbilled" tone={v.unbilled_value > 0 ? 'amber' : undefined} value={v.unbilled_value ? `${money(v.unbilled_value)} · ${hours(v.unbilled_hours)}` : '—'} />
                     <StatRow label="Documents attached" value={v.doc_count ? `${v.doc_count}${v.orphans ? ` (+${v.orphans} orphan)` : ''}` : '—'} />
                     <StatRow label="Contribution" tone={v.contribution >= 0 ? 'green' : 'red'} value={money(v.contribution)} strong />
+                    {v.costed_hours > 0 && (
+                      <StatRow label="After named hours" tone={v.after_labour >= 0 ? undefined : 'red'} strong
+                        value={<>{money(v.after_labour)}{v.costed_hours < v.hours ? <span className="pj-muted"> · partial</span> : null}</>} />
+                    )}
                   </div>
 
                   {v.findings.length > 0 && (
@@ -660,7 +719,7 @@ function ProjectsPageInner() {
                             {PROJECT_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
                           </select>
                         )}
-                        <Button size="sm" variant="ghost" icon="download" onClick={() => download(`${(p.code || p.name || 'project').replace(/\W+/g, '-')}-hours.csv`, toCsv(ENTRY_CSV_HEADERS, entryCsvRows({ ...store, entries: mine }, day)))} disabled={!mine.length}>Hours CSV</Button>
+                        <Button size="sm" variant="ghost" icon="download" onClick={() => download(`${(p.code || p.name || 'project').replace(/\W+/g, '-')}-hours.csv`, toCsv(ENTRY_CSV_HEADERS, entryCsvRows({ ...store, entries: mine }, day, costs)))} disabled={!mine.length}>Hours CSV</Button>
                         <Button size="sm" variant="danger" icon="x" onClick={() => removeProject(v)}>Delete</Button>
                       </div>
                       <p className="pj-hint">{STATUS_META[p.status].note} {BILLING_META[p.billing].note}</p>
@@ -699,7 +758,7 @@ function ProjectsPageInner() {
                 <span className="pj-bulk-total">{money(periodEntries.reduce((t, e) => {
                   const p = store.projects.find(x => x.id === e.project_id)
                   return t + (p ? e.hours * rateOf(e, p) : 0)
-                }, 0))} of hours in view</span>
+                }, 0))} of hours in view{inViewCost > 0 ? ` · ${money(inViewCost)} named-hour cost` : ''}</span>
                 {picked.length > 0 && <Button size="sm" icon="invoice" onClick={() => setBillFor({ ids: picked, ref: '' })}>Mark billed</Button>}
                 {picked.length > 0 && <Button size="sm" variant="ghost" icon="undo" onClick={() => unbilledNow(picked)}>Un-bill</Button>}
                 <Button size="sm" variant="subtle" icon="plus" onClick={() => openEntry(projectFilter !== 'all' ? projectFilter : '')}>Log time</Button>
@@ -713,6 +772,7 @@ function ProjectsPageInner() {
                     <span className="is-right">Hours</span>
                     <span className="is-right">Rate</span>
                     <span className="is-right">Value</span>
+                    <span className="is-right">Cost</span>
                     <span>Billed on</span>
                     <span>Window</span>
                     <span className="is-right">Actions</span>
@@ -722,6 +782,7 @@ function ProjectsPageInner() {
                     if (!p) return null
                     const v = rateOf(e, p)
                     const val = v > 0 ? Math.round(e.hours * v * 100) / 100 : 0
+                    const c = costMap.get(e.id)
                     const g = !e.billed_ref ? allGroups.find(x => x.key === `${p.id}:${e.date.slice(0, 7)}`) : undefined
                     const w = g ? WATCH_META[g.state] : e.billed_ref ? { label: 'Billed', tone: 'green' as const } : { label: '—', tone: 'grey' as const }
                     const checked = picked.includes(e.id)
@@ -734,10 +795,13 @@ function ProjectsPageInner() {
                             <em>{p.name || p.code}{p.client_name ? ` · ${p.client_name}` : ''}</em>
                           </span>
                         </span>
-                        <span data-label="Who">{e.person || '—'}{e.note ? <em className="pj-noteline">{e.note}</em> : null}</span>
+                        <span data-label="Who">{c?.name || e.person || '—'}{e.note ? <em className="pj-noteline">{e.note}</em> : null}</span>
                         <span className="is-right pj-num" data-label="Hours">{hours(e.hours)}</span>
                         <span className="is-right pj-num" data-label="Rate">{v > 0 ? money(v) : 'none'}</span>
                         <span className="is-right pj-num" data-label="Value">{v > 0 ? money(val) : '—'}</span>
+                        <span className="is-right pj-num" data-label="Cost">{c && c.cost !== null
+                          ? money(c.cost)
+                          : <span className="pj-muted" title={c?.why || undefined}>{c?.linked ? 'no figure' : '—'}</span>}</span>
                         <span data-label="Billed on">{e.billed_ref
                           ? <Link href={`/invoices?q=${encodeURIComponent(e.billed_ref)}`}>{e.billed_ref}</Link>
                           : <span className="pj-muted">unbilled</span>}</span>
@@ -989,7 +1053,7 @@ function ProjectsPageInner() {
         </div>
         <div className="pj-bound">
           <Icon name="scale" size={14} />
-          <p><strong>The hours are priced, not costed.</strong> There is no payroll in this register, so an hour carries the rate you would bill it at, not what it cost to do. Contribution is therefore billed revenue less attached spend — your own time is deliberately not subtracted from it. A margin that charged you your own billing rate would be double counting.</p>
+          <p><strong>The hours are priced; the named ones are also costed.</strong> An hour carries the rate you would bill it at, and that figure never enters contribution — subtracting your own billing rate from your own revenue would be double counting. When a row names a person from the <Link href="/payroll">payroll register</Link>, the section reads what their hour cost in the entry’s own month and prints <em>after named hours</em> beside contribution — a reading, marked <em>partial</em> while linked or typed-only hours remain unpriced, and never folded into the register’s own number. No wage rupee is stored or posted here — and where the same wages are also attached as a bill, the two readings overlap. Read them together, do not add them.</p>
         </div>
         <div className="pj-bound">
           <Icon name="layers" size={14} />
@@ -1101,9 +1165,38 @@ function ProjectsPageInner() {
                 <input className="tf-input" type="date" value={entryForm.entry.date} max={today()} onChange={e => patchEntry({ entry: { ...entryForm.entry, date: e.target.value } })} />
                 <span className="pj-hint">This is the date of supply the {SERVICE_INVOICE_DAYS}-day window runs from.</span>
               </label>
-              <label className="pj-field"><span>Who did it</span>
-                <input className="tf-input" value={entryForm.entry.person} onChange={e => patchEntry({ entry: { ...entryForm.entry, person: e.target.value } })} placeholder="Asha, Rafeeq, site team…" />
-              </label>
+              <div className="pj-field"><span>Who did it</span>
+                <select className="tf-input" aria-label="Who did it — person from the payroll register"
+                  value={entryForm.entry.employee_id}
+                  onChange={e => {
+                    const id = e.target.value
+                    const person = id && payroll ? employeeById(payroll.employees).get(id) : undefined
+                    patchEntry({ entry: { ...entryForm.entry, employee_id: id, person: person ? person.name : entryForm.entry.person } })
+                  }}>
+                  <option value="">Typed name only — never costed</option>
+                  {entryForm.entry.employee_id && !payrollPeople.some(p => p.id === entryForm.entry.employee_id) && (
+                    <option value={entryForm.entry.employee_id}>Person no longer on the register</option>
+                  )}
+                  {payrollPeople.map(p => <option key={p.id} value={p.id}>{p.name || p.code || 'Unnamed'}{p.code ? ` · ${p.code}` : ''}</option>)}
+                </select>
+                <input className="tf-input" aria-label="Who did it — typed name" value={entryForm.entry.person} onChange={e => patchEntry({ entry: { ...entryForm.entry, person: e.target.value } })} placeholder="…or type the name as it should print" />
+                <span className="pj-hint">{(() => {
+                  const id = entryForm.entry.employee_id
+                  if (!id) return 'Priced at the row’s rate; not costed. Only a person picked from the payroll register carries a wage reading — a typed name is not a link.'
+                  const person = payroll ? employeeById(payroll.employees).get(id) : undefined
+                  if (!payroll || !person) return 'This person is not on the payroll register in this browser, so no cost can be read for the row.'
+                  const month = periodOf(entryForm.entry.date)
+                  const priced = costPerHourFor(payroll, month).find(c => c.employee_id === id)
+                  if (priced && priced.cost_per_hour === null) return priced.why
+                  if (priced && priced.cost_per_hour !== null) {
+                    const h = Number(entryForm.hoursText) || 0
+                    return h > 0
+                      ? `${monthLabel(month)}: this person’s hour cost ${money(priced.cost_per_hour)} — this row would read ${money(h * priced.cost_per_hour)} at cost.`
+                      : `${monthLabel(month)}: ${priced.basis}`
+                  }
+                  return offRosterWhy(person, month) || 'The payroll register has no figure for this month.'
+                })()}</span>
+              </div>
               <label className="pj-field"><span>Hours</span>
                 <input className="tf-input" type="number" min="0" step="0.25" value={entryForm.hoursText} onChange={e => patchEntry({ hoursText: e.target.value })} />
               </label>
@@ -1232,10 +1325,10 @@ function ProjectsPageInner() {
         .pj-bulk-total { margin-left: auto; font-size: 12.5px; font-weight: 650; color: var(--brand); font-variant-numeric: tabular-nums; }
         .pj-check-all { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); cursor: pointer; }
 
-        .pj-cols { display: grid; grid-template-columns: minmax(150px, 1.5fr) minmax(110px, 1fr) 76px 86px 92px minmax(110px, 1fr) minmax(120px, 1fr) 108px; gap: 10px; align-items: center; }
+        .pj-cols { display: grid; grid-template-columns: minmax(150px, 1.5fr) minmax(110px, 1fr) 76px 86px 92px 86px minmax(110px, 1fr) minmax(120px, 1fr) 108px; gap: 10px; align-items: center; }
         .pj-head { padding: 9px 12px; font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
-          color: var(--faint); border-bottom: 1px solid var(--line); min-width: 900px; }
-        .pj-tr { padding: 9px 12px; border-bottom: 1px solid var(--line-soft); min-width: 900px; }
+          color: var(--faint); border-bottom: 1px solid var(--line); min-width: 980px; }
+        .pj-tr { padding: 9px 12px; border-bottom: 1px solid var(--line-soft); min-width: 980px; }
         .pj-tr:last-child { border-bottom: none; }
         .pj-tr.is-picked { background: var(--brand-soft); }
         .pj-lead { display: flex; align-items: center; gap: 8px; min-width: 0; }
