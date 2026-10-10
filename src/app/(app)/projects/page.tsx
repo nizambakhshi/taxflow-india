@@ -34,16 +34,18 @@ import { toCsv } from '@/lib/registers'
 import { download } from '@/lib/party-ledger'
 import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
 import {
-  BILLING_META, type BillingMode, costHours, DUE_SOON_DAYS, ENTRY_CSV_HEADERS, entryCsvRows,
+  BILLING_META, type BillingMode, costHours, drawHours, DUE_SOON_DAYS, ENTRY_CSV_HEADERS, entryCsvRows,
   invoiceLineText, invoiceWindow, loadProjects, monthlySeries, newEntry, newProject, personSeries,
   periodOf, PROJECT_CSV_HEADERS, projectCsvRows, type Project, PROJECT_STATUSES, projectViews,
   rateOf, removeTag, setProjectStatus, summarise, sortViews, STATUS_META, SERVICE_INVOICE_DAYS,
-  unbilledCsvRows, unbilledGroups, UNBILLED_CSV_HEADERS, upsertEntry, upsertProject,
+  unbilledCsvRows, unbilledGroups, UNBILLED_CSV_HEADERS, upsertEntries, upsertEntry, upsertProject,
   markBilled, markUnbilled, deleteProject, deleteEntry, bulkTag,
   validateEntry, validateProject, WATCH_META, watchSentence,
-  type HourCostRow, type MonthBucket, type ProjectStore, type ProjectView, type TimeEntry, type UnbilledGroup,
+  type BookWorkDay, type HourCostRow, type HoursDraw, type MonthBucket, type ProjectStore, type ProjectView,
+  type TimeEntry, type UnbilledGroup,
 } from '@/lib/projects'
-import { costPerHourFor, employeeById, loadPayroll, monthLabel, offRosterWhy, type PayrollStore } from '@/lib/payroll'
+import { costPerHourFor, employeeById, isMonth, loadPayroll, monthLabel, offRosterWhy, type PayrollStore } from '@/lib/payroll'
+import { dayBook, markWork } from '@/lib/attendance'
 import {
   Badge, BarChart, Button, Card, EmptyState, PageHeader, ProgressBar, SearchInput, Segmented, StatCard, StatRow,
 } from '@/components/ui'
@@ -106,6 +108,8 @@ const today = () => new Date().toISOString().slice(0, 10)
 
 interface EditorState { project: Project; isNew: boolean }
 interface EntryState { entry: TimeEntry; isNew: boolean; hoursText: string; rateText: string }
+/** The draw: whose days, on which project, from which month — `ticks` null means "the draw's own proposal". */
+interface DrawState { project_id: string; employee_id: string; month: string; ticks: string[] | null }
 
 function toEntry(s: EntryState): TimeEntry {
   return {
@@ -150,6 +154,8 @@ function ProjectsPageInner() {
   const [entryError, setEntryError] = useState('')
   const [billFor, setBillFor] = useState<{ ids: string[]; ref: string } | null>(null)
   const [attachFor, setAttachFor] = useState<string>('')
+  const [drawForm, setDrawForm] = useState<DrawState | null>(null)
+  const [drawError, setDrawError] = useState('')
 
   useEffect(() => {
     async function load() {
@@ -268,6 +274,47 @@ function ProjectsPageInner() {
     () => (payroll ? [...payroll.employees].sort((a, b) => a.name.localeCompare(b.name)) : []),
     [payroll],
   )
+
+  // The day book, read as data the same way the payroll figures above are: this page reads the
+  // register's kept marks, `drawHours()` proposes rows, and the page writes only what the shop
+  // ticks. Nothing here writes into the book.
+  const draw = useMemo<{ result: HoursDraw | null; off: string }>(() => {
+    if (!drawForm || !payroll || !drawForm.employee_id) return { result: null, off: '' }
+    const project = store.projects.find(p => p.id === drawForm.project_id)
+    if (!project || !isMonth(drawForm.month)) return { result: null, off: '' }
+    const person = payroll.employees.find(e => e.id === drawForm.employee_id)
+    if (!person) return { result: null, off: '' }
+    const book = dayBook(payroll, drawForm.month, day)
+    const row = book.rows.find(r => r.employee.id === person.id)
+    // A person the month's roster does not carry has no page — the register's own sentence says why.
+    if (!row) {
+      return { result: null, off: offRosterWhy(person, drawForm.month) || `${person.name} has no page in ${monthLabel(drawForm.month)} — the book rules no day for them.` }
+    }
+    const work: BookWorkDay[] = row.cells.filter(c => c.on_roll).map(c => {
+      const w = markWork(c.mark)
+      return { date: c.date, mark: c.mark, label: w.label, fraction: w.fraction, why: w.why }
+    })
+    return {
+      off: '',
+      result: drawHours(
+        work,
+        { employee_id: person.id, person: person.name, hours_per_day: person.hours_per_day },
+        project, store.projects, store.entries, drawForm.month, day,
+      ),
+    }
+  }, [drawForm, payroll, store.projects, store.entries, day])
+
+  /** The ticked set. Null in the form means the draw's own proposal; a toggle materialises the list. */
+  const drawTicks = useMemo(() => {
+    if (!draw.result) return new Set<string>()
+    return new Set(drawForm?.ticks ?? draw.result.days.filter(d => d.proposed).map(d => d.date))
+  }, [drawForm, draw.result])
+
+  const drawTicked = useMemo(
+    () => (draw.result ? draw.result.days.filter(d => d.tickable && drawTicks.has(d.date)) : []),
+    [draw, drawTicks],
+  )
+  const drawTickedHours = Math.round(drawTicked.reduce((t, d) => t + d.hours, 0) * 100) / 100
 
   const views = useMemo(() => sortViews(projectViews(store, docs, day, costs)), [store, docs, day, costs])
   const sum = useMemo(() => summarise(views), [views])
@@ -398,6 +445,60 @@ function ProjectsPageInner() {
   function removeEntry(e: TimeEntry) {
     setStore(deleteEntry(orgId, e.id))
     flash(`${hours(e.hours)} removed from the register.`)
+  }
+
+  // ── the draw ────────────────────────────────────────────────────────────────
+
+  function openDraw(projectId: string) {
+    setDrawForm({
+      project_id: projectId || (projectFilter !== 'all' ? projectFilter : '') || liveProjects[0]?.project.id || '',
+      employee_id: '',
+      month: day.slice(0, 7),
+      ticks: null,
+    })
+    setDrawError('')
+  }
+
+  /** Any change of project, person or month re-proposes: back to the draw's own ticks. */
+  function pickDraw(patch: Partial<DrawState>) {
+    setDrawForm(f => (f ? { ...f, ...patch, ticks: null } : f))
+    setDrawError('')
+  }
+
+  function toggleDrawDay(date: string) {
+    if (!drawForm || !draw.result) return
+    const current = new Set(drawForm.ticks ?? draw.result.days.filter(d => d.proposed).map(d => d.date))
+    if (current.has(date)) current.delete(date)
+    else current.add(date)
+    setDrawForm({ ...drawForm, ticks: [...current].sort() })
+  }
+
+  function applyDraw() {
+    if (!drawForm || !draw.result) return
+    const project = store.projects.find(p => p.id === drawForm.project_id)
+    if (!project) return
+    if (!drawTicked.length) { setDrawError('Tick at least one day — a draw with no day on it writes nothing.'); return }
+    const rows: TimeEntry[] = []
+    const refused: string[] = []
+    for (const d of drawTicked) {
+      const row: TimeEntry = {
+        ...newEntry(project.id, d.date),
+        person: draw.result.person,
+        employee_id: draw.result.employee_id,
+        hours: d.hours,
+        note: `Drawn from the day book — ${d.date} marked ${d.mark}${d.label ? ` (${d.label})` : ''}.`,
+      }
+      // Every drawn day passes the register's own validator, like any hand-typed row — a draw
+      // cannot write an entry the form would have refused.
+      const errs = validateEntry(row, store.projects, day)
+      if (errs.length) { refused.push(`${formatDateIN(d.date)}: ${errs[0]}`); continue }
+      rows.push(row)
+    }
+    if (!rows.length) { setDrawError(refused.join(' ') || 'Nothing on the draw could be written.'); return }
+    setStore(upsertEntries(orgId, rows))
+    setDrawForm(null)
+    const total = Math.round(rows.reduce((t, e) => t + e.hours, 0) * 100) / 100
+    flash(`${rows.length} day${rows.length === 1 ? '' : 's'} — ${hours(total)} — drawn onto ${project.name || project.code} from the day book${refused.length ? `. ${refused.length} refused: ${refused[0]}` : '.'}`)
   }
 
   function changeStatus(v: ProjectView, status: Project['status']) {
@@ -743,7 +844,12 @@ function ProjectsPageInner() {
                 message={store.entries.length
                   ? 'Widen the period, clear the search, or pick another project.'
                   : 'An entry is a day, a person, and how long they were on the job. The rate is what the hour is billed at — leave it blank to inherit the project’s.'}
-                action={liveProjects.length ? <Button size="sm" icon="plus" onClick={() => openEntry(projectFilter !== 'all' ? projectFilter : '')}>Log time</Button> : undefined}
+                action={liveProjects.length ? (
+                  <div className="pj-empty-actions">
+                    <Button size="sm" icon="plus" onClick={() => openEntry(projectFilter !== 'all' ? projectFilter : '')}>Log time</Button>
+                    <Button size="sm" variant="ghost" icon="book" onClick={() => openDraw(projectFilter !== 'all' ? projectFilter : '')}>Draw from the day book</Button>
+                  </div>
+                ) : undefined}
               />
             </Card>
           ) : (
@@ -762,6 +868,7 @@ function ProjectsPageInner() {
                 {picked.length > 0 && <Button size="sm" icon="invoice" onClick={() => setBillFor({ ids: picked, ref: '' })}>Mark billed</Button>}
                 {picked.length > 0 && <Button size="sm" variant="ghost" icon="undo" onClick={() => unbilledNow(picked)}>Un-bill</Button>}
                 <Button size="sm" variant="subtle" icon="plus" onClick={() => openEntry(projectFilter !== 'all' ? projectFilter : '')}>Log time</Button>
+                <Button size="sm" variant="ghost" icon="book" onClick={() => openDraw(projectFilter !== 'all' ? projectFilter : '')}>Draw from the day book</Button>
               </div>
 
               <div className="table-frame">
@@ -1258,6 +1365,121 @@ function ProjectsPageInner() {
         </div>
       )}
 
+      {drawForm && (
+        <div className="pj-scrim" role="dialog" aria-modal="true" aria-label="Draw hours from the day book" onClick={() => setDrawForm(null)}>
+          <div className="pj-modal" onClick={e => e.stopPropagation()}>
+            <div className="pj-modal-head">
+              <h2>Draw hours from the day book</h2>
+              <button type="button" className="pj-notice-x" onClick={() => setDrawForm(null)} aria-label="Close"><Icon name="x" size={15} /></button>
+            </div>
+            {drawError && (
+              <div className="pj-alert" role="alert"><Icon name="alert" size={14} strokeWidth={2.2} />{drawError}</div>
+            )}
+            {payrollPeople.length === 0 ? (
+              <div className="pj-basis">
+                <Icon name="book" size={14} />
+                <span>
+                  The payroll register has no people in this browser yet. The draw reads its roster and its
+                  kept days — add the first person at <Link href="/payroll">/payroll</Link>, mark their days in the
+                  day book, then draw from here.
+                </span>
+              </div>
+            ) : (
+              <>
+                <div className="pj-fields">
+                  <label className="pj-field"><span>Project</span>
+                    <select className="tf-input" value={drawForm.project_id} onChange={e => pickDraw({ project_id: e.target.value })}>
+                      <option value="">Choose a project…</option>
+                      {liveProjects.map(v => <option key={v.project.id} value={v.project.id}>{v.project.name || v.project.code}{v.project.client_name ? ` · ${v.project.client_name}` : ''}</option>)}
+                    </select>
+                  </label>
+                  <label className="pj-field"><span>Whose days</span>
+                    <select className="tf-input" value={drawForm.employee_id} onChange={e => pickDraw({ employee_id: e.target.value })}>
+                      <option value="">Pick the person on the payroll register…</option>
+                      {payrollPeople.map(p => <option key={p.id} value={p.id}>{p.name || p.code || 'Unnamed'}{p.code ? ` · ${p.code}` : ''}{p.hours_per_day ? ` — ${p.hours_per_day} h/day` : ''}</option>)}
+                    </select>
+                  </label>
+                  <label className="pj-field"><span>The month the book kept</span>
+                    <input className="tf-input" type="month" value={drawForm.month} max={day.slice(0, 7)} onChange={e => pickDraw({ month: e.target.value })} />
+                    <span className="pj-hint">The book keeps days that happened; a day not yet lived has no mark to draw.</span>
+                  </label>
+                </div>
+                {!drawForm.project_id || !drawForm.employee_id ? (
+                  <div className="pj-basis">
+                    <Icon name="book" size={14} />
+                    <span>
+                      Pick a project, a person and a month. The draw proposes one timesheet day for every day the
+                      book marks as worked, at that person’s own hours a day — you tick what really belongs to the
+                      job, and every ticked day is written through the same rules as a row typed by hand.
+                    </span>
+                  </div>
+                ) : draw.off ? (
+                  <div className="pj-note is-hot">
+                    <Icon name="alert" size={14} strokeWidth={2.2} />
+                    <span>
+                      {draw.off}{' '}
+                      <Link href={`/payroll?tab=daybook&month=${isMonth(drawForm.month) ? drawForm.month : ''}`}>Open the day book</Link> to see their page.
+                    </span>
+                  </div>
+                ) : draw.result?.refuse ? (
+                  <div className="pj-note is-hot">
+                    <Icon name="alert" size={14} strokeWidth={2.2} />
+                    <span>
+                      {draw.result.refuse}{' '}
+                      {isMonth(drawForm.month) && (
+                        <Link href={`/payroll?tab=daybook&month=${drawForm.month}`}>Mark the days in the day book</Link>
+                      )}
+                    </span>
+                  </div>
+                ) : draw.result ? (
+                  <>
+                    <div className="pj-draw-sum">
+                      <span><strong>{draw.result.proposed_days}</strong> proposed — <strong>{hours(draw.result.proposed_hours)}</strong></span>
+                      <span className="pj-muted">{monthLabel(drawForm.month)} · {draw.result.hours_per_day} h a day at the register</span>
+                      {draw.result.logged_hours > 0 && <span className="pj-muted">{hours(draw.result.logged_hours)} already on this project this month</span>}
+                    </div>
+                    <ul className="pj-draw-list">
+                      {draw.result.days.map(d => {
+                        const on = d.tickable && drawTicks.has(d.date)
+                        return (
+                          <li key={d.date} className={`pj-draw-row${on ? ' is-on' : ''}${d.tickable ? '' : ' is-fixed'}`}>
+                            {d.tickable
+                              ? <input type="checkbox" checked={on} onChange={() => toggleDrawDay(d.date)} aria-label={`Draw ${d.date}`} />
+                              : <span className="pj-draw-dot" aria-hidden="true">·</span>}
+                            <span className="pj-draw-day">{formatDateIN(d.date)}</span>
+                            <span className={`pj-draw-mark${d.hours > 0 ? ' is-work' : ''}`}>
+                              <strong>{d.mark || '—'}</strong><em>{d.label}</em>
+                            </span>
+                            <span className="pj-draw-hr">{d.hours > 0 ? hours(d.hours) : '—'}</span>
+                            {d.why && <span className="pj-draw-why">{d.why}</span>}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                    {draw.result.findings.length > 0 && (
+                      <ul className="pj-draw-findings">
+                        {draw.result.findings.map((f, i) => <li key={i}>{f}</li>)}
+                      </ul>
+                    )}
+                    <p className="pj-hint">
+                      The draw reads the book; it never writes to it. Every ticked day lands with the person linked,
+                      so its cost is read from the payroll register like any named hour — and the marks are evidence,
+                      not a timesheet: a day the book does not mark as worked is named, never ticked for you.
+                    </p>
+                  </>
+                ) : null}
+              </>
+            )}
+            <div className="pj-save">
+              <Button variant="ghost" onClick={() => setDrawForm(null)}>Cancel</Button>
+              <Button icon="check" disabled={!draw.result || !!draw.result.refuse || drawTicked.length === 0} onClick={applyDraw}>
+                {drawTicked.length ? `Draw ${drawTicked.length} day${drawTicked.length === 1 ? '' : 's'} — ${hours(drawTickedHours)}` : 'Draw the days'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <style>{`
         .pj-load { color: var(--muted); font-size: 13px; }
 
@@ -1411,6 +1633,31 @@ function ProjectsPageInner() {
         .pj-save { display: flex; gap: 10px; justify-content: flex-end; }
         .pj-x { background: none; border: none; color: inherit; cursor: pointer; margin-left: 5px; padding: 0 1px; min-height: 0; opacity: .6; }
         .pj-x:hover { opacity: 1; }
+
+        .pj-empty-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+        .pj-draw-sum { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin: 0 2px; font-size: 12.5px; color: var(--ink-2); }
+        .pj-draw-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 12px; overflow-y: auto; max-height: 320px; }
+        .pj-draw-row { display: grid; grid-template-columns: 26px 112px minmax(0, 1fr) 60px; align-items: center;
+          column-gap: 10px; row-gap: 2px; padding: 8px 11px; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+        .pj-draw-row:last-child { border-bottom: none; }
+        .pj-draw-row.is-on { background: var(--brand-soft); }
+        .pj-draw-row.is-fixed { color: var(--muted); }
+        .pj-draw-row input[type="checkbox"] { accent-color: var(--brand); width: 14px; height: 14px; margin: 0; }
+        .pj-draw-dot { color: var(--faint); text-align: center; }
+        .pj-draw-day { font-variant-numeric: tabular-nums; }
+        .pj-draw-mark { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; }
+        .pj-draw-mark strong { font-weight: 650; }
+        .pj-draw-mark em { font-style: normal; color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .pj-draw-mark.is-work em { color: var(--green); }
+        .pj-draw-hr { font-variant-numeric: tabular-nums; text-align: right; color: var(--ink-2); }
+        .pj-draw-why { grid-column: 2 / -1; color: var(--muted); font-size: 11.5px; line-height: 1.5; }
+        .pj-draw-findings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; color: var(--muted); }
+        .pj-draw-findings li { display: flex; gap: 7px; }
+        .pj-draw-findings li::before { content: '·'; color: var(--brand); }
+        @media (max-width: 620px) {
+          .pj-draw-row { grid-template-columns: 24px 96px minmax(0, 1fr) 52px; column-gap: 8px; }
+          .pj-draw-mark em { display: none; }
+        }
 
         @media (max-width: 1100px) { .pj-stats { grid-template-columns: 1fr 1fr; } .pj-strip { grid-template-columns: 1fr; } }
         @media (max-width: 768px) {
