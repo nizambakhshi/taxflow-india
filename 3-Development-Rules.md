@@ -251,7 +251,7 @@ Before adding a new npm library, ask:
 Current approved libraries:
 - `@supabase/supabase-js` + `@supabase/ssr` — database and auth
 - `next`, `react`, `react-dom`, `typescript`, `tailwindcss` — framework and styles
-- `jspdf` + `html2canvas` — invoice PDF export (screenshots `#invoice-capture` at `scale: 2`)
+- `jspdf` + `html2canvas` — document PDF export in the browser (`src/lib/pdf-export.ts` screenshots one `#…-capture` region at `scale: 2`, and since R2-33 `downloadElementsAsPdf()` puts several regions into one file with a page each — the month's payslips — skipping a region that is not on the page instead of failing the pack)
 - `tesseract.js` — OCR for the bill scanner, in the browser
 - `pdfjs-dist` — text extraction from PDF bills; its worker is served from `/api/pdf-worker` so the version stays locked to the bundle
 
@@ -363,7 +363,7 @@ Use `--loader`, not `--import` — `--import` does not register the ESM resolve 
 
 Assertions are written against the domain, not the implementation: FY-weighted splits must sum to exactly the annual plan, a credit note must reduce the month it is dated in, `csvFromRows` must quote a field containing a comma, a PF ceiling must change on the 17th of September and not the day before.
 
-**Suites are per-round throwaways in `/tmp` and are never committed** (`/tmp/payroll-test.mjs` is 435 assertions over the salary register, its R2-32 attendance half `/tmp/attendance-test.mjs` is 212, and the R2-30 shopping suite is 95). `/tmp` gets wiped mid-project — it happened twice, and the second time took seventeen suites with it — so a round records **its own** assertion count and says plainly that the older ones were not re-run, rather than quoting a running total it cannot prove. A suite is cheap to rewrite from the library's own exports, and the claim worth keeping in the docs is *which rule each assertion polices*, not the number.
+**Suites are per-round throwaways in `/tmp` and are never committed** (`/tmp/payroll-test.mjs` is 435 assertions over the salary register, its R2-32 attendance half `/tmp/attendance-test.mjs` is 212, the R2-33 document half `/tmp/payslip-test.mjs` is 394, and the R2-30 shopping suite is 95). `/tmp` gets wiped mid-project — it happened twice, and the second time took seventeen suites with it — so a round records **its own** assertion count and says plainly that the older ones were not re-run, rather than quoting a running total it cannot prove. A suite is cheap to rewrite from the library's own exports, and the claim worth keeping in the docs is *which rule each assertion polices*, not the number.
 
 ---
 
@@ -376,6 +376,8 @@ const KEY = 'taxflow:<feature>:' + orgId      // never a bare global key
 Store a `version` field and an `updatedAt` timestamp so a shape change can migrate instead of crash, and treat a parse failure as "start fresh" rather than throwing. A shared browser must never show one business's targets, filing profile, outbox or template choice to another.
 
 Anything a user would grieve losing must be reconstructible from documents or exportable (CSV, `.ics`, JSON) — a cleared browser is a normal event, not a disaster.
+
+**A heading is not a register.** R2-33's payslip letterhead went **inside** `taxflow:payroll:<orgId>` rather than earning a key of its own: the paper is a reading of the salary book, so its heading lines belong to the book that computes its figures — and the vault spec list, `PAYROLL_VERSION` and the backup walk all stayed exactly as they were.
 
 ---
 
@@ -481,6 +483,25 @@ Two conventions come with it. **Reuse the reader you have**: `planAttendance` ca
 const [sheetMonth, setSheetMonth] = useState(month)
 if (sheetMonth !== month) { setSheetMonth(month); setPlan(null); setApplied(null); setText('') }
 ```
+
+---
+
+## Rule 33 — Printed Paper Is a Reading of the Engine, Never a Second Computation
+
+Every payroll product in India hands the employee a payslip, and this app now prints one (`src/lib/payslip.ts`, `/payroll/payslip`). The rule the round established is older than the payslip: **a document page lays out what the engine computed; it does not work anything out again.**
+
+`buildPayslip(store, slip, workspaceName, today)` receives the `Payslip` that `payslipOf()` returned and arranges its lines. It re-derives no rupee — a slip that added up its own columns could disagree with the register it came from, which is precisely the failure ADR-034 exists to prevent. The suite therefore polices the **tie**, not the layout: `earnings_total = monthly structure + arrears + bonus`, `deduction_total = loss of pay + the statutory legs`, `net_pay` landing on the engine's figure, `employer_legs_total` summing only the legs printed under its own heading, and `employer_cost − net_pay = employer_legs_total + deduction_total − loss of pay` (loss of pay counted once, because it is already taken off inside gross).
+
+Four conventions travel with any sheet this app prints:
+
+- **A statement, not a payment.** The line says *Net payable*. Whether money moved is a fact about the bank; `/expenses` and `/payments` remain the only writers. Standing sentences — `PAYSLIP_BOUNDARIES`, four of them — print on every slip: payable is not paid, statutory columns are computed not recorded, **this is not Form 16**, and nothing here is filed.
+- **A refusal produces no figures at all.** `printable: false` carries the engine's `why_not`, the deduction and employer blocks are not laid out, the header states the refusal **instead of a ₹0.00 net**, and Print/PDF stay disabled with that reason as their tooltip. Nobody signs a salary of nothing.
+- **Absence is a dash with a sentence, zero is a claim.** `SlipLine.amount: number | null` plus `dash`. The same holds for identifiers: the letterhead's four statutory codes are *asked for* and a blank prints a dash beside the line naming what it would be needed for — a statutory-looking document carrying an invented establishment code is worse than one carrying a dash.
+- **Exceptions stay on the owner's side of the paper.** Register flags, letterhead gaps and a missing UAN / ESIC number / PAN print in a `.no-print` strip beside the sheet; the employee's copy carries its own facts only. A batch keeps its refusals visible too: `monthPack()` returns `docs` **and** `refused` with `partial`, so a printed pack is never silently a subset.
+
+Print and PDF must be **the same document**: the capture region is padded so its padding becomes the A4 margin (`@page { size: A4 portrait; margin: 15mm }`, everything else hidden), and a pack goes through `downloadElementsAsPdf()` — one file, a page per region, a missing region skipped rather than the whole pack failing.
+
+**Rule 26 caught what the suite could not.** The 394 assertions could not see the page-level branch that made a refused month print *"net payable ₹0.00"* with Print enabled, because the header builds its subtitle out of document fields. When a page has a *no-figures* branch, drive that branch in the browser.
 
 ---
 
