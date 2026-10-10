@@ -157,7 +157,7 @@ taxflow-india/
 │       ├── recurring.ts  fx.ts  jobwork.ts        cadence, currency deals, rule 45 / s.143
 │       ├── costcentres.ts  projects.ts  tally.ts   the share register, the hour register, the file bridge
 │       ├── creditnote.ts            one write path for both note registers (page forms + Tally bridge)
-│       ├── bom.ts                  recipes, builds, dated shop rates, full-cost legs, where-used explosion
+│       ├── bom.ts                  recipes, builds, dated shop rates, full-cost legs, where-used explosion, FEFO lot issuance
 │       ├── exports.ts              zero-rating routes, dated FEMA bands, realisation join to /fx
 │       ├── invoice-template.ts     the invoice template id + its loader (shared by the vault spec)
 │       ├── vault.ts                the books vault: 30 register specs, checksums, plan-then-restore
@@ -591,7 +591,7 @@ Called when:
 - Invoice is saved (reduces stock)
 - Purchase bill is saved (increases stock)
 - Manual adjustment is made
-- A build is recorded at `/inventory/recipes` — components out and finished units in as `adjustment_out` / `adjustment_in`, with `p_reference_type: 'manual'`, the `JOB-<FY>-NNNN` number in `reference_number` and spelled out again in `notes` ("Build JOB-… — 3 of Sauce A drawn for 12 of Product X"). The schema has no `build` movement type, and inventing one is a schema change, so the log reads as a named manual adjustment rather than a fiction (ADR-031)
+- A build is recorded at `/inventory/recipes` — components out and finished units in as `adjustment_out` / `adjustment_in`, with `p_reference_type: 'manual'`, the `JOB-<FY>-NNNN` number in `reference_number` and spelled out again in `notes` ("Build JOB-… — 3 of Sauce A drawn for 12 of Product X"). The schema has no `build` movement type, and inventing one is a schema change, so the log reads as a named manual adjustment rather than a fiction (ADR-031). Since R2-29 the same run writes a second, device-side trail beside it: each named lot draw is mirrored into `taxflow:batchmoves:` as an `adjust` move with the job in `doc_ref` ("Build JOB-… — Chocolate 1 issued from lot CH-2026-JUL"), and the finished units land as their own lot in `taxflow:batches:`, because the shelf RPC knows nothing about lots
 
 Does:
 1. Gets current stock for product
@@ -631,7 +631,7 @@ Features that need somewhere to put information the schema does not have use one
 | `taxflow:ccentres:<orgId>` | Cost centres | The centre list and, per document, one `{centre → share}` — **percentages only**; the rupees are re-read from five document tables on every load (ADR-028) |
 | `taxflow:projects:<orgId>` | Projects & time | Projects, hour rows, and whole documents attached **by id** — **measurements only**; revenue, spend, contribution and the unbilled months are re-read through the same `bookDocs()` the cost centres use, and an hour carries the rate you would bill it at, not what it cost (ADR-030) |
 | `taxflow:tally:<orgId>` | Tally bridge | **Only the log** of an import — which file, when, how many of each kind. The parsed dump, the plan and the exported XML live in memory and on disk, never here (ADR-029) |
-| `taxflow:bom:<orgId>` | Recipes & builds | Recipes (component **quantities**, output per run, waste) and builds (what the shop actually **drew**), plus the per-FY `JOB-<FY>-NNNN` high-water mark — **never a rupee**: material value is rolled up from `products.purchase_price` on every load, the same field `/accounting` values stock at (ADR-031) |
+| `taxflow:bom:<orgId>` | Recipes & builds | Recipes (component **quantities**, output per run, waste) and builds (what the shop actually **drew**, and — since R2-29 — **which lot** each draw came off, as `{batch_id, batch_no, qty, expiry_date}` picks on the build line, plus the `output_batch_id` of the lot the finished units landed in), plus the per-FY `JOB-<FY>-NNNN` high-water mark — **never a rupee**: material value is rolled up from `products.purchase_price` on every load, the same field `/accounting` values stock at, and the lot quantities are a *copy of a decision*, re-checked against `taxflow:batches:` + `taxflow:batchmoves:` before a run is written, never trusted as the lot's balance (ADR-031) |
 | `taxflow:exports:<orgId>` | Exports | Undertakings, the shipping-bill / advance / refund paperwork a consignment has to prove, and the realisation credits typed here — **never the invoice value or the IGST paid**, which are re-read from `invoices`. Where `/fx` holds a deal for the same invoice number, its receipts are the counted figure and a credit typed here is printed as *not counted* |
 | `taxflow:palette-recents:<orgId>` | ⌘K | Recently opened records |
 
@@ -688,7 +688,7 @@ Because replay uses the production write path, an offline invoice cannot diverge
 | `/inventory/batches` | `batches.ts`, `godowns.ts` | Lot-level in/out, FEFO draw order, expiry watch |
 | `/inventory/serials` | `serials.ts` | One row per unit; warranty read from the latest sale |
 | `/inventory/godowns` | `godowns.ts`, `batches.ts` | A transfer is a lot split, never a second stock ledger |
-| `/inventory/recipes` | `bom.ts`, `orderflow.ts` (`loadStore`) | A recipe stores **quantities and minutes** and re-reads cost from `products.purchase_price` plus the dated shop-rate rows in `taxflow:bom:<orgId>` — each leg priced at the rate in force on its own day; a build stores what was drawn and moves stock only through `record_stock_movement` |
+| `/inventory/recipes` | `bom.ts`, `batches.ts`, `orderflow.ts` (`loadStore`) | A recipe stores **quantities and minutes** and re-reads cost from `products.purchase_price` plus the dated shop-rate rows in `taxflow:bom:<orgId>` — each leg priced at the rate in force on its own day; a build stores what was drawn **from which lot** (FEFO proposed, overrulable), moves shelf stock only through `record_stock_movement`, and mirrors each draw into `taxflow:batchmoves:` as an `adjust` move carrying the job number, while the finished units land as their own lot in `taxflow:batches:` |
 | `/recurring` | `recurring.ts`, `orderflow.ts` | Cadence → a real invoice, billed back into the FY it belonged to |
 | `/fx` | `fx.ts` | Dated rate ledger; realised and unrealised kept beside, not inside, the rupee books |
 | `/gst/job-work` | `jobwork.ts` | Section 143 return clock and the four ITC-04 grids |
