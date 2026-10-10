@@ -57,6 +57,7 @@ import { loadJob, saveJob } from '@/lib/jobwork'
 import { loadOpeningBalances, saveOpeningBalances } from '@/lib/ledger'
 import { loadStore, saveStore } from '@/lib/orderflow'
 import { loadUpiSettings, saveUpiSettings } from '@/lib/payments'
+import { loadPayroll, savePayroll } from '@/lib/payroll'
 import { loadProjects, saveProjects } from '@/lib/projects'
 import { loadEvents, loadUnits, saveEvents, saveUnits } from '@/lib/serials'
 import { loadSchedules, saveSchedules } from '@/lib/recurring'
@@ -395,6 +396,27 @@ export const REGISTERS: RegisterSpec[] = [
     detail: (v) => `${plural(arrCount(v, 'projects'), 'project')} · ${plural(arrCount(v, 'entries'), 'time entry')}`,
     write: (orgId, v) => saveProjects(orgId, v as Parameters<typeof saveProjects>[1]),
     verify: (orgId) => { const s = loadProjects(orgId); return s.projects.length + s.entries.length + s.tags.length },
+  },
+  {
+    id: 'payroll',
+    prefix: 'taxflow:payroll:',
+    label: 'Payroll register',
+    what: 'The salary structure of each employee and the attendance rows typed against a month — every rupee is computed from these, none is stored beside them',
+    unit: 'row',
+    group: 'workpapers',
+    module: 'src/lib/payroll.ts',
+    pageLabel: 'Payroll',
+    pageHref: '/payroll',
+    encoding: 'json',
+    count: twoLists('employees', 'inputs'),
+    detail: (v) => `${plural(arrCount(v, 'employees'), 'employee')} · ${plural(arrCount(v, 'inputs'), 'month row')}`,
+    // A store the parser cannot read back comes out empty, so a wrong-version file would restore as
+    // a blank register and look like a success. Refused by shape instead.
+    accepts: (v) => (isObj(v) && Array.isArray(field(v, 'employees')) && Array.isArray(field(v, 'inputs'))
+      ? null
+      : 'not a payroll register — employees and month rows are both missing'),
+    write: (orgId, v) => savePayroll(orgId, v as Parameters<typeof savePayroll>[1]),
+    verify: (orgId) => { const s = loadPayroll(orgId); return s.employees.length + s.inputs.length },
   },
   {
     id: 'gstr9',
