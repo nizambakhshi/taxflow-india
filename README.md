@@ -4,7 +4,7 @@ GST billing, invoicing and compliance for Indian businesses (₹2–20 crore) �
 
 **Stack:** Next.js 16 (App Router, Turbopack) · React 19 · TypeScript · Supabase (Postgres + Auth, browser client) · Tailwind v4 tokens + a small custom design system in `src/app/globals.css`.
 
-**Status:** Round 1 (7 competitive features) and Round 2 through R2-29 are shipped — 59 pages and 47 pure domain libraries. See `5-Project-Tasks.md` for the backlog, `1-PRD.md` for scope and `7-Competitor-Comparison.md` for where the product stands against Tally, Zoho Books, Vyapar, myBillBook, Busy, Marg, ClearTax and Refrens.
+**Status:** Round 1 (7 competitive features) and Round 2 through R2-30 are shipped — 59 pages and 47 pure domain libraries. See `5-Project-Tasks.md` for the backlog, `1-PRD.md` for scope and `7-Competitor-Comparison.md` for where the product stands against Tally, Zoho Books, Vyapar, myBillBook, Busy, Marg, ClearTax and Refrens.
 
 ---
 
