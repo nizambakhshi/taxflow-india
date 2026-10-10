@@ -534,6 +534,22 @@ Six conventions come with it:
 
 ---
 
+## Rule 36 — A Named Hour Is Costed Beside the Number, Never Inside It
+
+R2-36 let a timesheet row at `/projects` name the person whose hours they were. The rule the round establishes: **a join may read a figure it does not own, and the reading prints beside the number it is not allowed to change.** An entry that names a payroll person is costed at that person's own employer cost for the entry's own month — while contribution stays billed revenue less attached spend, and the costed figure sits outside it, labelled.
+
+Five conventions come with it:
+
+- **The rows cross as data; the library still owns no payroll.** `projects.ts` imports nothing from `payroll.ts` — `HourCostRow` is a structural subset of payroll's own `HourCost` (`employee_id`, `name`, `month`, `cost_per_hour: number | null`, `basis`, `why`), so the Node strip-types suite exercises `costHours()` against hand-built rows, and the one-way dependency that keeps every client-side register testable survives a join between two of them. The page is where the two registers meet (`costPerHourFor`, `employeeById`, `offRosterWhy`).
+- **The month is the entry's own.** A cost is looked up per `(employee_id, periodOf(entry.date))` — not by today, not by the project's life — because an hour's cost is a property of the month the work happened in: the ceiling, the lost days and the employer cost are read as of that month, the same person in two months is two figures, and the modal preview names the month it is reading (`October 2026: this person's hour cost ₹X`).
+- **A refusal is a row, not a zero.** Where the register keeps the person off that month's roster (or never heard of them), the page synthesises a row with `cost_per_hour: null` and the register's own sentence — `offRosterWhy()`'s words, or *"Not on the payroll register."* — so `costHours()` returns a refusal that carries its reason and the page prints it as a finding, never a ₹0 that would read as a costless hour.
+- **The reading never rewrites the register's number.** `after_labour = contribution − labour_cost` prints as its own row, marked *partial* whenever linked hours remain unpriced or typed-only hours exist (`costed_hours < hours`, `unlinked_hours > 0`), and the boundary copy says why: where the same wages are also attached to the project as a bill the two readings overlap — *read them together, do not add them*. A typed name is not a wage link, and the modal hint says so in those words.
+- **Additive under the same version.** `employee_id` shipped under `PROJECTS_VERSION = 1`, because a version bump would read every existing register as empty — the one outcome the version stamp exists to prevent. An old envelope reads no link, which is exactly what was recorded before the field existed.
+
+The line worth keeping: R2-34's day book is *evidence*, R2-36's join is a *reading*, and neither lets a job invent a wage. An hour nothing names stays priced only.
+
+---
+
 ## Code Quality Checklist
 
 Before marking any feature complete, verify:
