@@ -42,9 +42,10 @@
 //    This page makes things out of things you own.
 //
 // What v1 deliberately does NOT claim: no production plan, no scheduling, no work-in-progress
-// account, no serial issuance into a build (a finished unit is not a numbered physical unit —
-// `/inventory/serials` decides that at the counter), no scrap *sale* —
-// offcuts sold are an ordinary invoice — and no back-flush. The ERP habit called back-flushing
+// account, no serial *minting* (a run produces units, not numbers — `/inventory/serials` numbers
+// what came out at the counter; R2-35 names the units a draw *took*, the other end of the same
+// run) — no scrap *sale*, because offcuts sold are an ordinary invoice — and no back-flush.
+// The ERP habit called back-flushing
 // consumes materials automatically when a finished unit is sold or received; this register refuses
 // it on purpose, because a unit on the shelf may equally have come from opening stock or a
 // purchase, and guessing which is exactly how stock books get cooked. The build form fills its
@@ -89,8 +90,20 @@
 // high-water mark the register keeps — so a draft born on this board is indistinguishable from one typed at
 // `/purchase-orders`: same series, same editor, same convert-to-bill path.
 //
+// What R2-35 added: **a build can name the numbered units its draw took.** A shop that keeps the
+// serial register for a costly part — a motor, a board, a bench — knows which unit went into the
+// machine, and that is the trace an after-sales question ("which unit is under this job?") asks
+// for. So a drawn line may carry the units it consumed (`BuildLine.serials`), proposed oldest-on-
+// the-shelf first from the register's own shelf reading and validated against the register's own
+// state at the moment of writing. The lot refusals hold here in unit terms: the units named must
+// cover the whole draw or none of it, and cancelling a run whose issued unit has moved on since
+// (scrapped, or put back by hand) is refused rather than written over — one unit, one history.
+// The finished units are still not numbered here: a run makes a quantity, and the counter
+// numbers what it made.
+//
 
 import { allocateFefo, newId, todayISO, type Batch, type BatchMove } from '@/lib/batches'
+import { SERIAL_STATUS_LABEL, shelfUnitsOf, viewOf, type SerialEvent, type SerialStatus, type SerialUnit } from '@/lib/serials'
 import { round2 } from '@/lib/costcentres'
 import { fyLabel, fyStartYear } from '@/lib/targets'
 
@@ -235,6 +248,18 @@ export interface LotPick {
   expiry_date: string
 }
 
+/**
+ * One numbered unit a draw consumed — the serial register's row, copied here the same way
+ * `LotPick` copies a lot: the run is readable without re-deriving it, and the link back is the
+ * register's own id. Each pick is exactly one unit; a line of three motors names three picks.
+ */
+export interface SerialPick {
+  /** `serials.ts`'s own unit id — the link, never a re-issued number. */
+  serial_id: string
+  /** The number as printed on the unit, so a movement note reads on its own. */
+  serial_no: string
+}
+
 export interface BuildLine {
   product_id: string
   /** What the shop actually drew. Stored, because the drum said what it said. */
@@ -244,6 +269,12 @@ export interface BuildLine {
    * either the part is not batch-tracked, or the run predates R2-29.
    */
   lots?: LotPick[]
+  /**
+   * Which numbered units that quantity consumed, oldest on the shelf first. Absent = this draw
+   * names no unit: either the part is not tracked by the serial register, or the run predates
+   * R2-35. All-or-nothing, like `lots`: a line that names any must name the whole draw.
+   */
+  serials?: SerialPick[]
 }
 
 export interface Build {
@@ -427,6 +458,14 @@ function parsePick(raw: unknown): LotPick | null {
   return { batch_id, batch_no: str(p.batch_no), qty: roundQty(qty), expiry_date: isDate(expiry) ? expiry : '' }
 }
 
+function parseSerialPick(raw: unknown): SerialPick | null {
+  if (!raw || typeof raw !== 'object') return null
+  const p = raw as Record<string, unknown>
+  const serial_id = str(p.serial_id)
+  if (!serial_id) return null
+  return { serial_id, serial_no: str(p.serial_no) }
+}
+
 function parseLine(raw: unknown): BuildLine | null {
   if (!raw || typeof raw !== 'object') return null
   const l = raw as Record<string, unknown>
@@ -443,6 +482,10 @@ function parseLine(raw: unknown): BuildLine | null {
     }
     line.lots = [...merged.values()]
   }
+  // One pick per unit; the same unit named twice would claim one physical unit went into the
+  // run twice, so a repeat is dropped rather than kept.
+  const serials = Array.isArray(l.serials) ? l.serials.map(parseSerialPick).filter((p): p is SerialPick => p !== null) : []
+  if (serials.length) line.serials = [...new Map(serials.map(p => [p.serial_id, p])).values()]
   return line
 }
 
@@ -1317,6 +1360,8 @@ export interface BuildView {
   full: FullCost
   /** Which physical lots the draw came off — `count: 0` means the run drew by quantity alone. */
   lots: { count: number; picks: LotPick[]; lines: string[] }
+  /** Which numbered units the draw took — `count: 0` means the run named no unit of any part. */
+  serials: { count: number; picks: SerialPick[]; lines: string[] }
   /** What the recipe asked for, and what was drawn — the wastage the register exists to show. */
   wanted: BuildLine[]
   variance: { product_id: string; name: string; wanted: number; drawn: number; diff: number }[]
@@ -1330,6 +1375,11 @@ export interface BuildViewOptions {
    * of the list is not evidence that the shop keeps no lots — it is evidence that nobody asked.
    */
   batchedProducts?: string[]
+  /**
+   * Product ids the serial register holds units for *today*, in any status. The same rule as
+   * `batchedProducts`: supplied, a draw that could have named units and named none is told so.
+   */
+  serialledProducts?: string[]
 }
 
 export function buildView(build: Build, store: BomStore, products: BomProduct[], opts: BuildViewOptions = {}): BuildView {
@@ -1366,6 +1416,10 @@ export function buildView(build: Build, store: BomStore, products: BomProduct[],
   if (lots.picks.some(p => p.expiry_date && p.expiry_date < build.date)) {
     findings.push({ text: 'A lot that had passed its expiry on the run date was drawn. The register records what left the shelf; this is the one that should have been pulled first.', tone: 'red' })
   }
+  const serials = serialTrail(build)
+  if (!serials.count && build.moved && opts.serialledProducts?.some(id => build.lines.some(l => l.product_id === id))) {
+    findings.push({ text: 'Its components are numbered units on the register, but this draw names none — the serial ledger will not know the run took them.', tone: 'amber' })
+  }
   if (build.status === 'cancelled' && build.output_batch_id) {
     findings.push({ text: 'Cancelled — the finished lot it landed in has to be zeroed back off, and if units left it already, that lot is the record of it.', tone: 'amber' })
   }
@@ -1378,6 +1432,7 @@ export function buildView(build: Build, store: BomStore, products: BomProduct[],
     cost_today: roll,
     full,
     lots,
+    serials,
     wanted,
     variance,
     findings,
@@ -1813,6 +1868,200 @@ export function validateLotIssues(build: Build, batches: Batch[], products: BomP
   return problems
 }
 
+// ── serials: which numbered units a draw took ───────────────────────────────
+//
+// A lot says which batch a quantity came off; a serial says which *unit*. For the parts a shop
+// keeps numbers for — a motor, a board, a bench — that is the trace after-sales actually asks
+// for ("which unit is under this job?"), and it belongs in the same envelope. The draw is planned
+// here from the serial register's own shelf reading (`shelfUnitsOf` — the register never restates
+// which unit comes first), and the events are appended there by the register's own owners,
+// exactly as the lot moves are. The two refusals are the lot refusals in unit terms: the units
+// named must cover the whole draw, and a cancel may not write over a unit that has moved on.
+
+export interface SerialRow {
+  product_id: string
+  name: string
+  unit: string
+  /** What the line says was drawn. */
+  need: number
+  /** Units of this product the register holds in *any* status — what makes a part one to number. */
+  tracked: boolean
+  /** What the shelf holds today, oldest received first — the candidates for the draw. */
+  on_shelf: SerialUnit[]
+  /** The oldest units, up to the draw — the proposal, not a decision. Empty for an untracked part. */
+  picks: SerialPick[]
+  /** True when the draw is a whole number of units — a fractional draw cannot name whole units. */
+  whole: boolean
+  shortfall: number
+  ok: boolean
+}
+
+/**
+ * Proposes which units a draw would take: the ones longest on the shelf first, one pick per unit.
+ * A part the register holds no unit of reads as untracked — `on_shelf: []`, `ok: true` — the same
+ * quiet `allocateLots` gives an unbatched component: nothing to name is not a shortfall.
+ */
+export function allocateSerials(
+  lines: BuildLine[],
+  products: BomProduct[],
+  units: SerialUnit[],
+  events: SerialEvent[],
+  today = todayISO(),
+): SerialRow[] {
+  const index = indexProducts(products)
+  const tracked = new Set(units.map(u => u.product_id).filter((id): id is string => Boolean(id)))
+  return lines.map(l => {
+    const need = roundQty(l.qty)
+    const whole = Number.isInteger(need)
+    const on_shelf = shelfUnitsOf(units, events, l.product_id, today)
+    const base = {
+      product_id: l.product_id,
+      name: nameOf(index, l.product_id) || l.product_id,
+      unit: index.get(l.product_id)?.unit?.trim() || '',
+      need,
+      tracked: tracked.has(l.product_id),
+      on_shelf,
+      whole,
+    }
+    if (!base.tracked) return { ...base, picks: [], shortfall: 0, ok: true }
+    const take = whole ? Math.min(Math.trunc(need), on_shelf.length) : 0
+    const picks = on_shelf.slice(0, take).map(u => ({ serial_id: u.id, serial_no: u.serial_no }))
+    return { ...base, picks, shortfall: roundQty(need - picks.length), ok: whole && picks.length >= need }
+  })
+}
+
+/** One serial event this register asks the serial register to append. Mirrors `BatchWrite` in shape. */
+export interface SerialWrite {
+  serial_id: string
+  /** The number as printed, so the note reads as paper rather than as a uuid. */
+  serial_no: string
+  product_id: string
+  date: string
+  /** `issued` is the draw; `restocked` is the cancel putting the unit back — the register's own kinds. */
+  kind: 'issued' | 'restocked'
+  /** The job number, riding as `doc_ref` the way an invoice number rides on a sale event. */
+  doc_ref: string
+  note: string
+}
+
+export function serialWritesFor(build: Build, products: BomProduct[]): SerialWrite[] {
+  const index = indexProducts(products)
+  const out: SerialWrite[] = []
+  for (const l of build.lines) {
+    for (const p of l.serials || []) {
+      out.push({
+        serial_id: p.serial_id,
+        serial_no: p.serial_no,
+        product_id: l.product_id,
+        date: build.date,
+        kind: 'issued',
+        doc_ref: build.ref,
+        note: `Build ${build.ref} — ${nameOf(index, l.product_id) || 'component'} ${p.serial_no || 'unnamed unit'} issued into the run`,
+      })
+    }
+  }
+  return out
+}
+
+/** The reversal: the issued units go back on the shelf. Same rule, the verb turns round. */
+export function reverseSerialWritesFor(build: Build, products: BomProduct[]): SerialWrite[] {
+  return serialWritesFor(build, products).map(w => ({
+    ...w,
+    kind: 'restocked' as const,
+    // The paper keeps its shape — job, part, unit — and only the verb turns round, because a
+    // unit going back reads as a return and not as a second issue.
+    note: w.note.replace(/^Build /, 'Cancel ').replace(' issued into the run', ' went back on the shelf'),
+  }))
+}
+
+/** What a run issued, as readable lines for the log and the flash message. */
+export function serialTrail(build: Build): { count: number; picks: SerialPick[]; lines: string[] } {
+  const picks = build.lines.flatMap(l => l.serials || [])
+  return {
+    count: picks.length,
+    picks,
+    lines: build.lines
+      .filter(l => (l.serials || []).length)
+      .map(l => l.serials!.map(p => p.serial_no || 'unnamed unit').join(', ')),
+  }
+}
+
+/** The register's verdict on one unit as it stands now — never the stored draw's word for it. */
+function currentStatus(unit: SerialUnit, events: SerialEvent[], today: string): SerialStatus {
+  return viewOf(unit, events, today).status
+}
+
+/**
+ * A stored draw's units have to be the serial register's own rows, held now. Each refusal names
+ * the unit, the way the lot refusals name the lot, because "it does not fit" is not something a
+ * shop can act on. Run before recording, when every named unit should still be in stock.
+ */
+export function validateSerialIssues(build: Build, units: SerialUnit[], events: SerialEvent[], products: BomProduct[]): string[] {
+  const index = indexProducts(products)
+  const byId = new Map(units.map(u => [u.id, u]))
+  const named = new Set<string>()
+  const problems: string[] = []
+  for (const l of build.lines) {
+    const picks = l.serials || []
+    if (!picks.length) continue
+    const part = nameOf(index, l.product_id) || 'A component'
+    if (!Number.isInteger(roundQty(l.qty))) {
+      problems.push(`${part} draws ${roundQty(l.qty)} but names whole units — a fractional draw cannot name units. Issue the whole draw or none of it.`)
+      continue
+    }
+    for (const p of picks) {
+      const u = byId.get(p.serial_id)
+      if (!u) {
+        problems.push(`${part} names unit ${p.serial_no || p.serial_id}, which is not on the serial register.`)
+        continue
+      }
+      if (named.has(p.serial_id)) {
+        problems.push(`Unit ${p.serial_no || p.serial_id} is named twice on this run — one physical unit cannot go in twice.`)
+        continue
+      }
+      named.add(p.serial_id)
+      if (u.product_id !== l.product_id) {
+        problems.push(`Unit ${p.serial_no || p.serial_id} is booked against ${u.product_name || 'another item'}, not against ${part} — a draw cannot take someone else's unit.`)
+        continue
+      }
+      const status = currentStatus(u, events, build.date)
+      if (status !== 'in_stock') {
+        problems.push(`Unit ${p.serial_no || p.serial_id} is ${SERIAL_STATUS_LABEL[status].toLowerCase()} — not on the shelf, so the draw cannot take it.`)
+      }
+    }
+    const count = picks.length
+    if (count !== roundQty(l.qty)) {
+      problems.push(`The units on ${part} cover ${count} of the ${roundQty(l.qty)} drawn — ${count > l.qty ? 'more than was drawn.' : 'the rest names no unit. Issue the whole draw or none of it.'}`)
+    }
+  }
+  return problems
+}
+
+/**
+ * The units this run issued that have moved on since — scrapped, or put back by hand. A cancel
+ * may not write over that history: restocking a unit that has been written off would resurrect
+ * it, and restocking one that already stands on the shelf would say the cancel did what a hand
+ * did. Either way the shop decides; this register refuses and names the unit.
+ */
+export function serialMovedOn(
+  build: Build,
+  units: SerialUnit[],
+  events: SerialEvent[],
+  today = todayISO(),
+): { serial_id: string; serial_no: string; status: SerialStatus }[] {
+  const byId = new Map(units.map(u => [u.id, u]))
+  const out: { serial_id: string; serial_no: string; status: SerialStatus }[] = []
+  for (const l of build.lines) {
+    for (const p of l.serials || []) {
+      const u = byId.get(p.serial_id)
+      if (!u) continue
+      const status = currentStatus(u, events, today)
+      if (status !== 'issued') out.push({ serial_id: p.serial_id, serial_no: p.serial_no || u.serial_no, status })
+    }
+  }
+  return out
+}
+
 // ── demand that already exists: the orders the shop has taken ─────────────────
 
 export interface DemandLine {
@@ -2156,7 +2405,7 @@ export function recipeCsvRows(views: RecipeView[]): (string | number)[][] {
   ])
 }
 
-export const BUILD_CSV_HEADERS = ['Job', 'Date', 'Recipe', 'Finished product', 'Units', 'Status', 'Movements written', 'Materials', 'Lots drawn', 'Cost today (full)', 'Uncosted', 'Note']
+export const BUILD_CSV_HEADERS = ['Job', 'Date', 'Recipe', 'Finished product', 'Units', 'Status', 'Movements written', 'Materials', 'Lots drawn', 'Units drawn', 'Cost today (full)', 'Uncosted', 'Note']
 
 export function buildCsvRows(views: BuildView[], products: BomProduct[]): (string | number)[][] {
   const index = indexProducts(products)
@@ -2172,6 +2421,8 @@ export function buildCsvRows(views: BuildView[], products: BomProduct[]): (strin
     // The physical lots the draw named, so an exported run reads as what left which shelf. A run
     // before R2-29, or a plan that never allocated, exports an empty cell — not a zero.
     v.lots.lines.join(' | '),
+    // The numbered units the draw took, on the same rule — a run before R2-35 exports an empty cell.
+    v.serials.lines.join(' | '),
     v.full.value ?? '',
     v.full.missing.join(' | '),
     v.build.notes,

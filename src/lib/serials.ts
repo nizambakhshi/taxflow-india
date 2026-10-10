@@ -14,7 +14,10 @@
 //    the latest sale. Nothing about the claims window is hand-kept.
 // Unlike batches there is no automatic consumption hook: FEFO can name a lot,
 // but only the seller knows which physical unit left, so units attach to an
-// invoice through the Issue action instead of the invoice guessing.
+// invoice through the Issue action instead of the invoice guessing. A build
+// draw is the one place the shop *can* name them — a run says which benches
+// went into the machine — so a build issues units by their numbers (`issued`),
+// and cancelling the run puts them back (`restocked`) instead of deleting a past.
 
 const KEY_UNITS = 'taxflow:serials:'
 const KEY_EVENTS = 'taxflow:serialevents:'
@@ -41,7 +44,7 @@ export interface SerialUnit {
   created_at: string
 }
 
-export type SerialEventKind = 'received' | 'sold' | 'returned' | 'restocked' | 'scrapped'
+export type SerialEventKind = 'received' | 'sold' | 'issued' | 'returned' | 'restocked' | 'scrapped'
 
 /** The unit's log. The last entry recorded defines the current status. */
 export interface SerialEvent {
@@ -49,7 +52,7 @@ export interface SerialEvent {
   serial_id: string
   date: string
   kind: SerialEventKind
-  /** Invoice number for sales; free text otherwise. */
+  /** Invoice number for sales; the build's job number for a draw into a run. */
   doc_ref: string
   /** Buyer for sales, returned-by for returns. */
   party: string
@@ -57,7 +60,7 @@ export interface SerialEvent {
   created_at: string
 }
 
-export type SerialStatus = 'in_stock' | 'sold' | 'returned' | 'scrapped'
+export type SerialStatus = 'in_stock' | 'issued' | 'sold' | 'returned' | 'scrapped'
 
 export interface SerialView extends SerialUnit {
   status: SerialStatus
@@ -75,6 +78,7 @@ export interface SerialView extends SerialUnit {
 
 export const SERIAL_STATUS_LABEL: Record<SerialStatus, string> = {
   in_stock: 'In stock',
+  issued: 'In a build',
   sold: 'Sold',
   returned: 'Returned',
   scrapped: 'Scrapped',
@@ -82,6 +86,7 @@ export const SERIAL_STATUS_LABEL: Record<SerialStatus, string> = {
 
 export const SERIAL_STATUS_TONE: Record<SerialStatus, 'red' | 'amber' | 'blue' | 'green' | 'grey'> = {
   in_stock: 'blue',
+  issued: 'amber',
   sold: 'green',
   returned: 'amber',
   scrapped: 'grey',
@@ -119,10 +124,15 @@ export function addMonths(iso: string, months: number): string {
   return `${base.getUTCFullYear()}-${String(base.getUTCMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 }
 
-/** Status from the latest recorded event; received and restocked both mean on the shelf. */
+/**
+ * Status from the latest recorded event; received and restocked both mean on
+ * the shelf, and an issued unit sits inside a build until something records
+ * where it went next (Restock puts it back, Scrap writes it off).
+ */
 export function statusOf(last: SerialEvent | undefined): SerialStatus {
   if (!last) return 'in_stock'
   if (last.kind === 'sold') return 'sold'
+  if (last.kind === 'issued') return 'issued'
   if (last.kind === 'returned') return 'returned'
   if (last.kind === 'scrapped') return 'scrapped'
   return 'in_stock'
@@ -130,7 +140,8 @@ export function statusOf(last: SerialEvent | undefined): SerialStatus {
 
 /** The moves each status allows — the register's state machine. */
 const NEXT: Record<SerialStatus, SerialEventKind[]> = {
-  in_stock: ['sold', 'scrapped'],
+  in_stock: ['sold', 'issued', 'scrapped'],
+  issued: ['restocked', 'scrapped'],
   sold: ['returned'],
   returned: ['restocked', 'scrapped'],
   scrapped: [],
@@ -147,7 +158,7 @@ function num(v: unknown): number {
   return Number.isFinite(n) ? n : 0
 }
 
-const EVENT_KINDS: SerialEventKind[] = ['received', 'sold', 'returned', 'restocked', 'scrapped']
+const EVENT_KINDS: SerialEventKind[] = ['received', 'sold', 'issued', 'returned', 'restocked', 'scrapped']
 
 /** Tolerant parse — a hand-edited or half-written key must not crash a page. */
 function parseList<T>(raw: string | null, shape: (v: Record<string, unknown>) => T | null): T[] {
@@ -387,15 +398,15 @@ export function viewOf(unit: SerialUnit, events: SerialEvent[], today: string): 
   }
 }
 
-const TIER: Record<SerialStatus, number> = { in_stock: 0, returned: 1, sold: 2, scrapped: 3 }
+const TIER: Record<SerialStatus, number> = { in_stock: 0, issued: 1, returned: 2, sold: 3, scrapped: 4 }
 
-/** Stock first for the shelf, decisions next, history last — newest history on top. */
+/** Stock first for the shelf, units inside a build next, decisions after them, history last. */
 export function sortViews(views: SerialView[]): SerialView[] {
   return [...views].sort((a, b) => {
     const tier = TIER[a.status] - TIER[b.status]
     if (tier) return tier
-    if (a.status === 'in_stock' || a.status === 'returned') {
-      // oldest first — the unit longest on the shelf (or awaiting a decision)
+    if (a.status === 'in_stock' || a.status === 'issued' || a.status === 'returned') {
+      // oldest first — the unit longest on the shelf (in a build, or awaiting a decision)
       if (a.last_date !== b.last_date) return a.last_date < b.last_date ? -1 : 1
       if (a.received_date !== b.received_date) return a.received_date < b.received_date ? -1 : 1
     } else {
@@ -408,6 +419,27 @@ export function sortViews(views: SerialView[]): SerialView[] {
 
 export function serialViews(units: SerialUnit[], events: SerialEvent[], today: string): SerialView[] {
   return sortViews(units.map(u => viewOf(u, events, today)))
+}
+
+/**
+ * The units of one product the shelf still holds, oldest received first — the
+ * order a build's draw is proposed in, so a run takes the units that have sat
+ * longest. Read fresh; never cached across a write.
+ */
+export function shelfUnitsOf(
+  units: SerialUnit[],
+  events: SerialEvent[],
+  productId: string,
+  today = todayISO(),
+): SerialUnit[] {
+  return units
+    .filter(u => u.product_id === productId)
+    .map(u => viewOf(u, events, today))
+    .filter(v => v.status === 'in_stock')
+    .sort((a, b) => {
+      if (a.received_date !== b.received_date) return a.received_date < b.received_date ? -1 : 1
+      return a.serial_no.localeCompare(b.serial_no) || a.id.localeCompare(b.id)
+    })
 }
 
 // ── Validation, summary, export ──────────────────────────────────────────────
@@ -458,6 +490,8 @@ export interface SerialSummary {
   units: number
   inStock: number
   inStockValue: number
+  /** Units currently inside a build — issued, not yet put back or written off. */
+  issued: number
   sold: number
   returned: number
   scrapped: number
@@ -475,6 +509,7 @@ export function summarise(views: SerialView[]): SerialSummary {
     units: views.length,
     inStock: inStock.length,
     inStockValue: Math.round(inStock.reduce((s, v) => s + v.cost, 0) * 100) / 100,
+    issued: of('issued').length,
     sold: sold.length,
     returned: returned.length,
     scrapped: scrapped.length,
