@@ -39,6 +39,14 @@
 // hands each grouped order to the register as a *draft*, where prices and dates stay editable and a
 // wrong one can be cancelled. An order with an unpriced line prints no value — here, on the draft and
 // in the CSV alike — because a sum of the priced lines would read as *the* figure.
+//
+// And since R2-35, the lot rule in unit terms: **a draw can also name the numbered units it took.**
+// Where a part is one the serial register holds — a motor, a board — the modal offers the units on
+// the shelf oldest first, and the shop ticks exactly which left it. Same architecture as the lots,
+// one register over: `serials.ts` owns the shelf reading and the events, `bom.ts` proposes and
+// checks, and this page only paints the strip and writes through the register's own append. The
+// finished units are still numbered at the counter on `/inventory/serials` — a run makes a
+// quantity, and only the shop knows how the run's own output got its numbers.
 
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
@@ -55,22 +63,27 @@ import { loadStore, saveStore, newDoc, raiseDrafts, validateDoc, type FlowDoc } 
 import {
   BUILD_CSV_HEADERS, BUILD_STATUS_META, MAX_MINUTES_PER_RUN, MAX_UNITS_PER_BUILD, PLAN_CSV_HEADERS,
   RECIPE_CSV_HEADERS, RECIPE_STATUSES, RECIPE_STATUS_META, SHOPPING_CSV_HEADERS,
-  allocateLots, allocateRef, buildCsvRows, buildViews,
+  allocateLots, allocateRef, allocateSerials, buildCsvRows, buildViews,
   cancelBuild, consumedOf, demandAgainstRecipes, drawnElsewhereFrom, findCycle, fmtMinutes, indexProducts, loadBom,
   lotWritesFor, mergedShortages, movementsFor, newBuild, newComponent, newRate, newRecipe, orderNote, peekRef,
   perUnitNeed, planBuild, planCsvRows,
   producedLot, rateFor, recipeCsvRows, recipeView, recipeViews, removeBuild, removeRate, removeRecipe, requirement,
-  reverseLotWritesFor, reverseMovementsFor, saveBom, shoppingCsvRows, shoppingPlan, sortBuilds, sortRecipeViews,
+  reverseLotWritesFor, reverseMovementsFor, reverseSerialWritesFor, saveBom, serialMovedOn, serialWritesFor,
+  shoppingCsvRows, shoppingPlan, sortBuilds, sortRecipeViews,
   stampCost, summarise, upsertBuild,
-  upsertRate, upsertRecipe, validateBuild, validateLotIssues, validateRate, validateRecipe, whereUsed,
+  upsertRate, upsertRecipe, validateBuild, validateLotIssues, validateRate, validateRecipe, validateSerialIssues, whereUsed,
   type BomProduct, type BomStore, type Build, type BuildLine, type BuildView, type CostRate,
   type LotPick, type LotRow, type ProducedLot,
-  type PlanRow, type Recipe, type RecipeView, type StockWrite, type SupplyReading, type SupplierParty,
+  type PlanRow, type Recipe, type RecipeView, type SerialPick, type SerialRow, type StockWrite, type SupplyReading, type SupplierParty,
 } from '@/lib/bom'
 import {
   appendMoves, batchViews, loadBatches, loadMoves, newBatch, newId, newMove, upsertBatch,
   type Batch, type BatchMove, type BatchView,
 } from '@/lib/batches'
+import {
+  appendEvents, loadEvents, loadUnits, newEvent, SERIAL_STATUS_LABEL,
+  type SerialEvent, type SerialUnit,
+} from '@/lib/serials'
 import {
   Badge, Button, Card, EmptyState, PageHeader, ProgressBar, SearchInput, Segmented, StatCard, StatRow,
 } from '@/components/ui'
@@ -141,8 +154,12 @@ interface BuildDraft {
   units: string
   date: string
   notes: string
-  /** Typed as text: an empty box must not become a draw of zero. */
-  lines: { product_id: string; qty: string; lot?: string }[]
+  /**
+   * Typed as text: an empty box must not become a draw of zero. `lot` is the shop's lot choice on a
+   * drawn part ('auto' | '' | a lot id), and `unitIds` is the same idea for serials: absent follows
+   * the shelf's oldest-first proposal, `[]` names none, a list names exactly those physical units.
+   */
+  lines: { product_id: string; qty: string; lot?: string; unitIds?: string[] }[]
 }
 
 function RecipesPageInner() {
@@ -163,6 +180,11 @@ function RecipesPageInner() {
   // remaining quantity, but every row it writes goes through `batches.ts`'s own append/upsert.
   const [batches, setBatches] = useState<Batch[]>([])
   const [lotMoves, setLotMoves] = useState<BatchMove[]>([])
+  // The serial register, read the same way: a build draw is the one place the shop can name the
+  // physical units a component draw took (`issued`), and this page proposes the oldest on the
+  // shelf at record time — but the events it writes go through `serials.ts`'s own append.
+  const [units, setUnits] = useState<SerialUnit[]>([])
+  const [serialEvents, setSerialEvents] = useState<SerialEvent[]>([])
 
   // The shopping list's own readings, pulled lazily the first time the board is asked to turn a
   // shortage into paper: who last supplied each short part and at what rate (`supply`, off the bills
@@ -227,6 +249,8 @@ function RecipesPageInner() {
       setProducts(await loadProducts(oid))
       setBatches(loadBatches(oid))
       setLotMoves(loadMoves(oid))
+      setUnits(loadUnits(oid))
+      setSerialEvents(loadEvents(oid))
       const bom = loadBom(oid)
       setStore(bom)
       // Only confirmed orders are demand; a draft is a quote the customer has not signed.
@@ -282,6 +306,13 @@ function RecipesPageInner() {
     () => [...new Set(batches.map(b => b.product_id).filter((id): id is string => Boolean(id)))],
     [batches],
   )
+  // The serial register as this screen reads it. `serialledProducts` is the serial twin of
+  // `batchedProducts`: products the register holds units of (in any status), which is what tells a
+  // build finding that this draw *should* have named numbered units.
+  const serialledProducts = useMemo(
+    () => [...new Set(units.map(u => u.product_id).filter((id): id is string => Boolean(id)))],
+    [units],
+  )
 
   /** The lots one product holds, in the order the shop reads them: soonest expiry first, undated last. */
   function lotsOf(productId: string): BatchView[] {
@@ -293,7 +324,10 @@ function RecipesPageInner() {
 
   const views = useMemo(() => sortRecipeViews(recipeViews(store, products)), [store, products])
   const buildList = useMemo(() => sortBuilds(store.builds), [store.builds])
-  const runs = useMemo(() => buildViews(store, products, { batchedProducts }), [store, products, batchedProducts])
+  const runs = useMemo(
+    () => buildViews(store, products, { batchedProducts, serialledProducts }),
+    [store, products, batchedProducts, serialledProducts],
+  )
   const summary = useMemo(() => summarise(views, store, products, day), [views, store, products, day])
   const demand = useMemo(() => {
     const lines = orders.flatMap(d => d.lines
@@ -458,6 +492,7 @@ function RecipesPageInner() {
 
   function refreshStore() { setStore(loadBom(orgId)) }
   function refreshLots() { setBatches(loadBatches(orgId)); setLotMoves(loadMoves(orgId)) }
+  function refreshSerials() { setUnits(loadUnits(orgId)); setSerialEvents(loadEvents(orgId)) }
 
   // ── the recipe editor ───────────────────────────────────────────────────────
   function openRecipeEditor(recipe: Recipe, isNew: boolean) {
@@ -625,6 +660,33 @@ function RecipesPageInner() {
     return [{ batch_id: lot.id, batch_no: lot.batch_no || lot.id, qty: l.qty, expiry_date: lot.expiry_date || '' }]
   }
 
+  /** What the shop chose to name for one drawn part: absent (oldest first), `[]` (none), or unit ids. */
+  function unitChoice(productId: string): string[] | undefined {
+    return draft?.lines.find(l => l.product_id === productId)?.unitIds
+  }
+
+  /** `undefined` puts the line back on the shelf's proposal; `[]` names none. */
+  function patchUnitChoice(productId: string, unitIds: string[] | undefined) {
+    setDraft(d => (d ? { ...d, lines: d.lines.map(x => (x.product_id === productId ? { ...x, unitIds } : x)) } : d))
+    setDraftError('')
+  }
+
+  /**
+   * The units a line will store when the run moves: the shelf's oldest-first proposal, nothing, or
+   * exactly the units the shop toggled on. An explicitly named unit that has left the shelf is kept
+   * in the picks anyway — the library's own verdict (`validateSerialIssues`) names it, which is far
+   * more use than this screen silently dropping it. Same all-or-nothing rule as lots: a proposal
+   * that cannot cover the draw names nothing.
+   */
+  function unitPicksOf(l: BuildLine, row: SerialRow | undefined): SerialPick[] {
+    const want = unitChoice(l.product_id)
+    if (want === undefined) return row && row.ok ? row.picks : []
+    return want.map(id => {
+      const u = units.find(x => x.id === id)
+      return { serial_id: id, serial_no: u?.serial_no || id }
+    })
+  }
+
   const draftCheck = useMemo(() => {
     if (!draft || !candidate) return null
     const errs = validateBuild(candidate, draftRecipe, products)
@@ -675,28 +737,56 @@ function RecipesPageInner() {
 
     const stamped = { ...candidate, lines: linesWithLots }
     const stamp = stampCost(candidate, draftRecipe, products, store.rates)
+
+    // The units. Same shape as the lots: `allocateSerials` proposes the oldest on the shelf, and
+    // `unitPicksOf` applies the shop's own toggling. The stamped build then faces the library's
+    // verdict, so a unit that left the shelf since this screen was painted is named here, not on
+    // the register.
+    const serialRows = allocateSerials(candidate.lines, products, units, serialEvents, candidate.date)
+    const linesStamped: BuildLine[] = stamped.lines.map((l, i) => {
+      const picks = unitPicksOf(l, serialRows[i])
+      return picks.length ? { ...l, serials: picks } : { ...l }
+    })
+    const issue = { ...stamped, lines: linesStamped }
+    const serialProblems = validateSerialIssues(issue, units, serialEvents, products)
+    // Soft notes, the serial twins of `unnamed`: a part the register holds units of, where this
+    // draw will end up naming none. Nothing is blocked — the shelf moves either way — but the
+    // serial ledger will not learn about this run, and the shop should know that before saving.
+    const unitNeeds = serialRows
+      .filter(r => r.tracked && unitChoice(r.product_id) === undefined)
+      .map(r => !r.whole
+        ? `${r.name}: draws ${fmtQty(r.need, r.unit)} — a fractional draw cannot name whole units, so none will be named`
+        : r.shortfall > 0
+          ? `${r.name}: the shelf holds ${r.on_shelf.length} numbered unit${r.on_shelf.length === 1 ? '' : 's'} of the ${fmtQty(r.need, r.unit)} drawn, so no unit will be named`
+          : '')
+      .filter(Boolean)
+
     return {
       errs,
       over,
       plan,
       rows,
-      linesWithLots,
+      linesStamped,
       clash,
       unnamed,
       expiredPicks,
       landsLot,
       lotNeeds,
+      serialRows,
+      serialProblems,
+      unitNeeds,
       lotWrites: lotWritesFor(stamped, products),
+      unitWrites: serialWritesFor(issue, products),
       produced: draftRecipe && landsLot ? producedLot(stamped, draftRecipe, output, stamp.per_unit) : null,
       writes: movementsFor(candidate, draftRecipe, products),
       stamp,
-      ok: errs.length === 0 && over.length === 0 && clash.length === 0,
+      ok: errs.length === 0 && over.length === 0 && clash.length === 0 && serialProblems.length === 0,
     }
     // lotChoice and picksOf are read here but are not deps: both only look at `draft.lines` and
     // `lotById`, which are already listed, so naming the closures would rebuild this on every
     // render of the modal without changing a single answer.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft, candidate, draftRecipe, products, index, store.recipes, store.rates, batches, lotMoves, lotById])
+  }, [draft, candidate, draftRecipe, products, index, store.recipes, store.rates, batches, lotMoves, lotById, units, serialEvents])
 
   const draftPlanRows = useMemo<PlanRow[]>(() => {
     if (!draftCheck?.plan) return []
@@ -777,6 +867,24 @@ function RecipesPageInner() {
     return { count: writes.length, zeroed: true }
   }
 
+  /**
+   * The unit half of a run, written after the shelf and the lots. The serial register is device-side
+   * like the batch one, and it is written last on the same reasoning: an event naming a run the
+   * stock ledger never accepted would be a fiction pointing the other way.
+   */
+  function writeUnitsFor(build: Build): number {
+    const writes = serialWritesFor(build, products)
+    if (writes.length) appendEvents(orgId, writes.map(w => newEvent(w.serial_id, w.kind, w.date, w.doc_ref, '', w.note)))
+    return writes.length
+  }
+
+  /** The reversal: the issued units go back on the shelf, each with its own event — never a deletion. */
+  function undoUnitsFor(build: Build): number {
+    const writes = reverseSerialWritesFor(build, products)
+    if (writes.length) appendEvents(orgId, writes.map(w => newEvent(w.serial_id, w.kind, w.date, w.doc_ref, '', w.note)))
+    return writes.length
+  }
+
   async function saveBuild(asBuilt: boolean) {
     if (!candidate || !orgId) return
     const check = draftCheck
@@ -788,6 +896,10 @@ function RecipesPageInner() {
     }
     if (asBuilt && check.clash.length) {
       setDraftError(`${check.clash.join(' · ')} — the lot register cannot give up that much. Name another lot, or draw the quantity the lot actually holds.`)
+      return
+    }
+    if (asBuilt && check.serialProblems.length) {
+      setDraftError(`${check.serialProblems.join(' · ')} Correct the units the draw names, or record the run with that part unnamed.`)
       return
     }
     // A run whose movements are written is a record of something that happened. Editing its draws
@@ -804,11 +916,13 @@ function RecipesPageInner() {
 
     setBusy(asBuilt ? 'Writing the stock movements…' : draftExisting?.moved ? 'Saving the note…' : 'Saving the plan…')
     const ref = draftExisting?.ref || candidate.ref
-    // Lots are named when the shelf moves, not before: a plan is an intent, and by the day the run
-    // happens the near-expiry lot may have been sold to somebody else.
-    const lines = asBuilt ? check.linesWithLots : candidate.lines
+    // Lots and units are named when the shelf moves, not before: a plan is an intent, and by the
+    // day the run happens the near-expiry lot may be sold and the numbered unit may have left the
+    // shelf. A note edit on a moved run keeps the lines it stored — they carry those names.
+    const lines = asBuilt ? check.linesStamped : draftExisting?.moved ? draftExisting.lines : candidate.lines
     let moved = false
     let lotCount = 0
+    let unitCount = 0
     let producedId = ''
     if (asBuilt && check.writes.length) {
       const failure = await writeAll(check.writes)
@@ -825,7 +939,9 @@ function RecipesPageInner() {
       const lotResult = writeLotsFor({ ...candidate, ref, lines }, check.produced)
       lotCount = lotResult.count
       producedId = lotResult.lotId
+      unitCount = writeUnitsFor({ ...candidate, ref, lines })
       refreshLots()
+      refreshSerials()
     }
 
     const saved: Build = {
@@ -850,10 +966,10 @@ function RecipesPageInner() {
     setDraft(null)
     setDraftError('')
     flash(moved
-      ? `${saved.ref} recorded — ${check.writes.length} movement${check.writes.length === 1 ? '' : 's'} written to the stock ledger${lotCount ? `, ${lotCount} lot${lotCount === 1 ? '' : 's'} drawn down` : ''}${check.produced ? ' and the finished units landed in their own lot' : ''}${check.stamp.total === null ? '' : `, worth ${money(check.stamp.total)} as the catalogue and the rate rows read`}.`
+      ? `${saved.ref} recorded — ${check.writes.length} movement${check.writes.length === 1 ? '' : 's'} written to the stock ledger${lotCount ? `, ${lotCount} lot${lotCount === 1 ? '' : 's'} drawn down` : ''}${unitCount ? `, ${unitCount} numbered unit${unitCount === 1 ? '' : 's'} issued into the run` : ''}${check.produced ? ' and the finished units landed in their own lot' : ''}${check.stamp.total === null ? '' : `, worth ${money(check.stamp.total)} as the catalogue and the rate rows read`}.`
       : draftExisting?.moved
-        ? `${saved.ref} updated — its note only. The movements and the lot draws it already wrote stay on the ledgers.`
-        : `${saved.ref} is a plan on the log. No stock and no lot has moved.`)
+        ? `${saved.ref} updated — its note only. The movements, the lot draws and the units it already wrote stay on the ledgers.`
+        : `${saved.ref} is a plan on the log. No stock, no lot and no unit has moved.`)
   }
 
   async function recordRun(view: BuildView) {
@@ -877,7 +993,16 @@ function RecipesPageInner() {
       const picks = rows[i]?.ok ? rows[i].picks : []
       return picks.length ? { ...l, lots: picks } : { ...l }
     })
-    const running: Build = { ...build, lines }
+    // The units the same way, off a register read fresh this moment: the oldest on the shelf first,
+    // and a part that cannot be covered is simply left unnamed.
+    const freshUnits = loadUnits(orgId)
+    const freshEvents = loadEvents(orgId)
+    const unitRows = allocateSerials(build.lines, products, freshUnits, freshEvents, build.date)
+    const withUnits: BuildLine[] = lines.map((l, i) => {
+      const picks = unitRows[i]?.ok ? unitRows[i].picks : []
+      return picks.length ? { ...l, serials: picks } : { ...l }
+    })
+    const running: Build = { ...build, lines: withUnits }
     const clash: string[] = []
     const perLot = new Map<string, number>()
     for (const p of lines.flatMap(l => l.lots || [])) perLot.set(p.batch_id, Math.round(((perLot.get(p.batch_id) || 0) + p.qty) * 10000) / 10000)
@@ -888,6 +1013,8 @@ function RecipesPageInner() {
     if (clash.length) { warn(`${build.ref} cannot be recorded — the lot register disagrees: ${clash.join(' · ')}.`); return }
     const problems = validateLotIssues(running, batches, products)
     if (problems.length) { warn(`${build.ref} cannot be recorded — ${problems.join(' · ')}`); return }
+    const serialProblems = validateSerialIssues(running, freshUnits, freshEvents, products)
+    if (serialProblems.length) { warn(`${build.ref} cannot be recorded — ${serialProblems.join(' · ')}`); return }
 
     const output = recipe ? index.get(recipe.output_product_id) : undefined
     const lands = Boolean(recipe && output && output.track_inventory !== false && batches.length > 0)
@@ -898,11 +1025,13 @@ function RecipesPageInner() {
     setBusy('')
     if (failure) { warn(`The movement failed — ${failure}. ${build.ref} stays a plan.`); return }
     const lotResult = writeLotsFor(running, lands && recipe ? producedLot(running, recipe, output, stamp.per_unit) : null)
+    const unitCount = writeUnitsFor(running)
     refreshLots()
+    refreshSerials()
     upsertBuild(orgId, { ...running, status: 'built', moved: true, ...(lotResult.lotId ? { output_batch_id: lotResult.lotId } : {}) })
     refreshStore()
     setProducts(await loadProducts(orgId))
-    flash(`${build.ref} moved — ${writes.length} movement${writes.length === 1 ? '' : 's'} on the stock ledger${lotResult.count ? `, ${lotResult.count} lot${lotResult.count === 1 ? '' : 's'} drawn down` : ''}${lotResult.lotId ? ' and the finished units booked in as their own lot' : ''}.`)
+    flash(`${build.ref} moved — ${writes.length} movement${writes.length === 1 ? '' : 's'} on the stock ledger${lotResult.count ? `, ${lotResult.count} lot${lotResult.count === 1 ? '' : 's'} drawn down` : ''}${unitCount ? `, ${unitCount} numbered unit${unitCount === 1 ? '' : 's'} issued into the run` : ''}${lotResult.lotId ? ' and the finished units booked in as their own lot' : ''}.`)
   }
 
   async function cancelRun(view: BuildView) {
@@ -921,26 +1050,36 @@ function RecipesPageInner() {
           return
         }
       }
+      // The serial register gets the same fresh reading, and the same refusal: a cancel puts the
+      // units back, so a unit that has moved on since — scrapped, or put back by hand — needs the
+      // shop's own correction first, not this page writing over its history.
+      const movedOn = serialMovedOn(build, loadUnits(orgId), loadEvents(orgId))
+      if (movedOn.length) {
+        warn(`${build.ref} cannot be cancelled — ${movedOn.map(m => `unit ${m.serial_no} is ${SERIAL_STATUS_LABEL[m.status].toLowerCase()}`).join(', ')} since the run issued it. The cancel would put it back on the shelf; correct that unit at /inventory/serials first if the run is truly undone.`)
+        return
+      }
       const reversals = reverseMovementsFor(build, recipe, products)
       setBusy(`Reversing ${build.ref}…`)
       const failure = await writeAll(reversals)
       setBusy('')
       if (failure) { warn(`The reversal failed — ${failure}. ${build.ref} is still on the shelf as built.`); return }
       const undone = undoLotsFor(build, freshBatches)
+      const undoneSerial = undoUnitsFor(build)
       refreshLots()
+      refreshSerials()
       upsertBuild(orgId, {
         ...build,
         status: 'cancelled',
         moved: false,
         notes: [
           build.notes,
-          `Reversed ${day} — the drawn units went back and the finished units came off${undone.count ? `, into ${undone.count} lot${undone.count === 1 ? '' : 's'} they came from` : ''}`,
+          `Reversed ${day} — the drawn units went back and the finished units came off${undone.count ? `, into ${undone.count} lot${undone.count === 1 ? '' : 's'} they came from` : ''}${undoneSerial ? `, and ${undoneSerial} numbered unit${undoneSerial === 1 ? '' : 's'} went back on the serial register` : ''}`,
           build.output_batch_id && !undone.zeroed ? 'The finished lot was left as it stands — something other than this run has moved against it.' : '',
         ].filter(Boolean).join(' · '),
       })
       refreshStore()
       setProducts(await loadProducts(orgId))
-      flash(`${build.ref} cancelled and reversed — the original run and its reversal both stay in the movement log${undone.count ? `, and ${undone.count} lot${undone.count === 1 ? '' : 's'} took the units back` : ''}.`)
+      flash(`${build.ref} cancelled and reversed — the original run and its reversal both stay in the movement log${undone.count ? `, and ${undone.count} lot${undone.count === 1 ? '' : 's'} took the units back` : ''}${undoneSerial ? `, and ${undoneSerial} numbered unit${undoneSerial === 1 ? '' : 's'} stand on the shelf again` : ''}.`)
       return
     }
     const result = cancelBuild(orgId, build.id)
@@ -1363,6 +1502,16 @@ function RecipesPageInner() {
                                 </button>
                               </>
                             )}
+                            {r.serials.count > 0 && (
+                              // Same reasoning as the lots: the numbered units a draw took are the
+                              // trace after-sales asks for, and it costs nothing to show them here.
+                              <>
+                                {' · '}
+                                <button type="button" className="rc-inline" onClick={() => setOpenRecipe(open ? '' : r.build.id)}>
+                                  {r.serials.count} unit{r.serials.count === 1 ? '' : 's'} issued{open ? ' — hide them' : ' — see which'}
+                                </button>
+                              </>
+                            )}
                           </span>
                         </span>
                         <span data-label="Recipe" className="rc-item">
@@ -1425,9 +1574,20 @@ function RecipesPageInner() {
                                 <div key={l.product_id} className="rc-vrow">
                                   <span className="rc-item-name">{index.get(l.product_id)?.name || l.product_id}</span>
                                   <span className="rc-sub">{index.get(l.product_id)?.track_inventory === false ? 'not stock-tracked' : `cost ${price(index.get(l.product_id)?.purchase_price)} / unit`}</span>
-                                  <span className="rc-sub">{(l.lots || []).length
-                                    ? (l.lots || []).map(x => `${x.batch_no}${x.expiry_date && x.expiry_date < r.build.date ? ' · past expiry' : ''} ${fmtQty(x.qty, index.get(l.product_id)?.unit || '')}`).join(' + ')
-                                    : batchedProducts.includes(l.product_id) && r.build.moved ? 'no lot named' : ''}</span>
+                                  <span className="rc-drawtrace">
+                                    {(l.lots || []).length > 0 && (
+                                      <span className="rc-sub">{(l.lots || []).map(x => `${x.batch_no}${x.expiry_date && x.expiry_date < r.build.date ? ' · past expiry' : ''} ${fmtQty(x.qty, index.get(l.product_id)?.unit || '')}`).join(' + ')}</span>
+                                    )}
+                                    {(l.lots || []).length === 0 && batchedProducts.includes(l.product_id) && r.build.moved && (
+                                      <span className="rc-sub">no lot named</span>
+                                    )}
+                                    {(l.serials || []).length > 0 && (
+                                      <span className="rc-sub">issued {(l.serials || []).map(p => p.serial_no || 'unnamed unit').join(', ')}</span>
+                                    )}
+                                    {(l.serials || []).length === 0 && serialledProducts.includes(l.product_id) && r.build.moved && (
+                                      <span className="rc-sub">no unit named</span>
+                                    )}
+                                  </span>
                                   <span className="rc-num">{fmtQty(l.qty, index.get(l.product_id)?.unit || '')}</span>
                                 </div>
                               ))}
@@ -2252,10 +2412,15 @@ function RecipesPageInner() {
                 const asked = draftRecipe ? requirement(draftRecipe, Number(draft.units) || 0).find(w => w.product_id === l.product_id) : undefined
                 const over = p && p.track_inventory !== false && Number(l.qty) > (Number(p.current_stock) || 0)
                 const row = draftCheck?.rows.find(r => r.product_id === l.product_id)
-                const picks = draftCheck?.linesWithLots.find(x => x.product_id === l.product_id)?.lots || []
+                const picks = draftCheck?.linesStamped.find(x => x.product_id === l.product_id)?.lots || []
                 const choice = l.lot === undefined ? 'auto' : l.lot
                 const unit = p?.unit || ''
                 const open_lots = lotsOf(l.product_id).filter(v => v.left > 0 || v.id === choice)
+                // The serial side: the register's own proposal for this part, and the units this
+                // line will actually store — which is what the chips paint themselves from.
+                const uRow = draftCheck?.serialRows.find(r => r.product_id === l.product_id)
+                const unitPicks = draftCheck?.linesStamped.find(x => x.product_id === l.product_id)?.serials || []
+                const unitAuto = unitChoice(l.product_id) === undefined
                 return (
                   <div key={`${l.product_id}-${i}`} className="rc-drawline">
                     <div className="rc-draw">
@@ -2287,6 +2452,47 @@ function RecipesPageInner() {
                           {picks.length
                             ? picks.map(x => `${x.batch_no} ${fmtQty(x.qty, unit)}${x.expiry_date && x.expiry_date < draft.date ? ' · past its expiry' : ''}`).join('  +  ')
                             : `no lot named — ${fmtQty(Number(l.qty) || 0, unit)} will leave the shelf and the lot register will not know where from`}
+                        </span>
+                      </div>
+                    )}
+                    {uRow?.tracked && (
+                      <div className="rc-lots rc-units">
+                        <span className="rc-lots-label">Which units</span>
+                        <span className="rc-units-pick" role="group" aria-label={`Which numbered units of ${p?.name || 'this component'} the run takes`}>
+                          {uRow.on_shelf.slice(0, 8).map(u => {
+                            const on = unitPicks.some(x => x.serial_id === u.id)
+                            return (
+                              <button key={u.id} type="button" className={`rc-unit-chip ${on ? 'is-on' : ''}`} aria-pressed={on}
+                                onClick={() => {
+                                  // Toggling from the proposal makes it explicit — the shop's own list
+                                  // from here on, which the library then checks cover for cover.
+                                  const base = unitChoice(l.product_id) ?? unitPicks.map(x => x.serial_id)
+                                  patchUnitChoice(l.product_id, on ? base.filter(id => id !== u.id) : [...base, u.id])
+                                }}>
+                                <span className="rc-mono">{u.serial_no}</span>
+                                <span className="rc-sub">{u.received_date ? `on the shelf since ${formatDateIN(u.received_date)}` : 'no receipt date'}</span>
+                              </button>
+                            )
+                          })}
+                          {uRow.on_shelf.length > 8 && (
+                            <span className="rc-sub">and {uRow.on_shelf.length - 8} more on the shelf</span>
+                          )}
+                          {uRow.on_shelf.length === 0 && (
+                            <span className="rc-sub">no {p?.name || 'unit'} is on the shelf right now</span>
+                          )}
+                        </span>
+                        <Button variant="ghost" size="sm" onClick={() => patchUnitChoice(l.product_id, undefined)}
+                          disabled={unitAuto}>Oldest first{uRow.ok && unitAuto ? ` — ${uRow.picks.length} unit${uRow.picks.length === 1 ? '' : 's'}` : ''}</Button>
+                        <Button variant="ghost" size="sm" onClick={() => patchUnitChoice(l.product_id, [])}
+                          disabled={!unitAuto && (l.unitIds || []).length === 0}>Name none</Button>
+                        <span className={`rc-lots-take ${unitPicks.length && unitPicks.length === Math.trunc(Number(l.qty) || 0) ? '' : 'rc-warn'}`}>
+                          {unitPicks.length
+                            ? `issued: ${unitPicks.map(x => x.serial_no || 'unnamed unit').join(', ')}${unitPicks.length === Math.trunc(Number(l.qty) || 0) ? '' : ` — ${unitPicks.length} of the ${fmtQty(Number(l.qty) || 0, unit)} drawn`}`
+                            : !uRow.whole
+                              ? 'no unit named — a fractional draw cannot name whole units, so the register will not know which left the shelf'
+                              : unitAuto && uRow.shortfall > 0
+                                ? `no unit named — the shelf holds ${uRow.on_shelf.length} numbered unit${uRow.on_shelf.length === 1 ? '' : 's'} of the ${fmtQty(uRow.need, unit)} drawn`
+                                : 'no unit named — the shelf moves and the serial register will not know this run took them'}
                         </span>
                       </div>
                     )}
@@ -2338,12 +2544,32 @@ function RecipesPageInner() {
               </div>
             )}
 
+            {candidate && draftCheck && draftCheck.serialProblems.length > 0 && (
+              <div className="rc-note is-hot">
+                <Icon name="alert" size={13} strokeWidth={2.2} />
+                <span>
+                  The serial register refuses these draws: {draftCheck.serialProblems.join(' · ')} Recording the run as it stands would
+                  claim units the register cannot give up — correct what the draws name, or leave those parts unnamed.
+                </span>
+              </div>
+            )}
+
             {candidate && draftCheck && draftCheck.unnamed.length > 0 && (
               <div className="rc-note">
                 <Icon name="alert" size={13} strokeWidth={2.2} />
                 <span>
                   {draftCheck.unnamed.join(' · ')}. The run still moves the shelf; those draws will be recorded with no lot named, and the
                   build log says so. Book the receipt at <Link href="/inventory/batches">/inventory/batches</Link> and the split appears here.
+                </span>
+              </div>
+            )}
+
+            {candidate && draftCheck && draftCheck.unitNeeds.length > 0 && (
+              <div className="rc-note">
+                <Icon name="alert" size={13} strokeWidth={2.2} />
+                <span>
+                  {draftCheck.unitNeeds.join(' · ')}. The run still moves the shelf; the build log and its findings will say those units
+                  were never named. Receipts and the register live at <Link href="/inventory/serials">/inventory/serials</Link>.
                 </span>
               </div>
             )}
@@ -2409,6 +2635,15 @@ function RecipesPageInner() {
                         register, as adjustments under {candidate.ref} — the batch shape has no issue kind and nothing here invents one
                       </li>
                     )}
+                    {draftCheck.unitWrites.length > 0 && (
+                      <li>
+                        <span className="rc-dot rc-dot-blue" />
+                        {draftCheck.unitWrites.length} numbered unit{draftCheck.unitWrites.length === 1 ? '' : 's'} (
+                        {draftCheck.unitWrites.map(w => w.serial_no).join(', ')}) issued into the run through{' '}
+                        <Link href="/inventory/serials">/inventory/serials</Link>&apos;s own register, again after the shelf moves — each unit
+                        keeps its own history, and a cancel puts them back with an event of its own
+                      </li>
+                    )}
                     {draftCheck.lotNeeds && (
                       <li><span className="rc-dot rc-dot-blue" />{draftCheck.lotNeeds}</li>
                     )}
@@ -2444,7 +2679,9 @@ function RecipesPageInner() {
                   ? 'This run is already on the stock ledger — cancelling it writes the reversal, and a fresh run records what happened next'
                   : draftCheck && !draftCheck.ok && draftCheck.clash.length > 0
                     ? 'A lot cannot give up the quantity drawn'
-                    : 'Write the movements, draw the lots down and book the finished units as a lot'}>
+                    : draftCheck && !draftCheck.ok && draftCheck.serialProblems.length > 0
+                      ? 'The units the draws name do not fit the serial register'
+                      : 'Write the movements, draw the lots down, issue the named units and book the finished units as a lot'}>
                 {draftExisting?.moved ? 'Movements already written' : 'Record build & move stock'}
               </Button>
             </div>
@@ -2723,6 +2960,18 @@ function RecipesPageInner() {
         .rc-lots-take { flex: 1 1 220px; font-size: 11.5px; color: var(--muted); line-height: 1.5;
           font-variant-numeric: tabular-nums; }
         .rc-lots-take.rc-warn { color: var(--amber); }
+
+        /* The unit strip is the lot strip's twin — chips instead of a select, because a draw names
+           *units*, and ticking one off reads better than picking a number out of a list. */
+        .rc-units-pick { display: flex; align-items: stretch; gap: 6px; flex-wrap: wrap; flex: 1 1 300px; }
+        .rc-unit-chip { display: inline-flex; flex-direction: column; gap: 1px; align-items: flex-start;
+          border: 1px solid var(--line); border-radius: 9px; padding: 4px 9px; background: var(--surface);
+          cursor: pointer; font-size: 12px; color: var(--ink-2); line-height: 1.35; text-align: left; }
+        .rc-unit-chip:hover { border-color: var(--brand); color: var(--ink); }
+        .rc-unit-chip.is-on { border-color: var(--brand); background: var(--brand-soft); color: var(--ink);
+          box-shadow: inset 0 0 0 1px var(--brand); }
+        .rc-unit-chip .rc-sub { font-size: 10px; }
+        .rc-drawtrace { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 
         .rc-preview { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--surface-2); }
         .rc-preview-head { display: flex; justify-content: space-between; gap: 10px; font-size: 11px; font-weight: 700;

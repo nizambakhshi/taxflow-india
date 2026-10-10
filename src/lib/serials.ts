@@ -66,6 +66,8 @@ export interface SerialView extends SerialUnit {
   status: SerialStatus
   /** Date of the latest recorded event; '' when the store lost the log. */
   last_date: string
+  /** Paper behind the latest event — the invoice for a sale, the job number for a build draw. */
+  last_ref: string
   /** The latest sale, kept even after a return — it is the unit's history. */
   sold_date: string
   sold_to: string
@@ -390,6 +392,7 @@ export function viewOf(unit: SerialUnit, events: SerialEvent[], today: string): 
     ...unit,
     status: statusOf(last),
     last_date: last?.date ?? '',
+    last_ref: last?.doc_ref ?? '',
     sold_date: soldDate,
     sold_to: sold?.party ?? '',
     sold_ref: sold?.doc_ref ?? '',

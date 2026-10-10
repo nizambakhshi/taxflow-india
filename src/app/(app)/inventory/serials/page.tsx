@@ -11,6 +11,13 @@
 // Unlike batches there is no automatic hook on invoices — nothing in an invoice
 // can name the physical unit — so units attach to bills through the Issue
 // action, which carries the invoice number.
+//
+// Since R2-35 one more kind of paper can name a unit: a build draw. A run at
+// /inventory/recipes that draws a numbered part issues it (`issued` — "In a
+// build", with the job number as the reference), and cancelling the run puts it
+// back the same way a return does. Both are events appended here, through this
+// register's own writers — the recipes page proposes and this page's library
+// records, the same division lots already have.
 
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
@@ -38,11 +45,12 @@ interface ProductOption {
   sku?: string | null
 }
 
-type ViewFilter = 'in_stock' | 'returned' | 'sold' | 'scrapped' | 'all'
+type ViewFilter = 'in_stock' | 'issued' | 'returned' | 'sold' | 'scrapped' | 'all'
 type MoveKind = 'sold' | 'returned' | 'scrapped'
 
 const VIEWS: { value: ViewFilter; label: string }[] = [
   { value: 'in_stock', label: 'On the shelf' },
+  { value: 'issued', label: 'In a build' },
   { value: 'returned', label: 'Returned' },
   { value: 'sold', label: 'With customers' },
   { value: 'scrapped', label: 'Scrapped' },
@@ -62,6 +70,7 @@ function matchesView(v: SerialView, view: ViewFilter): boolean {
 /** The one-line story under the status badge — the latest recorded event. */
 function historyLine(v: SerialView): string {
   if (v.status === 'in_stock') return v.last_date ? `on the shelf since ${formatDateIN(v.last_date)}` : 'awaiting its first movement'
+  if (v.status === 'issued') return v.last_date ? `in a build since ${formatDateIN(v.last_date)}` : 'inside a build'
   if (v.status === 'sold') return `sold ${formatDateIN(v.last_date)}`
   if (v.status === 'returned') return `returned ${formatDateIN(v.last_date)}`
   return `scrapped ${formatDateIN(v.last_date)}`
@@ -69,6 +78,13 @@ function historyLine(v: SerialView): string {
 
 /** Who has (or had) the unit, and under what paper. */
 function whereText(v: SerialView): { main: string; sub: string } {
+  if (v.status === 'issued') {
+    const ref = v.last_ref
+    return {
+      main: ref ? `In build ${ref}` : 'Inside a build',
+      sub: `issued ${formatDateIN(v.last_date)}${ref ? ' · cancelling the run puts it back' : ''}`,
+    }
+  }
   if (v.status === 'sold') {
     return {
       main: v.sold_to || 'With a customer',
@@ -362,7 +378,12 @@ function SerialsPageInner() {
   }
 
   function restock(v: SerialView) {
-    if (!confirm(`Put ${v.serial_no} back on the shelf? It goes back to in stock straight away.`)) return
+    // Two roads back to the shelf: a return, or a hand take-back out of a build. The wording says
+    // which — a unit leaving a run by hand is a correction, and cancelling the run is the tidy way
+    // back, so the confirm warns that the issue event will still stand either way.
+    if (!confirm(v.status === 'issued'
+      ? `Take ${v.serial_no} out of the build by hand? It goes back on the shelf, but ${v.last_ref ? `${v.last_ref} will still record issuing it` : 'the run will still record issuing it'} — cancelling the run is the tidy way back.`
+      : `Put ${v.serial_no} back on the shelf? It goes back to in stock straight away.`)) return
     setEvents(recordEvent(orgId, v.id, 'restocked', todayISO()))
     flash(`${v.serial_no} back on the shelf.`)
   }
@@ -400,21 +421,26 @@ function SerialsPageInner() {
           icon="box" tone="blue" delay={0}
         />
         <StatCard
+          label="In a build" value={String(summary.issued)}
+          sub={summary.issued ? 'issued into a run — a cancel puts them back' : 'no units inside a build'}
+          icon="factory" tone={summary.issued ? 'amber' : 'green'} delay={40}
+        />
+        <StatCard
           label="With customers" value={String(summary.sold)}
           sub={summary.sold
             ? (summary.onWarranty ? `${summary.onWarranty} still inside warranty` : 'all past their warranty window')
             : 'nothing out with customers'}
-          icon="bag" tone="cyan" delay={40}
+          icon="bag" tone="cyan" delay={80}
         />
         <StatCard
           label="Returned" value={String(summary.returned)}
           sub={summary.returned ? 'awaiting restock or scrap' : 'nothing awaiting a decision'}
-          icon="undo" tone={summary.returned ? 'amber' : 'green'} delay={80}
+          icon="undo" tone={summary.returned ? 'amber' : 'green'} delay={120}
         />
         <StatCard
           label="On warranty" value={String(summary.onWarranty)}
           sub={summary.onWarranty ? 'claims window open today' : 'no open warranty windows'}
-          icon="shield" tone="green" delay={120}
+          icon="shield" tone="green" delay={160}
         />
       </div>
 
@@ -505,7 +531,11 @@ function SerialsPageInner() {
                       <Button variant="ghost" size="sm" icon="box" title={`Put ${v.serial_no} back on the shelf`}
                         onClick={() => restock(v)} style={{ width: 32, padding: 0 }}>{' '}</Button>
                     )}
-                    {(v.status === 'in_stock' || v.status === 'returned') && (
+                    {v.status === 'issued' && (
+                      <Button variant="ghost" size="sm" icon="box" title={`Take ${v.serial_no} out of the build by hand — cancelling the run at /inventory/recipes is the tidy way`}
+                        onClick={() => restock(v)} style={{ width: 32, padding: 0 }}>{' '}</Button>
+                    )}
+                    {(v.status === 'in_stock' || v.status === 'issued' || v.status === 'returned') && (
                       <Button variant="ghost" size="sm" icon="alert" title={`Write off ${v.serial_no}`}
                         onClick={() => openMove(v, 'scrapped')} style={{ width: 32, padding: 0 }}>{' '}</Button>
                     )}
@@ -832,7 +862,7 @@ function SerialsPageInner() {
       )}
 
       <style>{`
-        .sr-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 1rem; }
+        .sr-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 1rem; }
         .sr-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
 
         .sr-notice { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; padding: 9px 12px;
@@ -900,7 +930,7 @@ function SerialsPageInner() {
 
         .sr-save { display: flex; gap: 10px; justify-content: flex-end; }
 
-        @media (max-width: 1100px) { .sr-stats { grid-template-columns: 1fr 1fr; } }
+        @media (max-width: 1100px) { .sr-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
         @media (max-width: 768px) {
           .sr-row { grid-template-columns: 1fr; gap: 6px; }
           .sr-head { display: none; }

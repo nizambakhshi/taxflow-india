@@ -203,7 +203,7 @@ export const REGISTERS: RegisterSpec[] = [
     id: 'serialevents',
     prefix: 'taxflow:serialevents:',
     label: 'Serial movements',
-    what: 'What happened to each unit after it arrived: sold, returned, restocked, scrapped',
+    what: 'What happened to each unit after it arrived: sold, issued into a build, returned, restocked, scrapped',
     unit: 'event',
     group: 'inventory',
     module: 'src/lib/serials.ts',
