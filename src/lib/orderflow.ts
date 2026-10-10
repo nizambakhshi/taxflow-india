@@ -209,6 +209,42 @@ export function takeNumber(store: FlowStore, kind: FlowKind, fy: string): { numb
   }
 }
 
+/**
+ * Raise a saved draft through the register's own numbering.
+ *
+ * A planning page — the recipe board's shopping list, a shortage found at the counter — builds the
+ * document it wants, hands it here, and writes the store it gets back. The number is *taken*, never
+ * typed: two drafts raised on the same day get two numbers, and neither gets the one the other
+ * already holds. `raiseDrafts` folds a list over one store so a board that sends four vendors four
+ * orders makes one write, and every number inside it is still unique.
+ */
+export function appendDraft(
+  kind: FlowKind,
+  store: FlowStore,
+  fy: string,
+  doc: FlowDoc,
+): { doc: FlowDoc; store: FlowStore } {
+  const taken = takeNumber(store, kind, fy)
+  const numbered: FlowDoc = { ...doc, kind, number: taken.number, status: 'draft' }
+  return { doc: numbered, store: { ...taken.store, docs: [...taken.store.docs, numbered] } }
+}
+
+export function raiseDrafts(
+  kind: FlowKind,
+  store: FlowStore,
+  fy: string,
+  docs: FlowDoc[],
+): { docs: FlowDoc[]; store: FlowStore } {
+  const raised: FlowDoc[] = []
+  let next = store
+  for (const doc of docs) {
+    const step = appendDraft(kind, next, fy, doc)
+    next = step.store
+    raised.push(step.doc)
+  }
+  return { docs: raised, store: next }
+}
+
 // ── Totals ───────────────────────────────────────────────────────────────────
 
 export interface FlowTotals {

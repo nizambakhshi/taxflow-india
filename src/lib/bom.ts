@@ -74,6 +74,21 @@
 // whose finished lot has already been sold from is refused — putting back units that left the
 // building would be the stock fiction this register exists to avoid.
 //
+// What R2-30 added: **the shopping list becomes paper.** The board has always known which
+// components the shelf cannot cover; `mergedShortages()` folds those rows into one line per
+// component — the same list the stat card counts *and* the orders are raised from, so the two can
+// never disagree about what is short — and `shoppingPlan()` arranges it by the vendor each
+// component last came in from, at the rate that bill paid (the product master's price when no bill
+// names one), each line naming the recipes waiting on it. A component nobody has ever supplied,
+// whose supplier has since left the vendor list, or whose vendor card carries no state to place
+// the supply in, is not quietly dropped: it lands in `unrouted` with the reason printed — the
+// order register would refuse those drafts anyway, and a refusal on the board beats a rejection
+// on the register's own page. An order with one unpriced line has **no** value rather than a
+// partial one, because a sum of the priced lines would read as *the* figure. Raising the paper
+// stays the order register's own job — `orderflow.appendDraft()` takes the number through the
+// high-water mark the register keeps — so a draft born on this board is indistinguishable from one typed at
+// `/purchase-orders`: same series, same editor, same convert-to-bill path.
+//
 
 import { allocateFefo, newId, todayISO, type Batch, type BatchMove } from '@/lib/batches'
 import { round2 } from '@/lib/costcentres'
@@ -1435,13 +1450,9 @@ export function summarise(views: RecipeView[], store: BomStore, products: BomPro
   const labourFy = rateLegFy('labour')
   const overheadFy = rateLegFy('overhead')
 
-  const shortageMap = new Map<string, { name: string; unit: string; short: number }>()
-  for (const v of views) {
-    for (const s of v.plan.shortages) {
-      const prev = shortageMap.get(s.product_id)
-      shortageMap.set(s.product_id, { name: s.name, unit: s.unit, short: roundQty((prev?.short ?? 0) + s.short) })
-    }
-  }
+  // The same maths the shopping list runs on, so the stat card and the orders a board raises can
+  // never disagree about what is short.
+  const short = mergedShortages(views)
   const unpriced = [...new Set(views.flatMap(v => v.cost.roll.unpriced))].sort()
 
   return {
@@ -1453,8 +1464,8 @@ export function summarise(views: RecipeView[], store: BomStore, products: BomPro
     value_built_fy: roll.value,
     labour_fy: labourFy,
     overhead_fy: overheadFy,
-    shortage_rows: shortageMap.size,
-    components_short: [...shortageMap.values()].sort((a, b) => b.short - a.short || a.name.localeCompare(b.name)),
+    shortage_rows: short.length,
+    components_short: short.map(s => ({ name: s.name, unit: s.unit, short: s.short })),
     unpriced_components: unpriced,
   }
 }
@@ -1870,6 +1881,233 @@ export function demandAgainstRecipes(
     })
   }
   return rows.sort((a, b) => b.to_build - a.to_build || a.name.localeCompare(b.name))
+}
+
+// ── the shopping list becomes paper ───────────────────────────────────────────
+
+/**
+ * One shortage per component, whatever number of recipes are short of it. `summarise` draws its
+ * stat card from this and `shoppingPlan` raises its orders from it, so the number a shop sees on
+ * the board and the number that reaches a vendor can never be two different sums.
+ */
+export interface Shortage {
+  product_id: string
+  name: string
+  unit: string
+  short: number
+  /** Every recipe that cannot run until this arrives — the reason a buyer quotes on the phone. */
+  for_recipes: string[]
+}
+
+export function mergedShortages(views: RecipeView[]): Shortage[] {
+  const map = new Map<string, Shortage>()
+  for (const v of views) {
+    for (const s of v.plan.shortages) {
+      const prev = map.get(s.product_id)
+      const recipe = v.recipe.name?.trim() || 'unnamed recipe'
+      const waiting = prev?.for_recipes ?? []
+      map.set(s.product_id, {
+        product_id: s.product_id,
+        name: s.name,
+        unit: s.unit,
+        short: roundQty((prev?.short ?? 0) + s.short),
+        for_recipes: waiting.includes(recipe) ? waiting : [...waiting, recipe],
+      })
+    }
+  }
+  return [...map.values()].sort((a, b) => b.short - a.short || a.name.localeCompare(b.name))
+}
+
+/**
+ * A purchase line as this register needs it: who sold it, when, at what rate. The page reads it
+ * out of the bills it already trusts (`purchase_bills` joined to `purchase_bill_items`); nothing
+ * here is stored, so a corrected bill corrects the next order raised from it.
+ */
+export interface SupplyReading {
+  product_id: string
+  vendor_id?: string | null
+  vendor_name?: string | null
+  rate?: number | null
+  date?: string | null
+}
+
+/** A vendor the shop can actually write an order to — the live rows off the vendor master. */
+export interface SupplierParty {
+  vendor_id: string
+  vendor_name: string
+  gstin?: string | null
+  state_code?: string | null
+  address?: string | null
+}
+
+export interface BuyLine {
+  product_id: string
+  name: string
+  unit: string
+  hsn_sac: string
+  qty: number
+  /** `null` when neither a bill nor the product master carries a price — the draft then says so. */
+  rate: number | null
+  rate_source: 'last bill' | 'product master' | null
+  for_recipes: string[]
+}
+
+export interface BuyOrder {
+  vendor_id: string
+  vendor_name: string
+  gstin: string
+  state_code: string
+  address: string
+  lines: BuyLine[]
+  /**
+   * `null` the moment one line is unpriced. A sum of the priced lines would read as the value of
+   * the order, and an order with a hole in it is not worth that number — same two-bases rule as
+   * the cost legs: an absent figure prints a dash, a present one prints the figure.
+   */
+  value: number | null
+  /** Names of the lines with no price, so the card can say which to go and set. */
+  unpriced: string[]
+}
+
+export interface ShoppingPlan {
+  /** One draft purchase order per vendor, biggest first. */
+  orders: BuyOrder[]
+  /** Short components nobody can be ordered from yet — with the reason, printed not hidden. */
+  unrouted: { line: BuyLine; why: string }[]
+}
+
+/** The newest line that names a supplier; ties go to the last one read, as `/inventory/reorder` does. */
+function latestSupplier(supply: SupplyReading[]): Map<string, SupplyReading> {
+  const out = new Map<string, SupplyReading>()
+  for (const s of supply) {
+    if (!s.product_id || !s.vendor_name?.trim()) continue
+    const seen = out.get(s.product_id)
+    if (!seen || (s.date || '') >= (seen.date || '')) out.set(s.product_id, s)
+  }
+  return out
+}
+
+/**
+ * What the board cannot cover, arranged as the paper that fixes it: the shortage list grouped by
+ * the vendor each component last came from, at the rate the shop last paid for it (or the price
+ * the master carries when no bill names one), each line saying which recipes are waiting.
+ *
+ * A line is only routed when that vendor is still a vendor the shop trades with *and* the vendor
+ * card carries a state — without one there is no place of supply, and the order register would
+ * refuse the draft it would otherwise raise. A bill whose supplier has since left the master goes
+ * to `unrouted` with its reason rather than raising an order addressed to nobody. Nothing here is
+ * written: `orderNote` and the order register's own `appendDraft` do that, through the numbering
+ * the register already owns.
+ */
+export function shoppingPlan(
+  views: RecipeView[],
+  products: BomProduct[],
+  supply: SupplyReading[],
+  parties: SupplierParty[] = [],
+): ShoppingPlan {
+  const index = indexProducts(products)
+  const last = latestSupplier(supply)
+  const byId = new Map(parties.map(p => [p.vendor_id, p]))
+  const byName = new Map(parties.map(p => [p.vendor_name.trim().toLowerCase(), p]))
+
+  const orders = new Map<string, BuyOrder>()
+  const unrouted: ShoppingPlan['unrouted'] = []
+
+  for (const s of mergedShortages(views)) {
+    const p = index.get(s.product_id)
+    const src = last.get(s.product_id) ?? null
+    const billRate = num(src?.rate) > 0 ? round2(num(src?.rate)) : null
+    const masterRate = num(p?.purchase_price) > 0 ? round2(num(p?.purchase_price)) : null
+    const rate = billRate ?? masterRate
+    const line: BuyLine = {
+      product_id: s.product_id,
+      name: s.name,
+      unit: s.unit,
+      hsn_sac: str(p?.hsn_sac),
+      // A shortage row is what the shelf lacks for one run of every recipe waiting on it; ordering
+      // the sum is the honest minimum, and the draft is editable — the page never hides that.
+      qty: s.short,
+      rate,
+      rate_source: rate === null ? null : billRate !== null ? 'last bill' : 'product master',
+      for_recipes: s.for_recipes,
+    }
+
+    let party: SupplierParty | null = null
+    if (src?.vendor_id) party = byId.get(src.vendor_id) ?? null
+    if (!party && src?.vendor_name) party = byName.get(src.vendor_name.trim().toLowerCase()) ?? null
+    if (!src) {
+      unrouted.push({ line, why: 'No purchase bill has ever named a supplier for it' })
+      continue
+    }
+    if (!party) {
+      unrouted.push({ line, why: `The bill that supplied it names ${src.vendor_name}, who is no longer on your vendor list` })
+      continue
+    }
+    // The order register will not save a document without a place of supply, and a vendor card with
+    // no state cannot give one. Refusing here is honest: the line stays on the board with the
+    // reason, instead of raising a draft that the register would reject on its own page.
+    if (!str(party.state_code).trim()) {
+      unrouted.push({ line, why: `${party.vendor_name} has no state on the vendor card, so there is no place of supply to write` })
+      continue
+    }
+
+    const order = orders.get(party.vendor_id) ?? {
+      vendor_id: party.vendor_id,
+      vendor_name: party.vendor_name,
+      gstin: str(party.gstin),
+      state_code: str(party.state_code),
+      address: str(party.address),
+      lines: [],
+      value: null,
+      unpriced: [],
+    }
+    order.lines.push(line)
+    if (line.rate === null) order.unpriced.push(line.name)
+    orders.set(party.vendor_id, order)
+  }
+
+  return {
+    orders: [...orders.values()].map(o => {
+      const lines = [...o.lines].sort((a, b) => b.qty - a.qty || a.name.localeCompare(b.name))
+      // One unpriced line and the order has no value: a sum of the priced lines would read as
+      // *the* figure, which is the claim this file refuses to make from partial data.
+      const value = lines.some(l => l.rate === null)
+        ? null
+        : round2(lines.reduce((s, l) => s + (l.qty * (l.rate ?? 0)), 0))
+      return { ...o, lines, value }
+    }).sort((a, b) => (b.value ?? 0) - (a.value ?? 0) || a.vendor_name.localeCompare(b.vendor_name)),
+    unrouted: unrouted.sort((a, b) => b.line.qty - a.line.qty || a.line.name.localeCompare(b.line.name)),
+  }
+}
+
+/** The sentence that goes on the draft: why these lines, and what still has no price. */
+export function orderNote(order: BuyOrder, today = todayISO()): string {
+  const parts = order.lines.map(l =>
+    `${l.name} ${roundQty(l.qty)}${l.unit ? ` ${l.unit}` : ''} — for ${l.for_recipes.join(', ') || 'the recipe book'}`)
+  const head = `Raised from the recipe board on ${today}: ${parts.join('; ')}.`
+  return order.unpriced.length
+    ? `${head} No price recorded for ${order.unpriced.join(', ')} — the draft carries 0 until you set it.`
+    : head
+}
+
+export const SHOPPING_CSV_HEADERS = [
+  'Vendor', 'Component', 'Unit', 'To order', 'Rate', 'Rate read from', 'Est. value', 'Recipes waiting', 'Why it cannot be ordered',
+]
+
+export function shoppingCsvRows(plan: ShoppingPlan): (string | number)[][] {
+  const rows: (string | number)[][] = []
+  for (const o of plan.orders) {
+    for (const l of o.lines) {
+      rows.push([
+        o.vendor_name, l.name, l.unit, l.qty, l.rate ?? '', l.rate_source ?? '',
+        l.rate === null ? '' : round2(l.qty * l.rate), l.for_recipes.join(' | '), '',
+      ])
+    }
+  }
+  for (const u of plan.unrouted) {
+    rows.push(['', u.line.name, u.line.unit, u.line.qty, u.line.rate ?? '', u.line.rate_source ?? '', '', u.line.for_recipes.join(' | '), u.why])
+  }
+  return rows
 }
 
 // ── CSV ───────────────────────────────────────────────────────────────────────
