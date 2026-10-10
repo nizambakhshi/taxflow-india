@@ -521,7 +521,7 @@ export function buildActionCommands(): Command[] {
       href: '/payroll?tab=month',
       icon: 'wallet',
       badge: 'Action',
-      keywords: 'payroll run month salary register payslip slip tds 192 tax walk instalment advance lost period deduction lop arrears bonus recovery net pay employer cost gross open month attendance row divisor standard days calendar days',
+      keywords: 'payroll run month salary register payslip slip tds 192 tax walk instalment advance lost period deduction lop arrears bonus recovery net pay employer cost gross open month attendance row divisor standard days calendar days attendance sheet paste import lop absent present day grid supervisor roster mark',
     },
     {
       id: 'action:payroll-dues',
