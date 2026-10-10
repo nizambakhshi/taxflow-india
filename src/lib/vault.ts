@@ -241,7 +241,7 @@ export const REGISTERS: RegisterSpec[] = [
     id: 'bom',
     prefix: 'taxflow:bom:',
     label: 'Recipes, builds and shop rates',
-    what: 'Bill-of-material recipes with their labour and overhead minutes, what each build actually drew, the variance against the recipe, the job numbers and the dated shop-rate rows that price the minutes',
+    what: 'Bill-of-material recipes with their labour and overhead minutes, what each build actually drew and from which lots, the variance against the recipe, the job numbers and the dated shop-rate rows that price the minutes',
     unit: 'row',
     group: 'inventory',
     module: 'src/lib/bom.ts',
