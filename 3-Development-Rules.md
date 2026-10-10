@@ -519,6 +519,21 @@ Five conventions come with it:
 
 ---
 
+## Rule 35 — A Unit Pick Is All or Nothing; the Register Has the Last Word
+
+R2-35 let a build draw at `/inventory/recipes` name the actual numbered units it took. The rule the round establishes: **where a lot answers *how many*, a serial answers *which one* — and an unnamed draw is legal while a half-answered one is not.** A draw that names no unit follows nothing (or the register's own oldest-first proposal); the moment one unit is named, the pick set has to be the whole draw.
+
+Six conventions come with it:
+
+- **Three states, and the empty one is a choice.** `unitIds` absent follows the shelf's proposal (`allocateSerials()` — longest on the shelf first); `[]` names none *deliberately*; a list names exactly those units — `unitPicksOf()` applies the shop's answer to the proposal rather than replacing it, and keeps an explicitly named unit that has left the shelf *in* the set so the library's verdict can name it instead of the UI silently dropping it.
+- **A pick set covers the drawn quantity to the unit.** `validateSerialIssues()` only checks a line that picks, and then refuses: a unit not on the register, a unit named twice (*"one physical unit cannot go in twice"*), a unit booked against another part (*"a draw cannot take someone else's unit"*), a unit off the shelf — any status but in-stock, *In a build* included — and a count that does not equal the drawn quantity: *"The units on … cover 2 of the 3 drawn — the rest names no unit. Issue the whole draw or none of it."* A fractional draw can name no whole unit and says so. Unnamed draws never block; a partial one holds Save, and the refusal's own escape hatch is printed with it — *correct the units, or record the run with that part unnamed*.
+- **The stored picks are a copy of a decision, not a balance.** Before a run is written the set faces the register's verdict read fresh that moment — the save holds the stamped set to `validateSerialIssues()` against the live `taxflow:serials:` + `taxflow:serialevents:`, and a plan recorded straight from the run list re-proposes both its lots and its units off the registers as they stand now — never trusting a promise made on the day the plan was written. ADR-031's lot rule, applied in unit terms.
+- **The run writes through the register's own door.** `serialWritesFor()` emits one `issued` event per unit with the job as `doc_ref` ("Build JOB-… — Chocolate TCB-001 issued into the run") and the writes go through `serials.ts`'s `appendEvents()` — the append-only log, never a status field edited from the recipes page. The flash, the run-log trace (*"3 units issued — see which"*) and the run detail (`issued TCB-001, TCB-002, TCB-003`) all read the one `serialTrail()`, and `BUILD_CSV_HEADERS` keeps a *Units drawn* column beside *Lots drawn*.
+- **A cancel turns the verb round and never overwrites history.** `reverseSerialWritesFor()` writes the `restocked` pair ("… went back on the shelf"), and `serialMovedOn()` refuses the *whole reversal*, by unit name, when a unit left `issued` since — sold, written off, or put back by hand — because restocking a written-off unit would resurrect it and restocking a hand-restocked one would claim the cancel did what a hand did. The shop decides; the register refuses and names the unit.
+- **Boundary, printed: a run names what it took, not what it made.** The units a build *produces* are still numbered at the counter on `/inventory/serials` afterwards — a build knows a quantity and the register knows an identity — and a part is only offered picks at all when the register holds units of it (`serialledProducts`), exactly as lots are only offered for `batchedProducts`.
+
+---
+
 ## Code Quality Checklist
 
 Before marking any feature complete, verify:
