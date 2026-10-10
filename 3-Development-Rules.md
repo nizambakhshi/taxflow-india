@@ -363,7 +363,7 @@ Use `--loader`, not `--import` — `--import` does not register the ESM resolve 
 
 Assertions are written against the domain, not the implementation: FY-weighted splits must sum to exactly the annual plan, a credit note must reduce the month it is dated in, `csvFromRows` must quote a field containing a comma, a PF ceiling must change on the 17th of September and not the day before.
 
-**Suites are per-round throwaways in `/tmp` and are never committed** (`/tmp/payroll-test.mjs` is 435 assertions over the salary register; the R2-30 shopping suite is 95). `/tmp` gets wiped mid-project — it happened twice, and the second time took seventeen suites with it — so a round records **its own** assertion count and says plainly that the older ones were not re-run, rather than quoting a running total it cannot prove. A suite is cheap to rewrite from the library's own exports, and the claim worth keeping in the docs is *which rule each assertion polices*, not the number.
+**Suites are per-round throwaways in `/tmp` and are never committed** (`/tmp/payroll-test.mjs` is 435 assertions over the salary register, its R2-32 attendance half `/tmp/attendance-test.mjs` is 212, and the R2-30 shopping suite is 95). `/tmp` gets wiped mid-project — it happened twice, and the second time took seventeen suites with it — so a round records **its own** assertion count and says plainly that the older ones were not re-run, rather than quoting a running total it cannot prove. A suite is cheap to rewrite from the library's own exports, and the claim worth keeping in the docs is *which rule each assertion polices*, not the number.
 
 ---
 
@@ -457,6 +457,30 @@ Consequences to respect when the next register appears:
 
 - **A new `taxflow:<name>:<orgId>` key must join `REGISTERS` in the same round that creates it** — otherwise the register is real but unownable: invisible to the backup and un-restorable after a browser wipe. Evidence-only logs (outbox, e-way bills, Tally import, palette recents, compliance profile) are collected into the file with `write: undefined` and a reason, so the restore plan can *show* them and never *write* them — replaying a pending invoice would bill it twice.
 - **Restore is not a transaction, and every attempt is logged.** Registers restore one by one and the run stops nowhere — a refusal mid-run leaves the earlier writes in place, which is why the plan (nine states, plan-before-write, `blank` selectable but never pre-ticked) is the page's main product and why the vault's own log (`taxflow:vault:`) records refused runs too. That log is deliberately **not** in the vault itself: a backup that recorded its backups would grow every time it was restored, and "when did you last take this file" belongs to the browser that took it.
+
+---
+
+## Rule 32 — A Pasted Sheet Is Planned, Approved and Thrown Away
+
+A shop does not keep payroll; it keeps an attendance sheet. R2-32 turned that paste into lost days on `/payroll`, and the shape it took is the pattern for every sheet this app will be asked to read afterwards.
+
+The engine splits into two functions with a click between them. `planAttendance(store, month, text)` is pure: it returns the delimiter it settled on, every column with its role, the **basis** with the sentence that justifies it, the matches, the refusals, the findings, and the sheet-level blockers. `applyAttendance(orgId, month, plan)` is **the only door**, and it re-checks the plan's own month against the screen's before writing a row — a preview read against September must not land on the October run. Nothing is written while a blocker stands, "Do not apply" has to write literally nothing, and the page must be able to show both.
+
+Four refusals are non-negotiable, and each exists because the alternative was a silent guess:
+
+- **A number with no direction is refused, never defaulted.** `LOP_HEADERS` and `PRESENT_HEADERS` decide which way a column points, `AMBIGUOUS_HEADERS` (`days`, `total`, `count`) name a number without pointing it anywhere, and `SERIAL_HEADERS` are excluded from identity on purpose — reading `Sl. No` as a payroll code would match strangers. A lone column of numbers produces a blocker instead of a payroll.
+- **The sheet's own basis outranks the shop's setting.** A `24/26` cell states its month length, so `AttendanceBasis.kind` becomes `sheet` and the setting is not consulted; when a row carries *both* a present and a lost column they must agree to the day, and when they do not, the row is refused — `“the register will not choose between two numbers that contradict each other”`. Blank means *the sheet does not say*, which is not zero: a person on the rolls the sheet never mentions keeps the lost days they had and is printed as a finding naming them.
+- **Nothing is written that the register's own form would refuse.** Every candidate row goes back through `validateInput()` *inside* the write, because the People tab may have moved a joining date between the preview and the click. A row that no longer passes is skipped and named in the receipt rather than force-fitted.
+- **A paste is read, not kept.** The bytes that reach `taxflow:payroll:<orgId>` are one `lop_days` number and a `[attendance <month>]` sentence stamped into that month row's note — re-importing a month **replaces** that segment (`stampAttendanceNote`) instead of stacking a second answer to the same month, and text the owner typed after the em dash survives. No new key, no new register, no version bump, and the vault spec's `what` line says the sheet itself is never kept.
+
+Two conventions come with it. **Reuse the reader you have**: `planAttendance` calls `detectDelimiter()` and `splitRow()` from `bank-statement.ts` rather than writing a third parser for a comma-or-tab paste — Rule 16's economy applied inside `src/lib`. And **print the sheet you want back**: `attendanceTemplate(store, month, grid)` rules the month's roster with the register's *own* codes, so a paste can fail on a missing line but not on a spelling.
+
+**A preview belongs to the selection it was read against**, and resetting it from an effect is banned by `react-hooks/set-state-in-effect`. The house answer is React's adjust-during-render recipe — keep the previous value in state and clear the dependent state while rendering, so the stale sheet is never painted for a frame:
+
+```tsx
+const [sheetMonth, setSheetMonth] = useState(month)
+if (sheetMonth !== month) { setSheetMonth(month); setPlan(null); setApplied(null); setText('') }
+```
 
 ---
 
