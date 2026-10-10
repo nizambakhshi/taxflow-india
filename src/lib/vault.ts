@@ -401,22 +401,22 @@ export const REGISTERS: RegisterSpec[] = [
     id: 'payroll',
     prefix: 'taxflow:payroll:',
     label: 'Payroll register',
-    what: 'The salary structure of each employee, the letterhead a payslip prints under, and the month rows behind a slip — lost days read from an attendance sheet arrive as a figure and a sentence, and the sheet itself is never kept',
+    what: 'The salary structure of each employee, the letterhead a payslip prints under, the month rows behind a slip, and the day book — one attendance mark per person per day, which holds no money until it is pulled into a month row',
     unit: 'row',
     group: 'workpapers',
     module: 'src/lib/payroll.ts',
     pageLabel: 'Payroll',
     pageHref: '/payroll',
     encoding: 'json',
-    count: twoLists('employees', 'inputs'),
-    detail: (v) => `${plural(arrCount(v, 'employees'), 'employee')} · ${plural(arrCount(v, 'inputs'), 'month row')}`,
+    count: (v) => arrCount(v, 'employees') + arrCount(v, 'inputs') + arrCount(v, 'attendance'),
+    detail: (v) => `${plural(arrCount(v, 'employees'), 'employee')} · ${plural(arrCount(v, 'inputs'), 'month row')} · ${plural(arrCount(v, 'attendance'), 'day mark')}`,
     // A store the parser cannot read back comes out empty, so a wrong-version file would restore as
     // a blank register and look like a success. Refused by shape instead.
     accepts: (v) => (isObj(v) && Array.isArray(field(v, 'employees')) && Array.isArray(field(v, 'inputs'))
       ? null
       : 'not a payroll register — employees and month rows are both missing'),
     write: (orgId, v) => savePayroll(orgId, v as Parameters<typeof savePayroll>[1]),
-    verify: (orgId) => { const s = loadPayroll(orgId); return s.employees.length + s.inputs.length },
+    verify: (orgId) => { const s = loadPayroll(orgId); return s.employees.length + s.inputs.length + s.attendance.length },
   },
   {
     id: 'gstr9',

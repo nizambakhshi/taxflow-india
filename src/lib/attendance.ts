@@ -68,8 +68,8 @@ export const DAY_BOOK_MARKS: { mark: string; label: string; means: MarkMeans }[]
   { mark: '0.5', label: 'half day lost', means: 'loss' },
 ]
 
-/** The weekday a date falls on, in the shop's own calendar. */
-const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+/** The weekday a date falls on, in the shop's own calendar. Exported for the setting's own picker. */
+export const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 function weekdayOf(date: string): string {
   const [y, m, d] = date.split('-').map(Number)
@@ -374,9 +374,16 @@ export function marksFromPlan(plan: AttendancePlan, month: string, today = today
     return { marks: [], people: 0, per_person: [], notes, refusals: [] }
   }
   // A row the sheet reader refused never reaches `plan.matches`, so the bridge cannot see the mark it
-  // disliked. Carrying the refusals across is the only way a page with an unreadable cell in it stops
-  // being written as though it were complete: the book keeps its blanks honest, and the reason prints.
-  for (const r of plan.refusals) refusals.push(`${r.reason} (sheet line ${r.line})`)
+  // disliked — which is exactly why the refusals travel across. They are split by their own `kind`,
+  // never by their sentence: a line the reader could not *place* (a stranger, a shared code, an
+  // unreadable mark) stops the page, because a book that silently omitted a person would look
+  // complete. A line that simply carries no marks (`blank`) is the sheet agreeing with the book's own
+  // doctrine, so it is noted and skipped — a supervisor who marks only the absents is the common case.
+  const skipped: string[] = []
+  for (const r of plan.refusals) {
+    if (r.kind === 'blank') { skipped.push(r.text); continue }
+    refusals.push(`${r.reason} (sheet line ${r.line})`)
+  }
   const dayCols = plan.columns.filter(c => c.role === 'day' && c.day)
   const daysInMonth = daysInMonthKey(month)
   const marks: DayMark[] = []
@@ -410,7 +417,10 @@ export function marksFromPlan(plan: AttendancePlan, month: string, today = today
   const dedup = new Map<string, DayMark>()
   for (const m of marks) dedup.set(`${m.employee_id}|${m.date}`, m)
   const kept = [...dedup.values()]
-  notes.push(`${kept.length} day marks for ${per.size} ${per.size === 1 ? 'person' : 'people'}. The marks are what the sheet wrote — a day it left blank stays blank.`)
+  notes.push(`${kept.length} day mark${kept.length === 1 ? '' : 's'} for ${per.size} ${per.size === 1 ? 'person' : 'people'}. The marks are what the sheet wrote — a day it left blank stays blank.`)
+  if (skipped.length) {
+    notes.push(`${skipped.length} row${skipped.length === 1 ? '' : 's'} on the sheet carr${skipped.length === 1 ? 'ies' : 'y'} no mark at all. The book leaves ${skipped.length === 1 ? 'that person' : 'those people'} exactly as they stand — a blank row is not a month of presents, and it is not a refusal either.`)
+  }
   return { marks: kept, people: per.size, per_person: [...per.entries()].map(([employee_id, v]) => ({ employee_id, name: v.name, days: v.days })), notes, refusals }
 }
 

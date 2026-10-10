@@ -2,16 +2,20 @@
 
 // Payroll — what a month of salary costs, what the department takes out of it, and by when.
 //
-// The engine (src/lib/payroll.ts) owns the model. This page stores exactly two things: what each
-// person is structured at, and the four numbers a month adds or removes — lost days, arrears, a
-// bonus, a recovery. Every rupee you see beside those is computed on load, so nothing here can go
-// stale between a rule changing and the register being re-run.
+// The engine (src/lib/payroll.ts) owns the model. This page stores exactly three things: what each
+// person is structured at, the four numbers a month adds or removes — lost days, arrears, a bonus, a
+// recovery — and, since R2-34, the day book: one mark per person per day, with no rupee in any of
+// them. Every rupee you see beside those is computed on load, so nothing here can go stale between a
+// rule changing and the register being re-run.
 //
-// Four boundaries are printed on the screen rather than left to the reader:
+// Five boundaries are printed on the screen rather than left to the reader:
 //
 //  * Absence prints a dash, zero prints a claim. A person whose professional tax was never
 //    recorded deducts nothing and claims nothing — the row is blank with a flag beside it. A
 //    person whose state charges nothing shows `0`, which is a fact the owner typed.
+//  * The day book keeps days, not money. A mark is evidence; the month row's `lop_days` remains the
+//    only lost-day figure a salary reads, and pulling the book pushes each candidate row through the
+//    same validation the month form runs. An unwritten day is counted nowhere.
 //  * Tax is walked, not looked up. Section 192 read with rules 31-33 has the employer estimate the
 //    year, price it, and take the balance in instalments over the months left on the rolls. This
 //    page re-walks April forward on every load, which is why twelve instalments add up to the
@@ -44,16 +48,23 @@ import {
   newInput, offRosterWhy, openMonth, payrollCsvRows, payslipOf, pfCeilingOn, planAttendance, rosterFor,
   saveSettings, setActiveEmployee, statutoryCsvRows, statutoryDues, summariseRegister, upsertEmployee,
   upsertInput, validateEmployee, validateInput,
-  type AttendanceApplyResult, type AttendancePlan,
+  type AttendancePlan, type AttendanceApplyResult,
   type Employee, type Flag, type PayInput, type PayrollSettings, type PayrollStore,
   type Payslip, type RegisterSummary, type Roster,
 } from '@/lib/payroll'
+import {
+  DAY_BOOK_MARKS, DAY_MARK_CYCLE, MARK_LEGEND, WEEKDAYS, clearMonthMarks, dayBook, dayBookCsv, dayBookSentence,
+  marksFromPlan, markDay, pullMonthFromBook, writeSheetMarks,
+  type BookPullResult, type DayMarkResult, type SheetBridge,
+} from '@/lib/attendance'
+import { todayISO } from '@/lib/batches'
 
-type Tab = 'people' | 'month' | 'dues' | 'annual' | 'cost'
+type Tab = 'people' | 'month' | 'daybook' | 'dues' | 'annual' | 'cost'
 
 const TABS: { value: string; label: string }[] = [
   { value: 'people', label: 'People' },
   { value: 'month', label: 'Month run' },
+  { value: 'daybook', label: 'Day book' },
   { value: 'dues', label: 'Statutory dues' },
   { value: 'annual', label: 'Annual sheet' },
   { value: 'cost', label: 'Cost of an hour' },
@@ -232,6 +243,63 @@ function PayrollPageInner() {
     return result
   }
 
+  // ── the day book's doors — one mark, one eraser, one pull ────────────────────
+
+  /**
+   * A single day, written through `markDay` — the only door a mark has. A refusal leaves the store
+   * untouched and prints its reason beside the cell that caused it, which is why the grid can write
+   * on every tap without a preview step: one tap changes one day of one person, and nothing of
+   * anybody's salary.
+   */
+  function markTheDay(employeeId: string, date: string, mark: string): DayMarkResult {
+    const result = markDay(orgId, employeeId, date, mark, 'hand')
+    if (result.store) setStore(result.store)
+    if (!result.ok) warn(result.why)
+    return result
+  }
+
+  /** The eraser for a whole person-month of marks. It touches no month row. */
+  function eraseTheMonth(employeeId: string) {
+    const target = store.employees.find(e => e.id === employeeId)
+    const result = clearMonthMarks(orgId, employeeId, month)
+    setStore(result.store)
+    if (!result.cleared) { warn(`${target ? target.name : 'That person'} has no day written for ${monthLabel(month)} — there was nothing to clear.`); return }
+    flash(`${result.cleared} day${result.cleared === 1 ? '' : 's'} cleared for ${target ? target.name : 'that person'} in ${monthLabel(month)}. Their month row still holds ${monthLabel(month)}'s lost days — the book and the money are separate.`)
+  }
+
+  /**
+   * The one click in the day book that can move money, and it only moves it as far as the month form
+   * would have let a typed figure go. The result is kept on screen so the shop can read exactly whose
+   * row changed, whose was already right, whose was left alone and whose was refused.
+   */
+  function pullTheBook(): BookPullResult {
+    const result = pullMonthFromBook(orgId, month)
+    setStore(result.store)
+    if (result.written === 0 && result.refused.length) {
+      warn(`${result.refused[0].name}: ${result.refused[0].reason}`)
+    } else {
+      flash(`${result.written} month row${result.written === 1 ? '' : 's'} took ${monthLabel(month)}’s lost days from the day book.`
+        + (result.unchanged ? ` ${result.unchanged} already agreed with it.` : '')
+        + (result.untouched ? ` ${result.untouched} person${result.untouched === 1 ? '' : 's'} with no day written were left alone.` : '')
+        + (result.refused.length ? ` ${result.refused.length} refused: ${result.refused[0].reason}` : ''))
+    }
+    return result
+  }
+
+  /** A pasted day-grid page, written as marks. Refusals are the sheet's own and block the whole page. */
+  function writeThePage(bridge: SheetBridge): { ok: boolean; written: number } {
+    const result = writeSheetMarks(orgId, bridge)
+    setStore(result.store)
+    if (!result.ok) {
+      warn(`That page is not written until the lines below it are fixed: ${bridge.refusals[0]}`)
+    } else if (result.written === 0) {
+      flash('That page carried no mark the book did not already hold — nothing was written, and nothing was deducted.')
+    } else {
+      flash(`${result.written} day mark${result.written === 1 ? '' : 's'} are in the book, and no salary moved: ${monthLabel(month)}’s month rows still hold their own lost days until you pull.`)
+    }
+    return result
+  }
+
   // ── the month the page is looking at ───────────────────────────────────────
 
   const fy = fyStartOfMonth(month)
@@ -363,6 +431,13 @@ function PayrollPageInner() {
           onOpenSlip={setOpenSlip} openSlip={openSlip} onApplySheet={applySheet}
           onEditRow={(employee) => setRowForm({ input: store.inputs.find(i => i.employee_id === employee.id && i.month === month) || newInput(employee.id, month), employee })}
           onDropRow={dropRow} />
+      )}
+
+      {tab === 'daybook' && (
+        <DayBookTab store={store} month={month}
+          onMark={markTheDay} onErase={eraseTheMonth} onPull={pullTheBook} onWritePage={writeThePage}
+          onOpenSettings={() => { setTab('people'); setShowSettings(true) }}
+          onOpenMonth={() => changeTab('month')} />
       )}
 
       {tab === 'dues' && <DuesTab store={store} fy={fy} month={month} />}
@@ -566,6 +641,60 @@ function PayrollPageInner() {
         .pa-link-x { margin-left: auto; background: none; border: none; color: inherit; cursor: pointer; padding: 2px; min-height: 0; opacity: .7; }
         .pa-link-x:hover { opacity: 1; }
 
+        /* ── the day book: a month ruled with dates, one tap per day ─────────── */
+        /* Day tracks run minmax(20px, 28px), so a laptop shows the whole month without dragging and a
+           phone keeps the cells tappable by letting the ruled page run past its own frame instead. */
+        .pb-scroll { overflow-x: auto; padding: 0 14px 6px; }
+        .pb-row { display: grid; gap: 3px; align-items: center; padding: 3px 0; border-bottom: 1px solid var(--line-soft); }
+        .pb-row:last-child { border-bottom: none; }
+        .pb-head { padding-bottom: 5px; }
+        .pb-th { font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--faint); }
+        .pb-thw { display: flex; flex-direction: column; align-items: center; font-size: 9px; color: var(--faint); line-height: 1.25; }
+        .pb-thw b { font-size: 10.5px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+        .pb-thw.is-off span, .pb-thw.is-off b { color: var(--brand); }
+        .pb-thw.is-today b { color: var(--ink); }
+        .pb-cell { width: 100%; height: 27px; display: grid; place-items: center; padding: 0; min-height: 0;
+          font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 9.5px; font-weight: 700;
+          color: var(--line); background: var(--surface); border: 1px solid var(--line-soft); border-radius: 6px; cursor: pointer; }
+        .pb-cell:hover { border-color: var(--brand); color: var(--brand); }
+        .pb-cell:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+        .pb-cell.is-present { color: var(--green); background: var(--green-soft); border-color: color-mix(in srgb, var(--green) 26%, white); }
+        .pb-cell.is-loss { color: var(--red); background: var(--red-soft); border-color: color-mix(in srgb, var(--red) 26%, white); }
+        .pb-cell.is-neutral { color: var(--muted); background: var(--slate-soft); }
+        .pb-cell.is-present:hover, .pb-cell.is-loss:hover, .pb-cell.is-neutral:hover { color: inherit; }
+        /* A mark that arrived from a pasted page keeps that provenance on the cell it lives on. */
+        .pb-cell.from-sheet { border-style: dotted; }
+        .pb-cell.is-inert { cursor: default; border-style: dashed; background: transparent; color: var(--line-soft); }
+        .pb-cell.is-future { border-color: transparent; }
+        .pb-cell.is-inert:hover { color: var(--line-soft); border-color: var(--brand); }
+        .pb-num { text-align: right; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+        .pb-lost { color: var(--red); font-weight: 700; }
+        .pb-tail { display: flex; justify-content: flex-end; }
+
+        .pb-doctrine { display: flex; gap: 9px; align-items: flex-start; font-size: 12px; color: var(--muted);
+          line-height: 1.55; background: var(--slate-soft); border-radius: 11px; padding: 10px 12px; margin: 2px 0 12px; }
+        .pb-doctrine svg { flex-shrink: 0; margin-top: 2px; color: var(--brand); }
+        .pb-doctrine b { color: var(--ink); font-weight: 700; }
+        .pb-inline { background: none; border: none; padding: 0; min-height: 0; font: inherit; color: var(--brand);
+          cursor: pointer; text-decoration: underline; }
+        .pb-legend { margin: 0 0 7px; }
+        .pb-tapline { font-size: 11px; color: var(--faint); line-height: 1.55; margin: 0 0 10px; max-width: 760px; }
+        .pb-unmarked { font-size: 11.5px; color: var(--muted); line-height: 1.55; margin: 10px 0 0; }
+        .pb-unmarked b { color: var(--ink); font-weight: 650; }
+
+        .pb-pull { margin-top: 13px; border-top: 1px solid var(--line); padding-top: 12px; }
+        .pb-pull.is-bad { border-top: none; background: var(--red-soft); border-radius: 12px; padding: 12px 13px; }
+        .pb-pull-head { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink); }
+        .pb-pull-head svg { flex-shrink: 0; color: var(--green); }
+        .pb-pull.is-bad .pb-pull-head { color: var(--red); }
+        .pb-pull.is-bad .pb-pull-head svg { color: var(--red); }
+        .pb-pull .pa-note { margin-top: 6px; }
+        .pb-refuse { color: var(--red); margin-top: 8px; }
+        .pb-days { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+        .pb-day-count { font-size: 11px; color: var(--muted); background: var(--surface-2); border: 1px solid var(--line);
+          border-radius: 9px; padding: 4px 9px; }
+        .pb-day-count b { color: var(--ink); font-weight: 650; }
+
         /* The paste pane and its advice are one column until there is genuinely room for two —
            the same break the bank import screen uses. */
         @media (max-width: 1100px) {
@@ -679,11 +808,24 @@ function SettingsPanel({ settings, onSave }: { settings: PayrollSettings; onSave
           <input id="pr-pay" type="date" value={draft.pay_day} onChange={e => setDraft({ ...draft, pay_day: e.target.value })} />
           <span>The day the shop transfers salaries. Left empty, the month run simply says it is not recorded.</span>
         </div>
+        <div className="pr-field">
+          <label htmlFor="pr-wo">Weekly off</label>
+          <select id="pr-wo" value={draft.weekly_off} onChange={e => setDraft({ ...draft, weekly_off: e.target.value })}>
+            <option value="">Not recorded</option>
+            {WEEKDAYS.map(d => <option key={d} value={d}>{d}</option>)}
+          </select>
+          <span>
+            The day book uses it for one thing: shading those columns and naming how many past ones are still blank.
+            {draft.weekly_off
+              ? ' It cannot cost anybody anything — an unwritten day is never read as an absent day.'
+              : ' Until it is recorded, the day book rules every day the same and asks no question about blanks.'}
+          </span>
+        </div>
       </div>
       <div className="tf-row" style={{ gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
         <Button size="sm" variant="primary" icon="check" onClick={() => onSave(draft)}>Save how the shop computes</Button>
         <Button size="sm" variant="ghost" onClick={() => setDraft(DEFAULT_SETTINGS)}>Back to the defaults</Button>
-        <span className="pr-hint">These four choices are the only settings the register holds. Statutory rates are not here — they live in the rules panel below with the instrument that states them.</span>
+        <span className="pr-hint">These five choices are the only settings the register holds. Statutory rates are not here — they live in the rules panel below with the instrument that states them.</span>
       </div>
     </Card>
   )
@@ -1410,6 +1552,398 @@ function TaxWalk({ tax, month }: { tax: Payslip['tax']; month: string }) {
       <div className="pr-leg pr-tds-leg"><span>This month’s TDS</span><span className="pr-num">{money(tax.tds)}</span></div>
       <p className="pr-hint" style={{ marginTop: 6 }}>{tax.regime_note}</p>
     </>
+  )
+}
+
+// ── the day book ──────────────────────────────────────────────────────────────
+
+/** One day column's width and the gap beside it — the page is a ruled grid, not a table. */
+const PB_CELL = 28
+/**
+ * The floor a day track shrinks to. A month of 31 days has to fit a laptop without the shop dragging
+ * sideways, and it has to stay tappable on a phone — so the day columns run `minmax(floor, 28px)` and
+ * the ruling gives way only when the month genuinely cannot be squeezed. Below the floor the page
+ * scrolls rather than turning a day into a target nobody can hit.
+ */
+const PB_CELL_MIN = 20
+const PB_GAP = 3
+
+/** The label a mark carries in the legend, for the cell's own title. */
+const MARK_LABEL: Record<string, string> = DAY_BOOK_MARKS.reduce((a, m) => ({ ...a, [m.mark]: m.label }), {} as Record<string, string>)
+
+/**
+ * What the next tap on a cell writes. A mark the grid does not cycle through — one a pasted sheet
+ * spelled its own way — clears first rather than being re-spelled into the cycle's spelling.
+ */
+function nextMark(current: string): string {
+  const cycle: readonly string[] = DAY_MARK_CYCLE
+  const at = cycle.indexOf(current)
+  if (at < 0) return ''
+  return cycle[(at + 1) % cycle.length]
+}
+
+/**
+ * The month ruled with dates and written day by day. Every tap is one day of one person, so there is
+ * no preview to keep honest: the engine's refusals are the safety, and the money still sits in exactly
+ * one place — `lop_days` on the month row, which only the pull below touches, through the month form's
+ * own validation.
+ */
+function DayBookTab({ store, month, onMark, onErase, onPull, onWritePage, onOpenSettings, onOpenMonth }: {
+  store: PayrollStore
+  month: string
+  onMark: (employeeId: string, date: string, mark: string) => DayMarkResult
+  onErase: (employeeId: string) => void
+  onPull: () => BookPullResult
+  onWritePage: (bridge: SheetBridge) => { ok: boolean; written: number }
+  onOpenSettings: () => void
+  onOpenMonth: () => void
+}) {
+  const today = todayISO()
+  const book = useMemo(() => dayBook(store, month, today), [store, month, today])
+  const empty = book.rows.length === 0
+  const days = book.columns.length
+  const cols = `minmax(150px, 1.4fr) 58px 48px repeat(${days}, minmax(${PB_CELL_MIN}px, ${PB_CELL}px)) 32px`
+  const minWidth = `calc(${150 + 58 + 48 + 32}px + ${PB_CELL_MIN}px * ${days} + ${PB_GAP}px * ${days + 4})`
+
+  // A pasted page, its preview and a pull receipt all belong to the month they were read against.
+  // Move the month and they go — checked while rendering, so a stale page is never painted for a frame.
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const [text, setText] = useState('')
+  const [bridge, setBridge] = useState<SheetBridge | null>(null)
+  const [pageWritten, setPageWritten] = useState<number | null>(null)
+  const [pulled, setPulled] = useState<BookPullResult | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const [bookMonth, setBookMonth] = useState(month)
+  if (bookMonth !== month) {
+    setBookMonth(month)
+    setText('')
+    setBridge(null)
+    setPageWritten(null)
+    setPulled(null)
+  }
+
+  function readPage() {
+    setPageWritten(null)
+    setBridge(marksFromPlan(planAttendance(store, month, text), month, today))
+  }
+  function takeFile(f?: File) {
+    if (!f) return
+    const reader = new FileReader()
+    reader.onload = () => { setText(String(reader.result || '')); setBridge(null); setPageWritten(null) }
+    reader.readAsText(f)
+  }
+  function writePage() {
+    if (!bridge) return
+    const result = onWritePage(bridge)
+    if (result.ok) {
+      setPageWritten(result.written)
+      setBridge(null)
+      setText('')
+    }
+  }
+
+  return (
+    <>
+      <div className="pr-strip">
+        <StatCard label="People on the page" value={String(book.footer.people)} sub={`on the rolls in ${monthLabel(month)}`} icon="users" tone="blue" />
+        <StatCard label="Days written" value={String(book.footer.cells_written)} sub={`of the ${book.footer.cells_expected} this book could hold`} icon="check" tone="green" />
+        <StatCard label="Lost days counted" value={String(book.footer.loss_days_total)} sub={`${book.footer.people_with_loss} ${book.footer.people_with_loss === 1 ? 'person' : 'people'} with a loss`} icon="calendar" tone="violet" />
+        <StatCard label="Still unwritten" value={String(book.footer.unwritten_days)} sub="counted nowhere, deducted from nobody" icon="alert" tone="amber" />
+      </div>
+
+      <Card pad={false} style={{ marginBottom: '1rem' }}>
+        <div className="pr-pad" style={{ paddingBottom: 10 }}>
+          <div className="tf-row-between tf-wrap" style={{ gap: 10 }}>
+            <div style={{ minWidth: 0 }}>
+              <p className="pr-section-title">The day book · {monthLabel(month)}</p>
+              <p className="pr-note">{dayBookSentence(book)}</p>
+            </div>
+            <div className="tf-row tf-wrap" style={{ gap: 8 }}>
+              <Button size="sm" variant={sheetOpen ? 'primary' : 'ghost'} icon="upload" onClick={() => setSheetOpen(o => !o)}>
+                {sheetOpen ? 'Close the page' : 'Read a pasted page'}
+              </Button>
+              <Button size="sm" variant="ghost" icon="download" disabled={empty}
+                onClick={() => download(`day-book-${month}.csv`, dayBookCsv(book))}>
+                Day-book CSV
+              </Button>
+            </div>
+          </div>
+
+          <p className="pb-doctrine">
+            <Icon name="book" size={14} />
+            <span>
+              <b>{book.doctrine}</b>
+              {' '}
+              {book.weekly_off
+                ? <>The shop’s weekly off is <b>{book.weekly_off}</b>, so those columns are shaded. {book.footer.unwritten_on_weekly_off} past {book.weekly_off}{book.footer.unwritten_on_weekly_off === 1 ? '' : 's'} of this month are still unwritten — which is a question about the book, never a deduction.</>
+                : <>No weekly off is recorded, so every day is ruled the same. <button type="button" className="pb-inline" onClick={onOpenSettings}>Record one</button> under “How the shop computes”, and the grid will name the days it expects to stay blank.</>}
+            </span>
+          </p>
+
+          <div className="pa-marks pb-legend">
+            <span className="pa-mark" title="unwritten — counted nowhere">·</span>
+            {MARK_LEGEND.map(m => (
+              <span key={m.mark} className={`pa-mark pa-mark-${m.means}`} title={`${m.mark} — ${m.label}`}>{m.mark}</span>
+            ))}
+          </div>
+          <p className="pb-tapline">
+            Tap a day to cycle it — unwritten, present, absent, holiday, weekly off, paid leave, sick leave, half a day.
+            A day written from a pasted sheet is outlined in dots. A day nobody was on the rolls for, or one that has not
+            happened yet, cannot be tapped at all.
+          </p>
+        </div>
+
+        {empty ? (
+          <div className="pr-pad">
+            <EmptyState icon="calendar" title={`No page to rule for ${monthLabel(month)}`}
+              message="Nobody on the register is on the rolls for this month, so there is no grid to write days on. The People tab prints why each card is off it." />
+          </div>
+        ) : (
+          <div className="pb-scroll">
+            <div className="pb-row pb-head" style={{ gridTemplateColumns: cols, minWidth }}>
+              <div className="pb-th">Person</div>
+              <div className="pb-th pb-num">Written</div>
+              <div className="pb-th pb-num">Lost</div>
+              {book.columns.map(c => (
+                <div key={c.date} className={`pb-thw ${c.weekly_off ? 'is-off' : ''} ${c.date === today ? 'is-today' : ''}`}
+                  title={`${c.date} — ${c.weekday}${c.weekly_off ? ', the shop’s weekly off' : ''}${c.past ? '' : ', a day that has not happened'}`}>
+                  <span>{c.weekday.slice(0, 2)}</span><b>{c.day}</b>
+                </div>
+              ))}
+              <div className="pb-th"></div>
+            </div>
+
+            {book.rows.map(r => {
+              const e = r.employee
+              return (
+                <div className="pb-row" key={e.id} style={{ gridTemplateColumns: cols, minWidth }}>
+                  <div className="pr-name">
+                    <b>{e.name || 'A card with no name'}</b>
+                    <span>{e.code || 'no code'} · {r.written_days} of {r.on_roll_days} day{r.on_roll_days === 1 ? '' : 's'} written</span>
+                  </div>
+                  <div className="pb-num">{r.written_days}</div>
+                  <div className="pb-num">{r.loss_days > 0 ? <b className="pb-lost">{r.loss_days}</b> : <span className="pr-dash">{DASH}</span>}</div>
+
+                  {r.cells.map(c => {
+                    const inert = !c.on_roll
+                      ? (e.join_date && c.date < e.join_date
+                        ? `${c.date} is before they joined on ${e.join_date}. A day book keeps days a person was paid for.`
+                        : (e.leave_date && c.date > e.leave_date
+                          ? `${c.date} is after they left on ${e.leave_date}. A day book keeps days a person was paid for.`
+                          : `${c.date} is a day they were not on the rolls for.`))
+                      : (!c.past ? `${c.date} has not happened yet. The book keeps days that were worked, not days that are planned.` : '')
+                    if (inert) {
+                      return (
+                        <span key={c.date} className={`pb-cell is-inert ${c.past ? 'is-outside' : 'is-future'}`} title={inert}>
+                          {c.mark || '·'}
+                        </span>
+                      )
+                    }
+                    const nxt = nextMark(c.mark)
+                    return (
+                      <button key={c.date} type="button"
+                        className={`pb-cell ${c.means ? `is-${c.means}` : ''} ${c.source === 'sheet' ? 'from-sheet' : ''}`}
+                        onClick={() => onMark(e.id, c.date, nxt)}
+                        title={`${c.date}, ${c.weekday}${c.weekly_off ? ' · the shop’s weekly off' : ''} — ${c.written ? `${c.mark} (${MARK_LABEL[c.mark] || 'a mark this grid does not cycle through'})${c.source === 'sheet' ? ', read from a pasted sheet' : ', written by hand'}` : 'unwritten'} · tap for ${nxt ? `${nxt} (${MARK_LABEL[nxt]})` : 'unwritten'}`}
+                        aria-label={`${e.name || 'This person'}, ${c.date}: ${c.written ? `marked ${c.mark}` : 'unwritten'}. Tap to write ${nxt || 'unwritten'}.`}
+                      >{c.mark || '·'}</button>
+                    )
+                  })}
+
+                  <div className="pb-tail">
+                    {r.written_days > 0 && (
+                      <button type="button" className="pr-step" onClick={() => onErase(e.id)}
+                        title={`Clear all ${r.written_days} day${r.written_days === 1 ? '' : 's'} written for ${e.name || 'this person'} in ${monthLabel(month)}. Their month row keeps its own lost days.`}
+                        aria-label={`Clear ${e.name || 'this person'}’s days for ${monthLabel(month)}`}>
+                        <Icon name="undo" size={14} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {book.findings.length > 0 && (
+          <div className="pr-pad" style={{ paddingTop: 6 }}>
+            <p className="pr-section-title">What the book finds</p>
+            <ul className="pr-findings">
+              {book.findings.map((f, i) => (
+                <li key={`${i}-${f.slice(0, 12)}`} className={`pr-finding ${!book.kept_any && i === 0 ? 'is-grey' : 'is-amber'}`}>
+                  <Icon name={!book.kept_any && i === 0 ? 'book' : 'alert'} size={14} />
+                  <span>{f}</span>
+                </li>
+              ))}
+            </ul>
+            {book.kept_any && book.unmarked_people.length > 0 && (
+              <p className="pb-unmarked">
+                <b>{book.unmarked_people.length} {book.unmarked_people.length === 1 ? 'person has' : 'people have'} no day written at all</b>
+                {' '}{book.unmarked_people.map(n => n || 'a card with no name').join(', ')} — the book leaves their month rows exactly as they stand.
+              </p>
+            )}
+          </div>
+        )}
+      </Card>
+
+      {!empty && (
+        <Card style={{ marginBottom: '1rem' }}>
+          <p className="pr-section-title">What the book does to a salary</p>
+          <p className="pa-help">
+            Nothing on this page moves money by itself. A mark is <b>evidence</b>; the month row’s <b>lost days</b> stay
+            the only attendance figure a salary reads, and they change when you pull — which pushes every candidate row
+            through the same rules the month form runs, so the book cannot overdraw a month, reach a month that has not
+            happened, or touch a person who was not on the rolls. Somebody whose days were never written is
+            <b> left alone</b>, never zeroed.
+          </p>
+          <div className="pa-actions">
+            <Button size="sm" icon="file-check" disabled={book.footer.cells_written === 0} onClick={() => setPulled(onPull())}>
+              Pull {monthLabel(month)}’s lost days into the month run
+            </Button>
+            {pulled && (
+              <Button size="sm" variant="ghost" icon="wallet" onClick={onOpenMonth}>Open the month run</Button>
+            )}
+            {book.footer.cells_written === 0 && (
+              <span className="pb-tapline">The book has no mark for this month, so there is nothing to pull.</span>
+            )}
+          </div>
+          {pulled && <BookPullReceipt result={pulled} month={month} onDismiss={() => setPulled(null)} />}
+        </Card>
+      )}
+
+      {sheetOpen && (
+        <Card style={{ marginBottom: '1rem' }}>
+          <p className="pr-section-title">A pasted day page, kept as days</p>
+          <div className="pa-grid">
+            <div>
+              <p className="pa-help">
+                The same sheet the month run reads can also land here as <b>marks</b> — but only a page ruled with dates
+                across the top has days to keep. A summary sheet with a Present or LOP column carries one figure and no
+                days, and it stays the month run’s business.
+              </p>
+              <textarea
+                className="pa-text"
+                value={text}
+                onChange={e => { setText(e.target.value); setBridge(null); setPageWritten(null) }}
+                spellCheck={false}
+                aria-label={`Day page for ${monthLabel(month)}`}
+                placeholder={'Code,Name,1,2,3,4,5\nE-07,Shabbir Ahmed,P,A,H,,W\nE-11,Lakshmi N,P,P,,P,P'}
+              />
+              <div className="pa-actions">
+                <Button size="sm" icon="file-check" onClick={readPage} disabled={!text.trim()}>
+                  {bridge ? 'Read it again' : 'Read the page'}
+                </Button>
+                <Button size="sm" variant="subtle" icon="upload" onClick={() => fileRef.current?.click()}>Choose a file</Button>
+                <Button size="sm" variant="ghost" icon="users" disabled={empty}
+                  onClick={() => { setText(attendanceTemplate(store, month, true)); setBridge(null); setPageWritten(null) }}>
+                  Rule a blank page for this month
+                </Button>
+                <input ref={fileRef} type="file" accept=".csv,.tsv,.txt" hidden aria-hidden
+                  onChange={e => takeFile(e.target.files?.[0])} />
+              </div>
+              <p className="pa-hint">
+                The ruled page is this month’s roster with one column per date. Mark the absents on paper or in a
+                spreadsheet, paste it back, and every day lands on the date it was written for.
+              </p>
+            </div>
+
+            <div className="pa-what">
+              <div className="pa-title">What it keeps</div>
+              <ul className="pa-points">
+                <li><b>Only the days the sheet wrote.</b> A blank cell stays blank — nobody is marked present by default.</li>
+                <li><b>The mark as it was spelled.</b> The book keeps <code>LL</code> or <code>NLW</code> if it can read them, and refuses a mark it cannot by name.</li>
+                <li><b>Where each day came from.</b> A pasted mark is outlined in dots on the grid, so a hand-tapped day reads differently.</li>
+                <li><b>Nothing about money.</b> Writing a page changes no salary; the pull above is the only click on this tab that can.</li>
+              </ul>
+              <div className="pa-title">What stops the whole page</div>
+              <p className="pa-help">
+                A line the register cannot place — a stranger, two people sharing a code, a mark it does not read, a day
+                that has not happened — stops every mark on the page, because a book with a silent gap in it looks
+                complete. A row that simply carries no marks is not a refusal: the book leaves it blank and says so.
+              </p>
+            </div>
+          </div>
+
+          {bridge && (
+            <div className="pa-plan">
+              <div className="pa-plan-head">
+                <b className="pr-strong">{bridge.refusals.length ? 'This page cannot be written yet' : 'What the book would gain'}</b>
+                <span className="pa-hint">Read against {monthLabel(month)} · {bridge.marks.length} mark{bridge.marks.length === 1 ? '' : 's'}</span>
+              </div>
+
+              {bridge.refusals.length > 0 && (
+                <ul className="pa-points pb-refuse">
+                  {bridge.refusals.map((r, i) => <li key={`${i}-${r.slice(0, 16)}`}>{r}</li>)}
+                </ul>
+              )}
+              {bridge.notes.map((n, i) => <p className="pa-note" key={`${i}-${n.slice(0, 16)}`}>{n}</p>)}
+              {bridge.per_person.length > 0 && (
+                <div className="pb-days">
+                  {bridge.per_person.map(p => (
+                    <span className="pb-day-count" key={p.employee_id}><b>{p.name}</b> {p.days} day{p.days === 1 ? '' : 's'}</span>
+                  ))}
+                </div>
+              )}
+
+              <div className="pa-apply">
+                <Button size="sm" variant="primary" icon="check"
+                  disabled={bridge.refusals.length > 0 || bridge.marks.length === 0} onClick={writePage}>
+                  Write {bridge.marks.length} day{bridge.marks.length === 1 ? '' : 's'} to the book
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setBridge(null)}>Cancel</Button>
+                <p className="pa-hint">
+                  Nothing is stored until this click, and each mark goes through the same door as a tapped day — a day
+                  outside the person’s window is refused with that window printed.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {pageWritten !== null && (
+            <div className="pa-applied" style={{ marginTop: 14 }}>
+              <Icon name="check" size={14} />
+              <span>
+                {pageWritten} day mark{pageWritten === 1 ? '' : 's'} from that page now sit on the grid. Nobody’s salary
+                moved — the month rows still hold their own figures until you pull the book.
+              </span>
+              <button type="button" className="pa-link-x" onClick={() => setPageWritten(null)} aria-label="Dismiss the receipt">
+                <Icon name="x" size={14} />
+              </button>
+            </div>
+          )}
+        </Card>
+      )}
+    </>
+  )
+}
+
+/** The pull's own receipt: whose row changed, whose already agreed, who was left alone and who was refused. */
+function BookPullReceipt({ result, month, onDismiss }: { result: BookPullResult; month: string; onDismiss: () => void }) {
+  const bad = result.written === 0 && result.refused.length > 0
+  return (
+    <div className={`pb-pull ${bad ? 'is-bad' : ''}`} role="status">
+      <div className="pb-pull-head">
+        <Icon name={result.refused.length ? 'alert' : 'check'} size={15} />
+        <b>
+          {result.written > 0
+            ? `${result.written} month row${result.written === 1 ? '' : 's'} now carr${result.written === 1 ? 'ies' : 'y'} ${monthLabel(month)}’s lost days from the book`
+            : `No month row needed changing for ${monthLabel(month)}`}
+        </b>
+        <button type="button" className="pa-link-x" onClick={onDismiss} aria-label="Dismiss the receipt"><Icon name="x" size={14} /></button>
+      </div>
+      <p className="pa-note">
+        {result.unchanged > 0 && `${result.unchanged} row${result.unchanged === 1 ? '' : 's'} already agreed with the book. `}
+        {result.untouched > 0 && `${result.untouched} person${result.untouched === 1 ? '' : 's'} have no day written, so their rows were left alone rather than zeroed. `}
+        Every figure the pull wrote carries the register’s own provenance sentence — a payslip can read back that the
+        month’s lost days came from the day book, not from a typed figure.
+      </p>
+      {result.refused.length > 0 && (
+        <ul className="pa-points pb-refuse">
+          {result.refused.map(r => <li key={r.name}><b>{r.name}</b> — {r.reason}</li>)}
+        </ul>
+      )}
+    </div>
   )
 }
 

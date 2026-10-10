@@ -1240,6 +1240,14 @@ export interface AttendanceRefusal {
   line: number
   text: string
   reason: string
+  /**
+   * Why the line was dropped, in one word a caller can branch on instead of reading the sentence.
+   * (R2-34 added it because the day book has to tell two kinds of refusal apart.) `blank` is the only
+   * kind that says nothing is wrong with the sheet: a row with no marks is a row the register leaves
+   * alone. Every other kind is a line the reader could not place, or a mark it could not read, and a
+   * page carrying one of those is not written until the shop has seen the reason.
+   */
+  kind: 'identity' | 'scale' | 'mark' | 'blank' | 'figure'
 }
 
 export interface AttendanceFinding {
@@ -1478,7 +1486,7 @@ export function planAttendance(store: PayrollStore, month: string, text: string)
     if (row.every(c => !c.trim())) continue
     rows++
     if (rows > MAX_ATTENDANCE_ROWS) {
-      plan.refusals.push({ line, text: rowText(row), reason: `More than ${MAX_ATTENDANCE_ROWS} rows on one sheet. This register reads a month of people, not a database — split it.` })
+      plan.refusals.push({ line, kind: 'scale', text: rowText(row), reason: `More than ${MAX_ATTENDANCE_ROWS} rows on one sheet. This register reads a month of people, not a database — split it.` })
       continue
     }
     const cellAt = (role: AttendanceRole) => {
@@ -1488,7 +1496,7 @@ export function planAttendance(store: PayrollStore, month: string, text: string)
     const codeCell = cellAt('code')
     const nameCell = cellAt('name')
     if (!codeCell.trim() && !nameCell.trim()) {
-      plan.refusals.push({ line, text: rowText(row), reason: 'A row with neither a code nor a name. Nobody’s salary is being changed on the strength of a blank identity.' })
+      plan.refusals.push({ line, kind: 'identity', text: rowText(row), reason: 'A row with neither a code nor a name. Nobody’s salary is being changed on the strength of a blank identity.' })
       continue
     }
 
@@ -1500,31 +1508,31 @@ export function planAttendance(store: PayrollStore, month: string, text: string)
     if (codeTight && byCode.has(codeTight)) {
       const cands = byCode.get(codeTight) || []
       if (cands.length === 1) { who = cands[0]; matched_on = 'code' }
-      else plan.refusals.push({ line, text: rowText(row), reason: `Two people on the register carry the code “${codeCell}”. Fix the code on the People tab — the sheet cannot say which of them was absent.` })
+      else plan.refusals.push({ line, kind: 'identity', text: rowText(row), reason: `Two people on the register carry the code “${codeCell}”. Fix the code on the People tab — the sheet cannot say which of them was absent.` })
     }
     if (!who) {
       const nameTight = tight(nameCell)
       if (!nameTight) {
-        if (!plan.refusals.some(r => r.line === line)) plan.refusals.push({ line, text: rowText(row), reason: `The code “${codeCell}” is not on the register and the row carries no name to fall back on.` })
+        if (!plan.refusals.some(r => r.line === line)) plan.refusals.push({ line, kind: 'identity', text: rowText(row), reason: `The code “${codeCell}” is not on the register and the row carries no name to fall back on.` })
         continue
       }
       const exact = byName.get(nameTight) || []
       if (exact.length === 1) { who = exact[0]; matched_on = 'name' }
       else if (exact.length > 1) {
-        plan.refusals.push({ line, text: rowText(row), reason: `${exact.length} people on the register are called exactly “${nameCell}”. Give the sheet a code column.` })
+        plan.refusals.push({ line, kind: 'identity', text: rowText(row), reason: `${exact.length} people on the register are called exactly “${nameCell}”. Give the sheet a code column.` })
       } else {
         const partial = [...byName.entries()].filter(([k]) => k.includes(nameTight) || nameTight.includes(k))
         const flat = partial.flatMap(([, v]) => v)
         if (flat.length === 1) { who = flat[0]; matched_on = 'approximate' }
         else if (flat.length > 1) {
-          plan.refusals.push({ line, text: rowText(row), reason: `“${nameCell}” could be ${flat.slice(0, 3).map(e => e.name).join(', ')}${flat.length > 3 ? ', …' : ''}. The register will not pick a salary out of a guess.` })
+          plan.refusals.push({ line, kind: 'identity', text: rowText(row), reason: `“${nameCell}” could be ${flat.slice(0, 3).map(e => e.name).join(', ')}${flat.length > 3 ? ', …' : ''}. The register will not pick a salary out of a guess.` })
         } else {
           // Either way the person is missing from the register — the sentence must say so, and say it
           // differently when the row carries a code that also fails to match.
           const subject = codeTight && !byCode.has(codeTight)
             ? `Neither the code “${codeCell}” nor the name “${nameCell}” is`
             : `“${nameCell || codeCell}” is not`
-          plan.refusals.push({ line, text: rowText(row), reason: `${subject} on the payroll register. Add the person on the People tab, or correct the sheet.` })
+          plan.refusals.push({ line, kind: 'identity', text: rowText(row), reason: `${subject} on the payroll register. Add the person on the People tab, or correct the sheet.` })
         }
       }
     }
@@ -1532,12 +1540,12 @@ export function planAttendance(store: PayrollStore, month: string, text: string)
 
     const why = offRosterWhy(who, month)
     if (why) {
-      plan.refusals.push({ line, text: rowText(row), reason: `${who.name} is not on the rolls for ${monthLabel(month)} — ${why} The sheet’s figure is dropped rather than run against a month they were not paid for.` })
+      plan.refusals.push({ line, kind: 'identity', text: rowText(row), reason: `${who.name} is not on the rolls for ${monthLabel(month)} — ${why} The sheet’s figure is dropped rather than run against a month they were not paid for.` })
       continue
     }
     const twice = claimed.get(who.id)
     if (twice !== undefined) {
-      plan.refusals.push({ line, text: rowText(row), reason: `${who.name} appears again, on line ${twice} as well as here. The register read the first line and refuses this one — it will not add, average or last-write-wins two numbers for one person.` })
+      plan.refusals.push({ line, kind: 'identity', text: rowText(row), reason: `${who.name} appears again, on line ${twice} as well as here. The register read the first line and refuses this one — it will not add, average or last-write-wins two numbers for one person.` })
       continue
     }
 
@@ -1571,11 +1579,11 @@ export function planAttendance(store: PayrollStore, month: string, text: string)
         else neutral += 1
       }
       if (unknown !== null) {
-        plan.refusals.push({ line, text: rowText(row), reason: `Day ${unknownDay} for ${who.name} is marked “${unknown}”, which this register does not read. Accepted marks are ${ATTENDANCE_MARKS.map(m => m.mark).join(', ')} — an ambiguous mark is refused instead of counted as an absence.` })
+        plan.refusals.push({ line, kind: 'mark', text: rowText(row), reason: `Day ${unknownDay} for ${who.name} is marked “${unknown}”, which this register does not read. Accepted marks are ${ATTENDANCE_MARKS.map(m => m.mark).join(', ')} — an ambiguous mark is refused instead of counted as an absence.` })
         continue
       }
       if (marks === 0) {
-        plan.refusals.push({ line, text: rowText(row), reason: `${who.name} is named on the sheet but no day carries a mark. A row of blanks is not a month of full attendance — the register leaves their lost days exactly as they stand.` })
+        plan.refusals.push({ line, kind: 'blank', text: rowText(row), reason: `${who.name} is named on the sheet but no day carries a mark. A row of blanks is not a month of full attendance — the register leaves their lost days exactly as they stand.` })
         continue
       }
       via = 'grid'
@@ -1589,15 +1597,15 @@ export function planAttendance(store: PayrollStore, month: string, text: string)
       const hasLoss = lossCell.trim() !== '' && lossNums.length >= 1
       const hasPresent = presentCell.trim() !== '' && presentNums.length >= 1
       if (lossCell.trim() && !hasLoss) {
-        plan.refusals.push({ line, text: rowText(row), reason: `The lost-days cell for ${who.name} reads “${lossCell}”, which is not a number of days.` })
+        plan.refusals.push({ line, kind: 'figure', text: rowText(row), reason: `The lost-days cell for ${who.name} reads “${lossCell}”, which is not a number of days.` })
         continue
       }
       if (presentCell.trim() && !hasPresent) {
-        plan.refusals.push({ line, text: rowText(row), reason: `The present-days cell for ${who.name} reads “${presentCell}”, which is not a number of days.` })
+        plan.refusals.push({ line, kind: 'figure', text: rowText(row), reason: `The present-days cell for ${who.name} reads “${presentCell}”, which is not a number of days.` })
         continue
       }
       if (!hasLoss && !hasPresent) {
-        plan.refusals.push({ line, text: rowText(row), reason: `Neither a lost-day nor a present-day figure for ${who.name}. Blank means “the sheet does not say”, never “zero”.` })
+        plan.refusals.push({ line, kind: 'figure', text: rowText(row), reason: `Neither a lost-day nor a present-day figure for ${who.name}. Blank means “the sheet does not say”, never “zero”.` })
         continue
       }
       // A cell like "24/26" states its own basis, which outranks the shop's setting.
@@ -1609,7 +1617,7 @@ export function planAttendance(store: PayrollStore, month: string, text: string)
       if (hasLoss && hasPresent) {
         const implied = round2(useBasis.days - presentNums[0])
         if (Math.abs(implied - lossNums[0]) > 0.01) {
-          plan.refusals.push({ line, text: rowText(row), reason: `${who.name}’s row says ${presentNums[0]} days present and ${lossNums[0]} days lost, which does not add up across a ${useBasis.days}-day month. The register will not choose between two numbers that contradict each other.` })
+          plan.refusals.push({ line, kind: 'figure', text: rowText(row), reason: `${who.name}’s row says ${presentNums[0]} days present and ${lossNums[0]} days lost, which does not add up across a ${useBasis.days}-day month. The register will not choose between two numbers that contradict each other.` })
           continue
         }
         via = 'loss'
@@ -1628,7 +1636,7 @@ export function planAttendance(store: PayrollStore, month: string, text: string)
     }
 
     if (lop === null || !Number.isFinite(lop)) {
-      plan.refusals.push({ line, text: rowText(row), reason: `The day figure for ${who.name} could not be read.` })
+      plan.refusals.push({ line, kind: 'figure', text: rowText(row), reason: `The day figure for ${who.name} could not be read.` })
       continue
     }
 
@@ -1636,7 +1644,7 @@ export function planAttendance(store: PayrollStore, month: string, text: string)
     const candidate: PayInput = current ? { ...current, lop_days: lop } : { ...newInput(who.id, month), lop_days: lop }
     const blocked = validateInput(candidate, byId.get(who.id) || null, month).find(x => x.level === 'block')
     if (blocked) {
-      plan.refusals.push({ line, text: rowText(row), reason: `The sheet’s figure for ${who.name} is refused by the register’s own rules: ${blocked.message}` })
+      plan.refusals.push({ line, kind: 'figure', text: rowText(row), reason: `The sheet’s figure for ${who.name} is refused by the register’s own rules: ${blocked.message}` })
       continue
     }
 
@@ -1775,7 +1783,10 @@ export function attendanceTemplate(store: PayrollStore, month: string, grid = fa
     ? [e.code || '', e.name, ...Array.from({ length: days }, () => '')]
     : [e.code || '', e.name, '', '', ''])
   const lines = [head.join(','), ...rows.map(r => r.map(c => (/[",]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c)).join(','))]
-  if (roster.off.length) {
+  // A *day-grid* page carries no note line: the day book (R2-34) refuses a page whose lines it cannot
+  // place, so a sentence of advice at the bottom of a ruled page would block the very page this
+  // function produced. The summary sheet keeps it, because there a dropped line is a skip, not a stop.
+  if (roster.off.length && !grid) {
     lines.push('', `Not on the rolls for ${monthLabel(month)}: ${roster.off.map(o => `${o.employee.name} (${o.why})`).join('; ')}`)
   }
   return lines.join('\n')

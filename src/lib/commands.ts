@@ -524,6 +524,16 @@ export function buildActionCommands(): Command[] {
       keywords: 'payroll run month salary register payslip slip tds 192 tax walk instalment advance lost period deduction lop arrears bonus recovery net pay employer cost gross open month attendance row divisor standard days calendar days attendance sheet paste import lop absent present day grid supervisor roster mark',
     },
     {
+      id: 'action:payroll-daybook',
+      kind: 'action',
+      label: 'Open the day book',
+      sublabel: 'One mark per person per day, kept — and pulled into the month when it is ready',
+      href: '/payroll?tab=daybook',
+      icon: 'book',
+      badge: 'Action',
+      keywords: 'day book attendance kept marks per day present absent holiday weekly off paid leave sick leave half day lop lost days grid calendar tap clear erase unwritten doctrine provenance pull month run pasted sheet paste evidence divisor supervisor roster',
+    },
+    {
       id: 'action:payroll-dues',
       kind: 'action',
       label: 'Open the statutory dues',
