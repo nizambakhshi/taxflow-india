@@ -515,7 +515,7 @@ Five conventions come with it:
 - **A refusal is data too — carry the `kind`, never parse the sentence.** The sheet reader's refusals cross into the marks bridge by their machine-readable `kind` (`identity` / `scale` / `mark` / `blank` / `figure`): every kind stops the whole page, because a book with a silent gap in it looks complete — the one exception is `blank`, which is the sheet agreeing with the book's own doctrine, so it is noted and skipped as *not a refusal either*. A bridge that matched on the refusal's wording would have refused the register's own ruled template the day its trailing note changed.
 - **One door for the write, one click for the money.** `markDay()` refuses rather than guesses (a day that has not happened, before joining / after leaving, an inactive person, a mark the register cannot read) and an empty mark is a legal **clear**. `pullMonthFromBook()` is the only click on the tab that can change a salary figure, and it re-runs the month form's own `validateInput()` — a kept record can never smuggle past the month's rules.
 - **The kept page is erasable, labellable and printable.** `clearMonthMarks()` erases one person-month and touches no month row; provenance shows on the grid (a mark read from a pasted sheet is outlined in dots); `dayBookCsv()` downloads the ruled page with its findings and its closing sentence, and `attendanceTemplate(…, grid = true)` rules a blank page that pastes back a year later.
-- **Boundary, printed: it is a book, not a clock.** No device or biometric feed, no shift timings, no overtime priced from the marks, no per-day wage ledger, nothing filed — the marks are what the shop wrote, and the pull is the only thing they can move.
+- **Boundary, printed: it is a book, not a clock.** No device or biometric feed, no shift timings, no overtime priced from the marks, no per-day wage ledger, nothing filed — the marks are what the shop wrote, and the pull is the only thing they can move. Since R2-37 the marks are also evidence a job can draw hours from — as a **proposal, never a write** (Rule 37): the drawn row lands in the project's register, and the book itself still moves no rupee.
 
 ---
 
@@ -547,6 +547,21 @@ Five conventions come with it:
 - **Additive under the same version.** `employee_id` shipped under `PROJECTS_VERSION = 1`, because a version bump would read every existing register as empty — the one outcome the version stamp exists to prevent. An old envelope reads no link, which is exactly what was recorded before the field existed.
 
 The line worth keeping: R2-34's day book is *evidence*, R2-36's join is a *reading*, and neither lets a job invent a wage. An hour nothing names stays priced only.
+
+---
+
+## Rule 37 — Another Register's Evidence Is Drawn, Never Copied; Only the Tick Writes
+
+R2-37 let the timesheet at `/projects` draw hours from R2-34's kept day book. The rule the round establishes: **an hour can be drawn, not invented — one register may offer another's evidence as proposed rows, but only the owner's explicit tick, through the owner's own validator, writes anything.** The day book keeps evidence (a mark per person per day, no rupee); the project keeps measurements (an hours row); the draw is the seam between them, and it runs one way.
+
+Six conventions come with it:
+
+- **The rows cross as data; neither library imports the other.** `projects.ts` imports neither `attendance.ts` nor `payroll.ts` — the **page** reads a person-month through `dayBook()` + `markWork()`, maps on-roll cells into structural `BookWorkDay[]` (`{date, label, hours, why}`), and hands them to the pure `drawHours()`. The structural-subset discipline (third application, after `BookInput`/`docsFor` and `HourCostRow`) is what keeps both registers testable alone while a seam joins them.
+- **The register's own divisor prices the day.** A present mark proposes the payroll register's own `hours_per_day` — a half mark proposes half — and the spelling is never re-parsed here: `markWork()` in `attendance.ts` is the one reader, so a mark learned once works everywhere. The draw invents hours no more than the book invents days.
+- **A refusal is a row with the register's own sentence, and nothing is drawn from it.** A lost day, a paid-not-worked day, an unwritten day, an unreadable mark — each arrives as a `DrawnDay` with zero hours and the register's own `why` (*"A lost day — the register reads it as no work, so nothing is drawn from it."*, *"Unwritten — an unwritten day is not a day worked, and the draw will not invent one."*), printed in the draw list rather than dropped. A person with no page in the month refuses at the person level (*"No day of this person's book falls in … — there is no page to draw from."*), and an empty book refuses with the deep link that fixes it — *"… mark the days at /payroll, or log hours by hand."* (`/payroll?tab=daybook&month=YYYY-MM`).
+- **`ticks: null` means proposal, never row.** `drawHours()` returns the days and pre-ticks only present and half days; the page un-ticks a day already on the project (linked or typed under the same name) and prints why, still allows ticking a day that has hours elsewhere on that date but does not propose it, and resets `ticks` to `null` whenever the picker changes — a proposal for one person must never be written against another.
+- **The write goes through the owner's door.** Only the shop's tick reaches `upsertEntries()` — the same function the manual form uses — and every drawn row still passes `validateEntry` (a day that has not happened, a date before the project started, the 24-hour ceiling). The row carries its `employee_id` the moment it lands, so the R2-36 cost reading picks it up without a second step, and a note records the draw.
+- **Boundary, printed: the hours flow one way.** The draw reads the book and writes the project, never the reverse: the mark prices nothing, a drawn hour is the project's own row, and deleting that row does not unwrite the day. Rule 34's boundary stands unchanged — no device feed, no overtime priced off the marks — and the draw reads only what the shop wrote, at the register's own hours a day.
 
 ---
 

@@ -385,7 +385,7 @@ export const REGISTERS: RegisterSpec[] = [
     id: 'projects',
     prefix: 'taxflow:projects:',
     label: 'Projects and time',
-    what: 'Projects, the hours booked against them — each optionally naming the payroll-register person whose wages priced it — and the documents attached by number; measurements, never a rupee',
+    what: 'Projects, the hours booked against them — each optionally naming the payroll-register person whose wages priced it, or drawn from that register\'s kept day book — and the documents attached by number; measurements, never a rupee',
     unit: 'row',
     group: 'workpapers',
     module: 'src/lib/projects.ts',
