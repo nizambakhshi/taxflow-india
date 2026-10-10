@@ -31,6 +31,12 @@
 //    do). An entry with a typed name only stays priced, never costed, and is counted as
 //    such — never guessed onto a person. A linked person the register cannot price for that
 //    month is printed with the register's own reason: a refusal, not a zero.
+//  * **A day can be drawn from the payroll register's day book — one deliberate step.** The book
+//    keeps attendance marks; the draw is where the shop says *those marked days were this job's*.
+//    One proposed row per day the book marks as worked, at the person's own hours a day, ticked by
+//    hand, each written through `validateEntry()` like any row typed on the page. The book is
+//    never written from here; a day it does not mark as worked is never proposed (only named), and
+//    a day already on the register — linked, or typing the same name — is named too, not doubled.
 //  * **The labour value is not revenue, and the cost never rewrites contribution.** On a
 //    time & material job the hours are what will be billed; on a fixed-price job the package
 //    is what is billed and the hour value is only a check on the price you agreed. The
@@ -445,6 +451,19 @@ export function upsertEntry(orgId: string, entry: TimeEntry): ProjectStore {
   }))
 }
 
+/**
+ * The draw's write path: one mutate for a whole month of drawn days, so a page cannot half-draw a
+ * person — either the batch lands or (validation having blocked it before the call) nothing does.
+ */
+export function upsertEntries(orgId: string, list: TimeEntry[]): ProjectStore {
+  if (!list.length) return loadProjects(orgId)
+  return mutate(orgId, s => {
+    const ids = new Set(list.map(e => e.id))
+    const kept = s.entries.filter(e => !ids.has(e.id))
+    return { ...s, entries: [...kept, ...list] }
+  })
+}
+
 export function deleteEntry(orgId: string, id: string): ProjectStore {
   return mutate(orgId, s => ({ ...s, entries: s.entries.filter(e => e.id !== id) }))
 }
@@ -681,6 +700,144 @@ export function costHours(entries: TimeEntry[], costs: HourCostRow[]): Map<strin
     })
   }
   return out
+}
+
+// ── the drawn day: hours a job takes out of the payroll day book ──────────────
+
+/**
+ * One day of the payroll register's day book, handed over **as data** — the same seam the costed
+ * hour uses. The page reads the book (a mark, its label, what part of the day it holds) and this
+ * module proposes timesheet rows; neither register imports the other.
+ */
+export interface BookWorkDay {
+  date: string
+  /** The mark the book keeps, for the drawn row's provenance note. */
+  mark: string
+  /** The register's label for the mark. */
+  label: string
+  /** What part of the day the mark says was worked: a whole one, half of it, or none. */
+  fraction: 1 | 0.5 | 0
+  /** When fraction is 0: the register's own sentence saying why nothing is drawn. */
+  why: string
+}
+
+export interface DrawnDay {
+  date: string
+  mark: string
+  label: string
+  /** Hours this day draws under the person's own hours a day — 0 when it draws none. */
+  hours: number
+  /** True when the draw ticks this day for the shop: worked, inside the window, nothing on the books yet. */
+  proposed: boolean
+  /** A day the shop can tick. A day the book says was not worked cannot be ticked — log it by hand. */
+  tickable: boolean
+  /** '' while proposed; otherwise the sentence that says why the draw left the day alone. */
+  why: string
+}
+
+export interface HoursDraw {
+  employee_id: string
+  person: string
+  month: string
+  project_id: string
+  /** The person's hours a day, as the payroll register states them; 0 when it does not. */
+  hours_per_day: number
+  /** Every day the book ruled for this person, in date order — kept, not only the usable ones. */
+  days: DrawnDay[]
+  proposed_days: number
+  proposed_hours: number
+  /** Hours already on this project for this person in the month — linked or typed. */
+  logged_hours: number
+  findings: string[]
+  /** '' when the draw can run; otherwise why the whole month draws nothing. */
+  refuse: string
+}
+
+/**
+ * Turn a person's day-book marks into timesheet rows. The book is evidence of attendance, not a
+ * timesheet: this is the one deliberate step where the shop says *these marked days, on this job*.
+ * Nothing is written here — the page writes what the shop ticks, each row through `validateEntry()`
+ * — and a day the book does not mark as worked is never proposed, only named. A day already on the
+ * books is named too: a typed name on the same day is a link to fix, not hours to double.
+ */
+export function drawHours(
+  days: BookWorkDay[],
+  who: { employee_id: string; person: string; hours_per_day: number },
+  project: Project,
+  projects: Project[],
+  entries: TimeEntry[],
+  month: string,
+  today = todayISO(),
+): HoursDraw {
+  const person = who.person.trim()
+  const hoursPerDay = Number(who.hours_per_day)
+  const base: HoursDraw = {
+    employee_id: who.employee_id, person, month, project_id: project.id,
+    hours_per_day: hoursPerDay > 0 && hoursPerDay <= 24 ? hoursPerDay : 0,
+    days: [], proposed_days: 0, proposed_hours: 0, logged_hours: 0, findings: [], refuse: '',
+  }
+  if (!who.employee_id) return { ...base, refuse: 'Pick the person whose days these are — a draw reads one person’s book.' }
+  if (!person) return { ...base, refuse: 'The payroll register has no name to stamp on the drawn days.' }
+  if (!(hoursPerDay > 0) || hoursPerDay > 24) {
+    return { ...base, refuse: `${person} has no hours a day on the payroll register, so a marked day cannot be turned into hours. Set it at /payroll, then draw.` }
+  }
+  const monthDays = days.filter(d => periodOf(d.date) === month)
+  if (!monthDays.length) {
+    return { ...base, refuse: `No day of this person’s book falls in ${periodLabel(month) || month} — there is no page to draw from.` }
+  }
+  if (!monthDays.some(d => d.mark.trim())) {
+    return { ...base, refuse: `The day book holds no mark for ${person} in ${periodLabel(month)}. An unwritten book draws nothing — mark the days at /payroll, or log hours by hand.` }
+  }
+
+  // "This person", as both registers can say it: a row that names them on the register, or a row
+  // that types the same name. The two count for the day so a draw cannot write what a hand row said.
+  const sameName = (e: TimeEntry) => !e.employee_id && e.person.trim().toLowerCase() === person.toLowerCase()
+  const mine = entries.filter(e => e.employee_id === who.employee_id || sameName(e))
+  const loggedHours = round2(mine.filter(e => e.project_id === project.id && periodOf(e.date) === month).reduce((a, e) => a + e.hours, 0))
+  const start = isDate(project.start_date) ? project.start_date : ''
+
+  let proposedDays = 0
+  let proposedHours = 0
+  const rows: DrawnDay[] = []
+  for (const d of [...monthDays].sort((a, b) => a.date.localeCompare(b.date))) {
+    const row: DrawnDay = { date: d.date, mark: d.mark, label: d.label, hours: 0, proposed: false, tickable: false, why: '' }
+    if (!isDate(d.date)) { row.why = 'Not a real calendar day — nothing is drawn from it.'; rows.push(row); continue }
+    if (d.date > today) { row.why = 'The day has not happened yet.'; rows.push(row); continue }
+    if (start && d.date < start) { row.why = `${d.date} falls before this project started (${start}).`; rows.push(row); continue }
+    const here = mine.find(e => e.project_id === project.id && e.date === d.date)
+    if (here) {
+      row.hours = here.hours
+      row.why = here.employee_id === who.employee_id
+        ? `Already on this project — ${here.hours} h logged on this day.`
+        : `A row on this day types “${here.person}” without a register link — edit that row and pick the person instead of drawing a second.`
+      rows.push(row); continue
+    }
+    if (d.fraction <= 0) { row.why = d.why || 'The book marks nothing worked on this day.'; rows.push(row); continue }
+    row.hours = round2(d.fraction * hoursPerDay)
+    row.tickable = true
+    const elsewhere = mine.filter(e => e.project_id !== project.id && e.date === d.date)
+    if (elsewhere.length) {
+      const total = round2(elsewhere.reduce((a, e) => a + e.hours, 0))
+      const names = [...new Set(elsewhere.map(e => projects.find(p => p.id === e.project_id)?.name || 'another project'))].join(', ')
+      row.why = `This day already carries ${total} h on ${names}. Tick it only if the day’s work was really split — two full days on one date will both count.`
+    } else {
+      row.proposed = true
+      proposedDays++
+      proposedHours = round2(proposedHours + row.hours)
+    }
+    rows.push(row)
+  }
+
+  const findings: string[] = []
+  if (proposedDays === 0) {
+    const drawable = rows.filter(r => r.tickable).length
+    findings.push(drawable
+      ? `Nothing new is proposed — every day the book marks as worked either sits on the register already or carries hours elsewhere. ${drawable} day(s) can still be ticked by hand.`
+      : `Nothing is drawn from ${periodLabel(month)}: no day the book marks as worked falls inside this project’s window.`)
+  }
+  if (loggedHours > 0) findings.push(`${loggedHours} h from ${person} already sit on this project in ${periodLabel(month)}.`)
+
+  return { ...base, days: rows, proposed_days: proposedDays, proposed_hours: proposedHours, logged_hours: loggedHours, findings }
 }
 
 /**

@@ -90,6 +90,45 @@ export function weeklyOffDays(month: string, weeklyOff: string): string[] {
   return out
 }
 
+/** What a written mark means for work a job's hours can be drawn from. */
+export interface MarkWork {
+  /** What part of a day the mark says was worked: a whole one, half of it, or none. */
+  fraction: 1 | 0.5 | 0
+  /** The register's own label for the mark — 'present', 'half day lost', 'absent'… */
+  label: string
+  /** '' while the mark holds work; otherwise the sentence that says why nothing is drawn from it. */
+  why: string
+}
+
+/**
+ * The day book's own reading of one mark, for the timesheet draw: what part of the day was worked
+ * and, when none was, the register's sentence for why. The same lookup the grid counts with — the
+ * half day is a half, and a shop's own spelling (`LL`, `NLW`) is read as itself. An unwritten day
+ * is not a day worked, and this reading will not invent one.
+ */
+export function markWork(mark: string): MarkWork {
+  const trimmed = str(mark).trim()
+  if (!trimmed) {
+    return { fraction: 0, label: 'unwritten', why: 'Unwritten — an unwritten day is not a day worked, and the draw will not invent one.' }
+  }
+  const canonical = canonicalMark(trimmed)
+  if (!canonical) {
+    return { fraction: 0, label: trimmed, why: `“${trimmed}” is a mark the register cannot read, so no hours are drawn from it.` }
+  }
+  const means = markMeaning(canonical)
+  const label = DAY_BOOK_MARKS.find(m => m.mark === canonical)?.label
+    || (means === 'present' ? 'present' : means === 'loss' ? 'a lost day' : 'paid, not worked')
+  if (canonical === '0.5') return { fraction: 0.5, label, why: '' }
+  if (means === 'present') return { fraction: 1, label, why: '' }
+  if (means === 'loss') {
+    return { fraction: 0, label, why: 'A lost day — the register reads it as no work, so nothing is drawn from it.' }
+  }
+  if (means === 'neutral') {
+    return { fraction: 0, label, why: 'Paid, not worked — a holiday, weekly off or leave holds no hours for a job.' }
+  }
+  return { fraction: 0, label, why: 'The register cannot read this mark, so nothing is drawn from it.' }
+}
+
 export interface DayBookCell {
   date: string
   day: number
