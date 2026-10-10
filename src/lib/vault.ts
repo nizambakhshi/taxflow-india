@@ -401,7 +401,7 @@ export const REGISTERS: RegisterSpec[] = [
     id: 'payroll',
     prefix: 'taxflow:payroll:',
     label: 'Payroll register',
-    what: 'The salary structure of each employee and the month rows behind a slip — lost days read from an attendance sheet arrive as a figure and a sentence, and the sheet itself is never kept',
+    what: 'The salary structure of each employee, the letterhead a payslip prints under, and the month rows behind a slip — lost days read from an attendance sheet arrive as a figure and a sentence, and the sheet itself is never kept',
     unit: 'row',
     group: 'workpapers',
     module: 'src/lib/payroll.ts',

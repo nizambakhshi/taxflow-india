@@ -40,7 +40,7 @@ import {
   PF_MODES, PF_MODE_META, PF_WAGE_CEILINGS, PAYROLL_CSV_HEADERS, PAYROLL_RULES, PT_ANNUAL_CAP,
   STATUTORY_CSV_HEADERS, WAGE_CODE_50, annualCsvRows, annualSheets, applyAttendance, attendanceBasis,
   attendanceTemplate, blendedHourCost, costPerHourFor, currentMonth, daysInMonthKey, deleteEmployee, deleteInput,
-  fyMonths, fyStartOfMonth, loadPayroll, missingHeads, monthLabel, monthRegister, monthsWithData, newEmployee,
+  emptyPayroll, fyMonths, fyStartOfMonth, loadPayroll, missingHeads, monthLabel, monthRegister, monthsWithData, newEmployee,
   newInput, offRosterWhy, openMonth, payrollCsvRows, payslipOf, pfCeilingOn, planAttendance, rosterFor,
   saveSettings, setActiveEmployee, statutoryCsvRows, statutoryDues, summariseRegister, upsertEmployee,
   upsertInput, validateEmployee, validateInput,
@@ -101,7 +101,7 @@ function PayrollPageInner() {
 
   const [orgId, setOrgId] = useState('')
   const [orgName, setOrgName] = useState('')
-  const [store, setStore] = useState<PayrollStore>(() => ({ version: 1, updatedAt: '', orgId: '', employees: [], inputs: [], settings: { ...DEFAULT_SETTINGS } }))
+  const [store, setStore] = useState<PayrollStore>(() => emptyPayroll(''))
 
   const [tab, setTab] = useState<Tab>('people')
   const [month, setMonth] = useState(currentMonth())

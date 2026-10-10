@@ -423,6 +423,97 @@ export interface PayrollStore {
   employees: Employee[]
   inputs: PayInput[]
   settings: PayrollSettings
+  /** The words above the employee's name on a slip. Typed once, printed on every slip. */
+  letterhead: Letterhead
+}
+
+/**
+ * The letterhead a payslip prints under.
+ *
+ * A payslip is a document from somebody to somebody, and this register was built holding only the
+ * money side of it. So the employer's identity is asked for once rather than assumed each month,
+ * and every line has the same rule the money rows have: **a figure the owner never typed prints as
+ * a dash with the words "not recorded", never as a plausible-looking blank**. An establishment code
+ * invented onto a statutory document is worse than none, so nothing here is filled in by guesswork
+ * — not the EPFO code, not the ESIC code, not the employer's PAN.
+ *
+ * It lives inside `taxflow:payroll:<orgId>` because it is part of the salary register, not a
+ * register of its own: same key, same version, fields only (ADR-013). A store written before this
+ * block existed parses back with an empty letterhead, and the slips say so.
+ */
+export interface Letterhead {
+  name: string
+  address_line1: string
+  address_line2: string
+  city: string
+  state: string
+  pincode: string
+  phone: string
+  email: string
+  /** The EPFO establishment code, e.g. `MHMUMN00012340000000`. */
+  pf_establishment: string
+  /** The ESIC code of the establishment, not the employee's insurance number. */
+  esi_code: string
+  employer_pan: string
+  gstin: string
+  /** Where the slip is signed, and by whom. */
+  place: string
+  signatory: string
+  signatory_role: string
+}
+
+export const EMPTY_LETTERHEAD: Letterhead = {
+  name: '', address_line1: '', address_line2: '', city: '', state: '', pincode: '',
+  phone: '', email: '', pf_establishment: '', esi_code: '', employer_pan: '', gstin: '',
+  place: '', signatory: '', signatory_role: '',
+}
+
+/** Everything the letterhead asks for, in the order the slip prints it. */
+export const LETTERHEAD_FIELDS: { key: keyof Letterhead; label: string; hint: string }[] = [
+  { key: 'name', label: 'Employer name', hint: 'As it should stand at the top of the slip — the trade name the payslip is issued under.' },
+  { key: 'address_line1', label: 'Address line 1', hint: '' },
+  { key: 'address_line2', label: 'Address line 2', hint: '' },
+  { key: 'city', label: 'City', hint: '' },
+  { key: 'state', label: 'State', hint: '' },
+  { key: 'pincode', label: 'PIN code', hint: '' },
+  { key: 'phone', label: 'Phone', hint: '' },
+  { key: 'email', label: 'Email', hint: '' },
+  { key: 'pf_establishment', label: 'PF establishment code', hint: 'The register does not have one and will not make one up.' },
+  { key: 'esi_code', label: 'ESIC establishment code', hint: '' },
+  { key: 'employer_pan', label: "Employer's PAN", hint: '' },
+  { key: 'gstin', label: 'GSTIN', hint: 'Many employers print it on salary paper; it is not required on a payslip.' },
+  { key: 'place', label: 'Place of issue', hint: 'The town the slip is signed at.' },
+  { key: 'signatory', label: 'Signed by', hint: '' },
+  { key: 'signatory_role', label: 'Their role', hint: 'e.g. "Authorised Signatory", "Proprietor".' },
+]
+
+/** The four identifiers a statutory salary document is normally expected to carry. */
+export const LETTERHEAD_IDENTIFIERS: { key: keyof Letterhead; label: string; why: string }[] = [
+  { key: 'pf_establishment', label: 'PF establishment code', why: 'The ECR the employer files on the EPFO portal names it, and a slip without it cannot be tied to that return.' },
+  { key: 'esi_code', label: 'ESIC code', why: 'Named on the insurance return; nothing here holds it until it is typed.' },
+  { key: 'employer_pan', label: "Employer's PAN", why: 'The TDS certificate is issued under it — a salary slip the department can match needs it.' },
+  { key: 'gstin', label: 'GSTIN', why: 'Printed by habit on most Indian salary paper; optional, and blank stays blank.' },
+]
+
+export function parseLetterhead(raw: unknown): Letterhead {
+  const l = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
+  const out = { ...EMPTY_LETTERHEAD }
+  for (const f of LETTERHEAD_FIELDS) {
+    const v = l[f.key]
+    out[f.key] = typeof v === 'string' ? v.trim() : ''
+  }
+  return out
+}
+
+/** A letterhead nobody has filled in yet: the slips still print, and say what is missing. */
+export function letterheadIsEmpty(l: Letterhead | undefined): boolean {
+  if (!l) return true
+  return LETTERHEAD_FIELDS.every(f => !l[f.key].trim())
+}
+
+/** The labels of the four statutory identifiers a slip would otherwise print as blank. */
+export function letterheadGaps(l: Letterhead): string[] {
+  return LETTERHEAD_IDENTIFIERS.filter(i => !l[i.key].trim()).map(i => i.label)
 }
 
 export const DEFAULT_SETTINGS: PayrollSettings = {
@@ -433,7 +524,10 @@ export const DEFAULT_SETTINGS: PayrollSettings = {
 }
 
 export function emptyPayroll(orgId = ''): PayrollStore {
-  return { version: PAYROLL_VERSION, updatedAt: todayISO(), orgId, employees: [], inputs: [], settings: { ...DEFAULT_SETTINGS } }
+  return {
+    version: PAYROLL_VERSION, updatedAt: todayISO(), orgId,
+    employees: [], inputs: [], settings: { ...DEFAULT_SETTINGS }, letterhead: { ...EMPTY_LETTERHEAD },
+  }
 }
 
 export function newEmployee(): Employee {
@@ -680,6 +774,9 @@ export function parsePayroll(raw: string | null): PayrollStore {
     // is worse than an empty one, and the same rule the projects register runs on.
     inputs: inputs.filter(i => employees.some(e => e.id === i.employee_id)),
     settings: parseSettings(s.settings),
+    // A register written before the letterhead existed has none, which is a fact about the file,
+    // not a corruption of it: the slips print the workspace name and say the rest was never typed.
+    letterhead: parseLetterhead(s.letterhead),
   }
 }
 
@@ -760,6 +857,17 @@ export function deleteInput(orgId: string, id: string): PayrollStore {
 
 export function saveSettings(orgId: string, settings: PayrollSettings): PayrollStore {
   return mutate(orgId, s => ({ ...s, settings }))
+}
+
+/**
+ * The letterhead is saved through the same door as everything else in this register — one key, one
+ * version, fields only. Trimming happens here rather than on the slip so a name typed with padding
+ * cannot make two stores compare unequal.
+ */
+export function saveLetterhead(orgId: string, letterhead: Letterhead): PayrollStore {
+  const clean = { ...EMPTY_LETTERHEAD }
+  for (const f of LETTERHEAD_FIELDS) clean[f.key] = str(letterhead?.[f.key]).trim()
+  return mutate(orgId, s => ({ ...s, letterhead: clean }))
 }
 
 /**
@@ -1472,6 +1580,19 @@ export function stampAttendanceNote(existing: string, month: string, detail: str
   const rest = (existing || '').replace(ATTENDANCE_TAG, '').trim()
   const stamp = attendanceStamp(month, detail)
   return rest ? `${stamp} — ${rest}` : stamp
+}
+
+/**
+ * The sheet's own sentence, read back out of a month row so a document can say where the lost days
+ * came from. An empty string means the month was typed by hand — *no provenance* is a different
+ * fact from *zero provenance*, and the payslip prints the difference rather than inventing a sheet.
+ */
+export function attendanceProvenance(note: string, month: string): string {
+  if (!note || !isMonth(month)) return ''
+  // A fresh, non-global pattern: the same constant is used to strip the tag elsewhere, and a
+  // /g regex carries lastIndex between calls.
+  const found = note.match(new RegExp(`\\[attendance ${month}\\]([^—]*)`))
+  return found ? found[1].trim() : ''
 }
 
 export interface AttendanceApplyResult {
