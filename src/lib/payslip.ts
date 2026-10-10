@@ -114,6 +114,8 @@ export interface PayslipDoc {
 
   /** What the employer pays *besides* this salary — printed separately so the two never add. */
   employer_legs: SlipLine[]
+  /** The sum of the legs above, so the block's own heading totals what it lists. */
+  employer_legs_total: number
   employer_cost: number
 
   pay_day_line: string
@@ -325,6 +327,7 @@ export function buildPayslip(store: PayrollStore, slip: Payslip, workspaceName =
     net_pay: round2(slip.net_pay),
     net_words: amountInWords(round2(slip.net_pay)),
     employer_legs: employer_lines,
+    employer_legs_total: round2(employer_lines.reduce((a, l) => a + (l.amount || 0), 0)),
     employer_cost: round2(slip.employer_cost),
     pay_day_line: store.settings.pay_day
       ? `Payable on the ${store.settings.pay_day} of ${monthLabel(addMonths(month, 1))}, as the register is set`

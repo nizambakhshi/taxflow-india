@@ -1080,6 +1080,9 @@ function MonthTab({ store, month, slips, summary, roster, openSlip, onOpenSlip, 
                 onClick={() => download(`payroll-${month}.csv`, toCsv(PAYROLL_CSV_HEADERS, payrollCsvRows(slips)))}>
                 Register CSV
               </Button>
+              <Button size="sm" variant="ghost" icon="printer" href={`/payroll/payslip?m=${month}&mode=month`}>
+                Payslips of the month
+              </Button>
             </div>
           </div>
         </div>
@@ -1317,6 +1320,8 @@ function SlipDetail({ slip, employee, month, onEdit, onDelete }: {
         <div className="tf-row tf-wrap" style={{ gap: 8 }}>
           <Button size="sm" icon="edit" onClick={onEdit} disabled={!onEdit}>{slip.input ? 'Edit this month' : 'Add a month row'}</Button>
           {slip.input && onDelete && <Button size="sm" variant="ghost" icon="x" onClick={onDelete}>Remove the row</Button>}
+          {/* The paper this reading turns into — every figure on the sheet is the one on this row. */}
+          <Button size="sm" variant="ghost" icon="printer" href={`/payroll/payslip?e=${slip.employee_id}&m=${month}`}>Payslip</Button>
         </div>
         <span className="pr-hint">
           {slip.input
