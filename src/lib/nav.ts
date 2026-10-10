@@ -90,6 +90,7 @@ export const NAV_ITEMS: NavSection[] = [
       { label: 'Financial Statements', href: '/accounting', icon: 'scale' },
       { label: 'Cost Centres', href: '/cost-centres', icon: 'layers' },
       { label: 'Projects & Time', href: '/projects', icon: 'briefcase' },
+      { label: 'Payroll & Salary', href: '/payroll', icon: 'users' },
       { label: 'Scan Bill', href: '/ai/scan-bill', icon: 'scan' },
       { label: 'Ask My Books', href: '/ai/ask', icon: 'chat' },
     ]

@@ -12,6 +12,7 @@ import { download } from '@/lib/party-ledger'
 import { itc04Cadence, itc04Periods, loadJob } from '@/lib/jobwork'
 import { isExportDoc, loadExp, todayISO, watchRows, type ExportBookInvoice, type FxDealLite, type WatchRow } from '@/lib/exports'
 import { loadFx } from '@/lib/fx'
+import { addMonths, loadPayroll, payrollEvents, type PayEvent } from '@/lib/payroll'
 import { formatINR } from '@/lib/gst-engine'
 import { formatCompactINR, formatDateIN } from '@/lib/format'
 import { Badge, Button, Card, EmptyState, PageHeader, Segmented, StatRow } from '@/components/ui'
@@ -71,6 +72,38 @@ const EXPORT_KIND_NOTE: Record<WatchRow['kind'], string> = {
   realisation: 'A FEMA matter, not a GST default, so no late fee is computed here. Past the window the AD bank can hold further exports until the contravention is condoned.',
   refund: 'The department charges nothing for waiting — the two years in section 54(1) run out and the IGST paid on the invoice stays where it is.',
   advance: 'Goods taken against an advance have to leave India inside the window. A late dispatch goes to the AD bank for condonation with the shipping bill as proof.',
+}
+
+/**
+ * The payroll register states its own deadlines, in the shape the calendar reads. A PayEvent carries
+ * an amount and a source note where a calendar row wants a category and a penalty, so the rupee
+ * figure moves into the hint and the register's own citation takes the note's place. No date is
+ * invented here: a row the register leaves undated reaches the calendar undated.
+ */
+function payToEvent(p: PayEvent): ComplianceEvent {
+  return {
+    id: p.id,
+    title: p.title,
+    form: p.form,
+    // Salary TDS is an income-tax deadline, but the register that proves it is the payroll one, so
+    // it wears the payroll category rather than borrowing a GST late-fee rule.
+    category: 'payroll',
+    due: p.due,
+    period: p.period,
+    description: p.description,
+    amountHint: p.amount > 0 ? `${formatINR(p.amount)} to deposit` : undefined,
+    href: p.href,
+    penalty: { note: p.note },
+  }
+}
+
+/**
+ * Deadlines this business's salary books can prove. A year with no payroll rows gets none of these —
+ * the register decides they exist, which is why no profile tick-box is needed to switch them on.
+ */
+function payrollDueEvents(orgId: string, fy: number): ComplianceEvent[] {
+  if (!orgId) return []
+  return payrollEvents(loadPayroll(orgId), fy).map(payToEvent)
 }
 
 function watchToEvent(r: WatchRow): ComplianceEvent {
@@ -168,35 +201,67 @@ export default function ComplianceCalendarPage() {
     }
   }
 
-  const events = useMemo(
-    () => [...generateEvents(fy, profile), ...jobWorkEvents(orgId, fy), ...exportEvents(orgId, expBooks, fy)]
-      .sort((a, b) => a.due.localeCompare(b.due)),
-    [fy, profile, orgId, expBooks],
-  )
+  /** What the salary books prove this year — a proved month retires that month's guess. */
+  const payRows = useMemo(() => payrollDueEvents(orgId, fy), [orgId, fy])
+
+  const events = useMemo(() => {
+    /**
+     * The profile tick-box guesses a monthly PF and professional-tax deadline for all twelve months.
+     * Where the payroll register actually files that head for that month — an ECR row here, a state
+     * PT row there — the register's own date and rupee figure retire the guess instead of appearing
+     * beside it twice. A month the books have not been run for keeps its guess: a tick-box is better
+     * than a silence about something the owner said they owe.
+     *
+     * A guessed row's id names the month the deposit falls in, one month after the salary it covers,
+     * so the comparison steps back before asking the register.
+     */
+    const proved = new Set(payRows.map(r => r.id))
+    const guessed = generateEvents(fy, profile).filter(e => {
+      const head = e.id.match(/-(pf|pt)-(\d{4})-(\d{2})$/)
+      if (!head) return true
+      const salaryMonth = addMonths(`${head[2]}-${head[3]}`, -1)
+      return !proved.has(`${fy}-pay-${head[1]}-${salaryMonth}`)
+    })
+    return [...guessed, ...jobWorkEvents(orgId, fy), ...exportEvents(orgId, expBooks, fy), ...payRows]
+      .sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999'))
+  }, [fy, profile, orgId, expBooks, payRows])
 
   const today = new Date()
   const withStatus = events.map(e => ({
     ...e,
     filed: !!statuses[e.id],
+    // A row the register leaves undated — a state professional-tax deadline — counts as NaN days
+    // away on purpose: it is neither overdue nor due soon, because nothing here knows when it is.
     daysLeft: Math.ceil((new Date(e.due).getTime() - today.getTime()) / DAY),
   }))
 
   const overdue = withStatus.filter(e => !e.filed && e.daysLeft < 0)
   const dueSoon = withStatus.filter(e => !e.filed && e.daysLeft >= 0 && e.daysLeft <= 7)
   const filedCount = withStatus.filter(e => e.filed).length
-  const next = [...withStatus].filter(e => !e.filed).sort((a, b) => a.due.localeCompare(b.due))[0]
+  const next = [...withStatus].filter(e => !e.filed && e.due).sort((a, b) => a.due.localeCompare(b.due))[0]
 
   const months = useMemo(() => {
     const map = new Map<string, { label: string; count: number }>()
     for (const e of events) {
+      /** State dues have no national date, so they get a rail of their own rather than an "Invalid Date". */
+      if (!e.due) {
+        map.set('undated', { label: 'State dates', count: (map.get('undated')?.count || 0) + 1 })
+        continue
+      }
       const key = e.due.slice(0, 7)
       const label = new Date(e.due).toLocaleDateString('en-IN', { month: 'short', year: '2-digit' })
       map.set(key, { label, count: (map.get(key)?.count || 0) + 1 })
     }
-    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+    const dated = [...map.entries()].filter(([k]) => k !== 'undated').sort((a, b) => a[0].localeCompare(b[0]))
+    const undated = map.get('undated')
+    return undated ? [...dated, ['undated', undated] as [string, { label: string; count: number }]] : dated
   }, [events])
 
-  const shown = monthFilter === 'all' ? withStatus : withStatus.filter(e => e.due.startsWith(monthFilter))
+  const shown = monthFilter === 'all'
+    ? withStatus
+    : monthFilter === 'undated'
+      ? withStatus.filter(e => !e.due)
+      : withStatus.filter(e => e.due.startsWith(monthFilter))
 
   function toggleFiled(event: ComplianceEvent) {
     if (!orgId) return
@@ -208,7 +273,10 @@ export default function ComplianceCalendarPage() {
   }
 
   function exportIcs() {
-    download(`taxflow-compliance-FY${fy}-${String(fy + 1).slice(2)}.ics`, toIcs(events, orgName || 'my business'))
+    /** An .ics event needs a start date, so undated state dues stay off the file rather than landing
+     * on a guessed day — the calendar shows them, Google's cannot. */
+    download(`taxflow-compliance-FY${fy}-${String(fy + 1).slice(2)}.ics`,
+      toIcs(events.filter(e => e.due), orgName || 'my business'))
   }
 
   if (loading) {
@@ -265,6 +333,14 @@ export default function ComplianceCalendarPage() {
             ))}
           </div>
         </div>
+        {payRows.length > 0 && (
+          <p style={{ fontSize: 11.5, color: 'var(--faint)', margin: '11px 0 0', maxWidth: 720, lineHeight: 1.5 }}>
+            {payRows.length} {payRows.length === 1 ? 'deadline' : 'deadlines'} this year {payRows.length === 1 ? 'is' : 'are'}
+            proved from the payroll register — its own PF, ESI, salary-tax and Form 16 rows, with the deposit date and the
+            rupee figure the books carry. Those rows replace the monthly guesses the tick-boxes above would otherwise make,
+            and a professional-tax row stays undated because only the state knows that date.
+          </p>
+        )}
       </Card>
 
       {/* Summary */}
@@ -341,8 +417,13 @@ export default function ComplianceCalendarPage() {
                     </div>
                     <div style={{ fontSize: 13, color: 'var(--ink-2)', marginTop: 3 }}>{e.title}</div>
                     <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
-                      {e.period} · due {formatDateIN(e.due)} — {e.description}
+                      {e.period} · {e.due ? `due ${formatDateIN(e.due)}` : 'due on the state’s own date'} — {e.description}
                     </div>
+                    {e.amountHint && (
+                      <div className="tf-num" style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 650, marginTop: 3 }}>
+                        {e.amountHint}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -357,9 +438,11 @@ export default function ComplianceCalendarPage() {
                   )}
                   <div style={{ fontSize: 11.5, color: 'var(--faint)', lineHeight: 1.5 }}>{e.penalty.note}</div>
                   <div className="tf-row" style={{ gap: 8, marginTop: 8 }}>
-                    <a href={googleCalendarUrl(e, orgName || 'business')} target="_blank" rel="noreferrer" className="tf-btn tf-btn-ghost tf-btn-sm">
-                      <Icon name="calendar" size={13} /> Google
-                    </a>
+                    {e.due && (
+                      <a href={googleCalendarUrl(e, orgName || 'business')} target="_blank" rel="noreferrer" className="tf-btn tf-btn-ghost tf-btn-sm">
+                        <Icon name="calendar" size={13} /> Google
+                      </a>
+                    )}
                     {e.href && <Link href={e.href} className="tf-btn tf-btn-ghost tf-btn-sm"><Icon name="arrow-right" size={13} /> Prepare</Link>}
                   </div>
                 </div>

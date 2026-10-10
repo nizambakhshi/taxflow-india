@@ -451,10 +451,14 @@ body {
   -webkit-overflow-scrolling: touch;
 }
 
-/* Tab bars scroll horizontally instead of wrapping/crushing */
+/* Tab bars scroll horizontally instead of wrapping/crushing.
+   Segmented bars are inline-flex, so they size to their labels: on a narrow phone a five-tab
+   bar is wider than the screen and would push the whole page sideways. max-width pulls the bar
+   back to the viewport and lets its own overflow-x do the work. */
 .tab-bar {
   display: flex;
   gap: 6px;
+  max-width: 100%;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   padding-bottom: 2px;
