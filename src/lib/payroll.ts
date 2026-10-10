@@ -57,12 +57,18 @@
 //    to provident fund calculations, and the EPFO office that administers yours settles it — so
 //    an employee whose basic is under half their salary gets a flag with that citation, and their
 //    PF stays computed on basic + dearness allowance.
-//  * **The attendance sheet is read, never kept.** A pasted table — a days-present column, a
-//    days-lost column, or a day-by-day grid of P / A / H marks — becomes lost days on the month rows
-//    and nothing else. No new key, no new register, no stored sheet: only `lop_days` and a stamped
-//    note change. A number that no header names is *refused* rather than guessed at, a person the
-//    sheet never mentions keeps the lost days they already had, and every candidate row passes the
-//    same `validateInput()` the month form passes through.
+//  * **The pasted sheet is read for one figure; the day book keeps the marks.** Two different
+//    doors, and they were built a round apart. R2-32 reads a pasted table — a days-present column,
+//    a days-lost column, or a day-by-day grid of P / A / H marks — and takes one number out of it
+//    per person: no new key, no stored sheet, only `lop_days` and a stamped note change. A number
+//    that no header names is *refused* rather than guessed at, a person the sheet never mentions
+//    keeps the lost days they already had, and every candidate row passes the same `validateInput()`
+//    the month form passes through. R2-34 added the half that stays — a day mark per person per day
+//    (`DayMark`, in this same envelope, additive under version 1), owned by
+//    `src/lib/attendance.ts`. It keeps a **mark**, never a money claim: the month row's `lop_days`
+//    is still the figure the salary is computed from, and pulling it out of the day book walks the
+//    same validation door rather than opening a second one. An unwritten day is not an absent day —
+//    that is the sentence the grid prints, and the reason a blank register cannot cut anybody's pay.
 //
 // What v1 deliberately does NOT claim: no work-in-progress or accrual posting (the priced reading
 // is not a journal entry), no per-day wage labour or contract labour, no
@@ -414,7 +420,44 @@ export interface PayrollSettings {
   esi_registered: boolean
   /** The day the shop pays on, for the "money to transfer" row. '' = not recorded. */
   pay_day: string
+  /**
+   * The establishment's weekly off, as the shop says it. The day book uses it for one thing only:
+   * naming which unwritten days the shop probably does not mark. Absence is never read as a lost day,
+   * so this setting cannot cut anybody's salary — it changes a count of what is still blank.
+   * '' = never recorded, and the day book treats every day the same.
+   */
+  weekly_off: string
 }
+
+/**
+ * One day of one person's attendance, as the shop wrote it.
+ *
+ * R2-32 read a pasted sheet for one lost-day figure and threw the sheet away. This is the version
+ * that stays: the *mark*, per day, per person — the day book the shop keeps on a wall or in Excel,
+ * kept here as evidence behind the month row's single number. It stores a mark, not a money claim:
+ * `lop_days` on the month row is still the figure the salary is computed from, and pulling it from
+ * the day book is a walk through the month form's own `validateInput()`, not a side door.
+ *
+ * Additive under `PAYROLL_VERSION = 1`: an envelope written before this list existed parses back
+ * with an empty day book, and the day book says *"the shop has kept no days here yet"* rather than
+ * inventing a month of presents.
+ */
+export interface DayMark {
+  employee_id: string
+  /** A real calendar day, `YYYY-MM-DD`, inside the month the book is showing. */
+  date: string
+  /** The mark as written — see `ATTENDANCE_MARKS` in this file for what each one means. */
+  mark: string
+  source: DayMarkSource
+  note: string
+  written_at: string
+}
+
+/** How a mark got onto the sheet: typed at the grid, read from a pasted day-grid, or cleared. */
+export type DayMarkSource = 'hand' | 'sheet' | 'clear'
+
+/** The order a day cell cycles through when the shop taps it: blank, present, absent, then the rests. */
+export const DAY_MARK_CYCLE = ['', 'P', 'A', 'H', 'W', 'PL', 'SL', '0.5'] as const
 
 export interface PayrollStore {
   version: number
@@ -425,6 +468,8 @@ export interface PayrollStore {
   settings: PayrollSettings
   /** The words above the employee's name on a slip. Typed once, printed on every slip. */
   letterhead: Letterhead
+  /** The day book — one mark per person per day, kept since R2-34. A mark, never a money claim. */
+  attendance: DayMark[]
 }
 
 /**
@@ -516,17 +561,48 @@ export function letterheadGaps(l: Letterhead): string[] {
   return LETTERHEAD_IDENTIFIERS.filter(i => !l[i.key].trim()).map(i => i.label)
 }
 
+/**
+ * The day book read back out of an envelope. Each entry must have a real date and a non-empty mark;
+ * a person who has been deleted from the register has their days dropped with them — half a roster is
+ * worse than none, and it is the same rule month rows follow. Two entries for the same person and day
+ * are not two marks: the later one in the file is what the shop last wrote, so the earlier is dropped.
+ */
+export function parseDayMarks(raw: unknown): DayMark[] {
+  if (!Array.isArray(raw)) return []
+  const out: DayMark[] = []
+  const seen = new Set<string>()
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const r = item as Record<string, unknown>
+    const employee_id = str(r.employee_id)
+    const date = str(r.date)
+    const mark = str(r.mark).trim().toUpperCase()
+    if (!employee_id || !isDate(date) || !mark) continue
+    const key = `${employee_id}|${date}`
+    if (seen.has(key)) {
+      const at = out.findIndex(m => `${m.employee_id}|${m.date}` === key)
+      if (at >= 0) out.splice(at, 1)
+    }
+    const source: DayMarkSource = r.source === 'sheet' || r.source === 'clear' ? r.source : 'hand'
+    out.push({ employee_id, date, mark, source, note: str(r.note), written_at: str(r.written_at) })
+    seen.add(key)
+  }
+  return out
+}
+
 export const DEFAULT_SETTINGS: PayrollSettings = {
   eps_pension_ceiling: 15000,
   working_days: 'calendar',
   esi_registered: true,
   pay_day: '',
+  weekly_off: '',
 }
 
 export function emptyPayroll(orgId = ''): PayrollStore {
   return {
     version: PAYROLL_VERSION, updatedAt: todayISO(), orgId,
     employees: [], inputs: [], settings: { ...DEFAULT_SETTINGS }, letterhead: { ...EMPTY_LETTERHEAD },
+    attendance: [],
   }
 }
 
@@ -748,6 +824,7 @@ function parseSettings(raw: unknown): PayrollSettings {
     working_days: s.working_days === 'convention_26' ? 'convention_26' : 'calendar',
     esi_registered: s.esi_registered === undefined ? true : flag(s.esi_registered),
     pay_day: typeof s.pay_day === 'string' ? s.pay_day : '',
+    weekly_off: typeof s.weekly_off === 'string' ? s.weekly_off : '',
   }
 }
 
@@ -777,6 +854,10 @@ export function parsePayroll(raw: string | null): PayrollStore {
     // A register written before the letterhead existed has none, which is a fact about the file,
     // not a corruption of it: the slips print the workspace name and say the rest was never typed.
     letterhead: parseLetterhead(s.letterhead),
+    // Same reading for the day book: no list in the envelope means the shop has kept no days here
+    // yet, which the grid prints as a sentence — not as a month of presents, and not as a month of
+    // absents. Marks pointing at a deleted employee go with the employee.
+    attendance: parseDayMarks(s.attendance).filter(m => employees.some(e => e.id === m.employee_id)),
   }
 }
 
@@ -802,7 +883,12 @@ export function savePayroll(orgId: string, store: PayrollStore): void {
   }
 }
 
-function mutate(orgId: string, fn: (store: PayrollStore) => PayrollStore): PayrollStore {
+/**
+ * The register's own write path: re-read, transform, store. Exported for the day book
+ * (`src/lib/attendance.ts`), whose every door is required to run through it — the same reason the
+ * month rows have one door, `applyAttendance`: two writers of one register is two registers.
+ */
+export function mutatePayroll(orgId: string, fn: (store: PayrollStore) => PayrollStore): PayrollStore {
   const next = fn(loadPayroll(orgId))
   savePayroll(orgId, next)
   return next
@@ -811,7 +897,7 @@ function mutate(orgId: string, fn: (store: PayrollStore) => PayrollStore): Payro
 // ── writing to the register ───────────────────────────────────────────────────
 
 export function upsertEmployee(orgId: string, employee: Employee): PayrollStore {
-  return mutate(orgId, s => ({
+  return mutatePayroll(orgId, s => ({
     ...s,
     employees: s.employees.some(e => e.id === employee.id)
       ? s.employees.map(e => (e.id === employee.id ? employee : e))
@@ -820,7 +906,7 @@ export function upsertEmployee(orgId: string, employee: Employee): PayrollStore 
 }
 
 export function setActiveEmployee(orgId: string, id: string, active: boolean): PayrollStore {
-  return mutate(orgId, s => ({ ...s, employees: s.employees.map(e => (e.id === id ? { ...e, active } : e)) }))
+  return mutatePayroll(orgId, s => ({ ...s, employees: s.employees.map(e => (e.id === id ? { ...e, active } : e)) }))
 }
 
 export type DeleteEmployeeResult = { ok: true; store: PayrollStore } | { ok: false; error: string }
@@ -839,11 +925,11 @@ export function deleteEmployee(orgId: string, id: string): DeleteEmployeeResult 
       error: `This person still has ${rows} recorded month${rows === 1 ? '' : 's'} of salary. Take them off the rolls instead — set a leaving date, and the months they worked stay computed exactly as they were.`,
     }
   }
-  return { ok: true, store: mutate(orgId, n => ({ ...n, employees: n.employees.filter(e => e.id !== id) })) }
+  return { ok: true, store: mutatePayroll(orgId, n => ({ ...n, employees: n.employees.filter(e => e.id !== id) })) }
 }
 
 export function upsertInput(orgId: string, input: PayInput): PayrollStore {
-  return mutate(orgId, s => ({
+  return mutatePayroll(orgId, s => ({
     ...s,
     inputs: s.inputs.some(i => i.id === input.id)
       ? s.inputs.map(i => (i.id === input.id ? input : i))
@@ -852,11 +938,11 @@ export function upsertInput(orgId: string, input: PayInput): PayrollStore {
 }
 
 export function deleteInput(orgId: string, id: string): PayrollStore {
-  return mutate(orgId, s => ({ ...s, inputs: s.inputs.filter(i => i.id !== id) }))
+  return mutatePayroll(orgId, s => ({ ...s, inputs: s.inputs.filter(i => i.id !== id) }))
 }
 
 export function saveSettings(orgId: string, settings: PayrollSettings): PayrollStore {
-  return mutate(orgId, s => ({ ...s, settings }))
+  return mutatePayroll(orgId, s => ({ ...s, settings }))
 }
 
 /**
@@ -867,7 +953,7 @@ export function saveSettings(orgId: string, settings: PayrollSettings): PayrollS
 export function saveLetterhead(orgId: string, letterhead: Letterhead): PayrollStore {
   const clean = { ...EMPTY_LETTERHEAD }
   for (const f of LETTERHEAD_FIELDS) clean[f.key] = str(letterhead?.[f.key]).trim()
-  return mutate(orgId, s => ({ ...s, letterhead: clean }))
+  return mutatePayroll(orgId, s => ({ ...s, letterhead: clean }))
 }
 
 /**
@@ -877,7 +963,7 @@ export function saveLetterhead(orgId: string, letterhead: Letterhead): PayrollSt
  */
 export function openMonth(orgId: string, month: string): { created: number; store: PayrollStore } {
   let created = 0
-  const store = mutate(orgId, s => {
+  const store = mutatePayroll(orgId, s => {
     const roster = s.employees.filter(e => onRollsIn(e, month))
     const have = new Set(s.inputs.filter(i => i.month === month).map(i => i.employee_id))
     const fresh = roster.filter(e => !have.has(e.id)).map(e => ({ ...newInput(e.id, month), created_at: new Date().toISOString() }))
@@ -1094,8 +1180,13 @@ export const ATTENDANCE_MARKS: { mark: string; means: 'present' | 'loss' | 'neut
   { mark: 'W', means: 'neutral', reads: 'the week off' },
 ]
 
-/** Day-grid marks. Kept as a lookup so an unreadable mark can be named rather than counted twice. */
-const MARK_MEANING: Record<string, 'present' | 'loss' | 'neutral'> = {
+/**
+ * Day-grid marks, as the day book reads them too. Exported (R2-34) because `src/lib/attendance.ts`
+ * must refuse an unreadable mark by name — a mark outside this table is not a day the shop can keep.
+ * The *set* of marks is this lookup's keys, not the grid's cycle list: a sheet that writes `LL` is
+ * legible, and the book stores the mark the shop wrote rather than re-spelling it.
+ */
+export const MARK_MEANING: Record<string, 'present' | 'loss' | 'neutral'> = {
   p: 'present', pr: 'present', pre: 'present', present: 'present', pd: 'present', on: 'present',
   '\u2713': 'present', '\u2714': 'present',
   a: 'loss', abs: 'loss', absent: 'loss', l: 'loss', lop: 'loss', ld: 'loss', ul: 'loss', nlw: 'loss',
@@ -1179,6 +1270,39 @@ function tight(s: string): string {
 
 function markKey(s: string): string {
   return s.trim().toLowerCase().replace(/[.\s]/g, '')
+}
+
+/**
+ * The lookup as an alias table, for anything outside this file that has to store a mark rather than
+ * merely count one (R2-34's day book). The spelling returned is the one a shop would write: `0.5`
+ * kept as `0.5` rather than `05`, because a day book that stored `05` would not read back as the
+ * half day the owner meant. `null` means the mark is not in the table — and an unreadable mark is
+ * refused by name, never stored as somebody's day.
+ */
+export function canonicalMark(raw: string): string | null {
+  const key = markKey(raw)
+  if (!key) return null
+  if (key === '05' || key === 'half') return '0.5'
+  // A half written as a fraction keeps its dot only in the raw text — `markKey` drops it, so the two
+  // spellings that still mean the half day are matched before the lookup, not after.
+  const t = raw.trim()
+  if (t === '.5' || t === '½') return '0.5'
+  const meaning = MARK_MEANING[key]
+  if (!meaning) return null
+  return key.toUpperCase()
+}
+
+/**
+ * What a written mark means, read through the same lookup the sheet parser uses — and through
+ * `canonicalMark` first, so a spelling the book can store can never come back as "no meaning". The
+ * half day has no `MARK_MEANING` key of its own (a dot does not survive `markKey`), so it is settled
+ * here once, on the canonical spelling rather than on whatever the shop typed.
+ */
+export function markMeaning(raw: string): 'present' | 'loss' | 'neutral' | null {
+  const canonical = canonicalMark(raw)
+  if (!canonical) return null
+  if (canonical === '0.5') return 'loss'
+  return MARK_MEANING[markKey(canonical)] ?? null
 }
 
 function headerRole(header: string): AttendanceRole {
@@ -1617,7 +1741,7 @@ export function applyAttendance(orgId: string, month: string, plan: AttendancePl
     return { written: 0, unchanged: 0, skipped: [{ name: 'the whole sheet', reason: `That preview was read against ${plan.month || 'no month'}, and this screen is on ${monthLabel(month)}. Re-read the sheet before writing.` }], store: loadPayroll(orgId) }
   }
   let unchanged = 0
-  const store = mutate(orgId, s => {
+  const store = mutatePayroll(orgId, s => {
     let inputs = s.inputs
     for (const m of plan.matches) {
       const employee = s.employees.find(e => e.id === m.employee_id) || null
