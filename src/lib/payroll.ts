@@ -1100,7 +1100,10 @@ function cellNumbers(s: string): number[] {
 }
 
 function rowText(cells: string[]): string {
-  return cells.join(' · ')
+  // The line as the sheet shows it, minus the empty cells a day grid leaves at the end of a name-only
+  // row — an owner needs to find the line, and `· · · · ·` says nothing about where.
+  const shown = cells.map(c => c.trim()).filter(Boolean)
+  return shown.join(' · ')
 }
 
 /** The month's own basis for turning days-present into days-lost, with the sentence that justifies it. */
@@ -1284,10 +1287,12 @@ export function planAttendance(store: PayrollStore, month: string, text: string)
         else if (flat.length > 1) {
           plan.refusals.push({ line, text: rowText(row), reason: `“${nameCell}” could be ${flat.slice(0, 3).map(e => e.name).join(', ')}${flat.length > 3 ? ', …' : ''}. The register will not pick a salary out of a guess.` })
         } else {
-          const codeless = codeTight && !byCode.has(codeTight)
-            ? `Neither the code “${codeCell}” nor the name “${nameCell}”`
-            : `“${nameCell || codeCell}”`
-          plan.refusals.push({ line, text: rowText(row), reason: `${codeless} is on the payroll register. Add the person on the People tab, or correct the sheet.` })
+          // Either way the person is missing from the register — the sentence must say so, and say it
+          // differently when the row carries a code that also fails to match.
+          const subject = codeTight && !byCode.has(codeTight)
+            ? `Neither the code “${codeCell}” nor the name “${nameCell}” is`
+            : `“${nameCell || codeCell}” is not`
+          plan.refusals.push({ line, text: rowText(row), reason: `${subject} on the payroll register. Add the person on the People tab, or correct the sheet.` })
         }
       }
     }

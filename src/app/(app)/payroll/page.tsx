@@ -23,7 +23,7 @@
 //    built from, so the tax row prints a dash and the reason rather than the general schedule
 //    applied to somebody it does not apply to.
 
-import { Suspense, useEffect, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
@@ -36,14 +36,15 @@ import { INDIAN_STATES } from '@/lib/constants'
 import { Badge, Button, Card, EmptyState, PageHeader, SearchInput, Segmented, StatCard, StatRow } from '@/components/ui'
 import Icon from '@/components/Icons'
 import {
-  AGE_BANDS, AGE_META, ANNUAL_CSV_HEADERS, COMPONENT_LABELS, DEFAULT_SETTINGS, DUE_DAYS, ESI_BANDS,
+  AGE_BANDS, AGE_META, ANNUAL_CSV_HEADERS, ATTENDANCE_MARKS, COMPONENT_LABELS, DEFAULT_SETTINGS, DUE_DAYS, ESI_BANDS,
   PF_MODES, PF_MODE_META, PF_WAGE_CEILINGS, PAYROLL_CSV_HEADERS, PAYROLL_RULES, PT_ANNUAL_CAP,
-  STATUTORY_CSV_HEADERS, WAGE_CODE_50, annualCsvRows, annualSheets, blendedHourCost, costPerHourFor,
-  currentMonth, daysInMonthKey, deleteEmployee, deleteInput, fyMonths, fyStartOfMonth, loadPayroll,
-  missingHeads, monthLabel, monthRegister, monthsWithData, newEmployee, newInput, offRosterWhy,
-  openMonth, payrollCsvRows, payslipOf, pfCeilingOn, rosterFor, saveSettings, setActiveEmployee,
-  statutoryCsvRows, statutoryDues, summariseRegister, upsertEmployee, upsertInput, validateEmployee,
-  validateInput,
+  STATUTORY_CSV_HEADERS, WAGE_CODE_50, annualCsvRows, annualSheets, applyAttendance, attendanceBasis,
+  attendanceTemplate, blendedHourCost, costPerHourFor, currentMonth, daysInMonthKey, deleteEmployee, deleteInput,
+  fyMonths, fyStartOfMonth, loadPayroll, missingHeads, monthLabel, monthRegister, monthsWithData, newEmployee,
+  newInput, offRosterWhy, openMonth, payrollCsvRows, payslipOf, pfCeilingOn, planAttendance, rosterFor,
+  saveSettings, setActiveEmployee, statutoryCsvRows, statutoryDues, summariseRegister, upsertEmployee,
+  upsertInput, validateEmployee, validateInput,
+  type AttendanceApplyResult, type AttendancePlan,
   type Employee, type Flag, type PayInput, type PayrollSettings, type PayrollStore,
   type Payslip, type RegisterSummary, type Roster,
 } from '@/lib/payroll'
@@ -213,6 +214,24 @@ function PayrollPageInner() {
     flash('Settings saved. Every slip on this page re-reads them — nothing is cached.')
   }
 
+  /**
+   * The sheet's only door. It writes through `applyAttendance`, which re-runs the register's own
+   * validation inside the write, so a preview that went stale between reading and clicking loses the
+   * row with its reason printed rather than corrupting the month.
+   */
+  function applySheet(p: AttendancePlan): AttendanceApplyResult {
+    const result = applyAttendance(orgId, month, p)
+    setStore(result.store)
+    if (result.written === 0) {
+      warn(result.skipped[0]?.reason || 'Nothing on that sheet could be written to the register.')
+    } else {
+      flash(`${result.written} month row${result.written === 1 ? ' carries' : 's now carry'} ${monthLabel(month)}’s attendance — lost days and the sentence saying where they came from, nothing else.`
+        + (result.unchanged ? ` ${result.unchanged} already agreed with the sheet.` : '')
+        + (result.skipped.length ? ` ${result.skipped.length} person${result.skipped.length === 1 ? '' : 's'} were left out: ${result.skipped[0].reason}` : ''))
+    }
+    return result
+  }
+
   // ── the month the page is looking at ───────────────────────────────────────
 
   const fy = fyStartOfMonth(month)
@@ -341,7 +360,7 @@ function PayrollPageInner() {
 
       {tab === 'month' && (
         <MonthTab store={store} month={month} slips={slips} summary={summary} roster={roster}
-          onOpenSlip={setOpenSlip} openSlip={openSlip}
+          onOpenSlip={setOpenSlip} openSlip={openSlip} onApplySheet={applySheet}
           onEditRow={(employee) => setRowForm({ input: store.inputs.find(i => i.employee_id === employee.id && i.month === month) || newInput(employee.id, month), employee })}
           onDropRow={dropRow} />
       )}
@@ -483,6 +502,75 @@ function PayrollPageInner() {
         .pr-miss { display: flex; gap: 9px; align-items: flex-start; font-size: 12px; color: var(--muted);
           background: var(--slate-soft); border-radius: 11px; padding: 9px 11px; line-height: 1.5; }
         .pr-miss svg { flex-shrink: 0; margin-top: 1px; }
+
+        /* ── the attendance sheet: paste, preview, apply ─────────────────────── */
+        .pa-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 18px; }
+        .pa-help { font-size: 12px; color: var(--muted); line-height: 1.6; margin: 0 0 8px; }
+        .pa-help b { color: var(--ink); font-weight: 650; }
+        .pa-text { width: 100%; min-height: 176px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-size: 11.5px; line-height: 1.5; color: var(--ink-2); background: var(--surface-2);
+          border: 1px solid var(--line); border-radius: 11px; padding: 10px 11px; resize: vertical; }
+        .pa-text:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-ring); background: var(--surface); }
+        .pa-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+        .pa-hint { font-size: 11px; color: var(--faint); line-height: 1.55; margin: 8px 0 0; }
+        .pa-note { font-size: 12px; color: var(--muted); line-height: 1.55; margin: 10px 0 0; }
+        .pa-what { background: var(--slate-soft); border-radius: 12px; padding: 12px 13px; }
+        .pa-title { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+          color: var(--faint); margin: 0 0 7px; }
+        .pa-title + .pa-help, .pa-title + .pa-points { margin-bottom: 12px; }
+        .pa-points { list-style: disc; margin: 0 0 10px; padding-left: 17px; display: flex; flex-direction: column; gap: 6px;
+          font-size: 11.5px; line-height: 1.55; color: var(--ink-2); }
+        .pa-points b { color: var(--ink); font-weight: 650; }
+        .pa-marks { display: flex; flex-wrap: wrap; gap: 5px; margin: 0 0 12px; }
+        .pa-mark { font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; font-weight: 700; letter-spacing: .04em;
+          border-radius: 7px; padding: 3px 7px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); }
+        .pa-mark-present { color: var(--green); background: var(--green-soft); border-color: color-mix(in srgb, var(--green) 24%, white); }
+        .pa-mark-loss { color: var(--red); background: var(--red-soft); border-color: color-mix(in srgb, var(--red) 24%, white); }
+        .pa-mark-neutral { color: var(--muted); }
+
+        .pa-plan { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 13px; }
+        .pa-plan-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; justify-content: space-between; }
+        .pa-sub { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+          color: var(--faint); margin: 14px 0 7px; }
+        .pa-rows { display: flex; flex-direction: column; gap: 6px; margin-top: 11px; }
+        .pa-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; background: var(--surface-2);
+          border: 1px solid var(--line); border-radius: 11px; padding: 8px 11px; font-size: 12px; color: var(--ink-2); }
+        .pa-row.is-same { background: var(--slate-soft); border-color: var(--line-soft); }
+        .pa-row .pr-name { flex: 1 1 180px; min-width: 0; }
+        .pa-fig { flex: 1 1 150px; font-size: 11.5px; color: var(--muted); }
+        .pa-lop { display: flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; color: var(--ink);
+          font-weight: 600; background: var(--surface); border: 1px solid var(--line); border-radius: 9px; padding: 4px 9px; }
+        .pa-lop b { color: var(--brand); font-weight: 700; }
+        .pa-lop svg { color: var(--faint); }
+        .pa-over { font-size: 10.5px; color: var(--amber); background: var(--amber-soft); border-radius: 8px; padding: 3px 8px; }
+        .pa-apply { display: flex; flex-wrap: wrap; gap: 9px; align-items: center; margin-top: 14px;
+          border-top: 1px solid var(--line-soft); padding-top: 12px; }
+        .pa-apply .pa-hint { margin: 0; flex: 1 1 240px; }
+
+        .pa-block { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 13px; background: var(--red-soft);
+          border-radius: 12px; padding: 12px 13px; }
+        .pa-block-head { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--red); margin-bottom: 8px; }
+        .pa-block-head b { font-weight: 700; }
+        .pa-block .pa-points { color: var(--red); margin-bottom: 4px; }
+        .pa-block .pa-hint { color: var(--red); }
+
+        .pa-applied { display: flex; flex-wrap: wrap; gap: 9px; align-items: center; background: var(--green-soft);
+          color: var(--green); border: 1px solid color-mix(in srgb, var(--green) 22%, white); border-radius: 12px;
+          padding: 10px 12px; margin-bottom: 1rem; font-size: 12.5px; line-height: 1.5; }
+        .pa-applied svg { flex-shrink: 0; }
+        .pa-links { display: flex; flex-wrap: wrap; gap: 6px; }
+        .pa-link { font-family: inherit; font-size: 11.5px; font-weight: 600; color: var(--green); background: var(--surface);
+          border: 1px solid color-mix(in srgb, var(--green) 28%, white); border-radius: 9px; padding: 4px 9px; cursor: pointer;
+          min-height: 0; }
+        .pa-link:hover { color: var(--brand); border-color: color-mix(in srgb, var(--brand) 40%, white); }
+        .pa-link-x { margin-left: auto; background: none; border: none; color: inherit; cursor: pointer; padding: 2px; min-height: 0; opacity: .7; }
+        .pa-link-x:hover { opacity: 1; }
+
+        /* The paste pane and its advice are one column until there is genuinely room for two —
+           the same break the bank import screen uses. */
+        @media (max-width: 1100px) {
+          .pa-grid { grid-template-columns: minmax(0, 1fr); }
+        }
       `}</style>
     </div>
   )
@@ -824,7 +912,7 @@ function RulesPanel({ monthlyStructure, heads }: { monthlyStructure: number; hea
 
 // ── the month run ─────────────────────────────────────────────────────────────
 
-function MonthTab({ store, month, slips, summary, roster, openSlip, onOpenSlip, onEditRow, onDropRow }: {
+function MonthTab({ store, month, slips, summary, roster, openSlip, onOpenSlip, onEditRow, onDropRow, onApplySheet }: {
   store: PayrollStore
   month: string
   slips: Payslip[]
@@ -834,9 +922,51 @@ function MonthTab({ store, month, slips, summary, roster, openSlip, onOpenSlip, 
   onOpenSlip: (id: string) => void
   onEditRow: (employee: Employee) => void
   onDropRow: (inputId: string) => void
+  onApplySheet: (plan: AttendancePlan) => AttendanceApplyResult
 }) {
   const employeeById = useMemo(() => new Map(store.employees.map(e => [e.id, e])), [store.employees])
   const computable = slips.filter(s => s.computable)
+
+  // The sheet is read on screen and applied on click: two separate states, so a preview is always
+  // something the shop looked at before it touched anybody's salary.
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const [text, setText] = useState('')
+  const [plan, setPlan] = useState<AttendancePlan | null>(null)
+  const [applied, setApplied] = useState<{ result: AttendanceApplyResult; plan: AttendancePlan } | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const basis = useMemo(() => attendanceBasis(store, month), [store, month])
+
+  // A preview belongs to the month it was read against. Move the month and it goes — checked while
+  // rendering rather than from an effect, so the stale sheet is never painted for a frame.
+  const [sheetMonth, setSheetMonth] = useState(month)
+  if (sheetMonth !== month) {
+    setSheetMonth(month)
+    setPlan(null)
+    setApplied(null)
+    setText('')
+  }
+
+  function readSheet() {
+    setApplied(null)
+    setPlan(planAttendance(store, month, text))
+  }
+  function takeFile(f?: File) {
+    if (!f) return
+    const reader = new FileReader()
+    reader.onload = () => { setText(String(reader.result || '')); setPlan(null); setApplied(null) }
+    reader.readAsText(f)
+  }
+  function applyPlan() {
+    if (!plan) return
+    const result = onApplySheet(plan)
+    if (result.written > 0) {
+      setApplied({ result, plan })
+      setPlan(null)
+      setText('')
+    } else {
+      setApplied(null)
+    }
+  }
 
   return (
     <>
@@ -847,6 +977,93 @@ function MonthTab({ store, month, slips, summary, roster, openSlip, onOpenSlip, 
         <StatCard label="Tax on salary" value={summary.tds} sub={`${summary.no_tax} with no computable figure`} icon="file-check" tone="amber" />
       </div>
 
+      {sheetOpen && (
+        <Card style={{ marginBottom: '1rem' }}>
+          <p className="pr-section-title">The shop’s attendance sheet, read into {monthLabel(month)}</p>
+          <div className="pa-grid">
+            <div>
+              <p className="pa-help">
+                Paste the table your supervisor keeps — a selection from Excel, a CSV, a plain-text export. The register
+                reads one figure out of it: <b>lost days</b>. Nothing else on a month row moves, and the sheet itself is
+                never stored.
+              </p>
+              <textarea
+                className="pa-text"
+                value={text}
+                onChange={e => { setText(e.target.value); setPlan(null); setApplied(null) }}
+                spellCheck={false}
+                aria-label={`Attendance sheet for ${monthLabel(month)}`}
+                placeholder={'Code,Name,Present\nE-07,Shabbir Ahmed,26\nE-11,Lakshmi N,24/26'}
+              />
+              <div className="pa-actions">
+                <Button size="sm" icon="file-check" onClick={readSheet} disabled={!text.trim()}>
+                  {plan ? 'Read it again' : 'Read the sheet'}
+                </Button>
+                <Button size="sm" variant="subtle" icon="upload" onClick={() => fileRef.current?.click()}>Choose a file</Button>
+                <Button size="sm" variant="ghost" icon="users" disabled={roster.on.length === 0}
+                  onClick={() => { setText(attendanceTemplate(store, month)); setPlan(null); setApplied(null) }}>
+                  Rule it with this month’s roster
+                </Button>
+                <Button size="sm" variant="ghost" icon="download" disabled={roster.on.length === 0}
+                  onClick={() => download(`attendance-${month}.csv`, attendanceTemplate(store, month))}>
+                  Blank sheet
+                </Button>
+                <input ref={fileRef} type="file" accept=".csv,.tsv,.txt" hidden aria-hidden
+                  onChange={e => takeFile(e.target.files?.[0])} />
+              </div>
+              <p className="pa-hint">
+                The blank sheet is this month’s roster, already ruled with the register’s own codes — fill it on paper,
+                paste it back here, and every line matches on a code you never retyped.
+              </p>
+            </div>
+
+            <div className="pa-what">
+              <div className="pa-title">What it reads</div>
+              <ul className="pa-points">
+                <li><b>A column headed Present</b> is subtracted from the month’s basis. {basis.why}</li>
+                <li><b>A column headed LOP, Loss, Absent or Short</b> is taken exactly as it stands.</li>
+                <li><b>A day grid</b> — one column per date — counts the days marked lost; holidays and paid leave are marked but cost nothing.</li>
+                <li><b>A code first, then a name</b>, then one unique piece of a name. Two people sharing a code, or a name, are refused rather than chosen between.</li>
+              </ul>
+              <div className="pa-marks" aria-hidden>
+                {ATTENDANCE_MARKS.map(m => (
+                  <span key={m.mark} className={`pa-mark pa-mark-${m.means}`} title={`${m.mark} — ${m.reads}`}>{m.mark}</span>
+                ))}
+              </div>
+              <div className="pa-title">What it will not do</div>
+              <p className="pa-help">
+                A number no header names is refused instead of guessed at, because days present and days lost are
+                opposite figures. A person the sheet never mentions keeps the lost days they had. Arrears, bonuses and
+                recoveries are never touched — a sheet says nothing about money. Nothing at all is written until you
+                click Apply on the preview.
+              </p>
+            </div>
+          </div>
+
+          {plan && <SheetPlan plan={plan} onCancel={() => setPlan(null)} onApply={applyPlan} />}
+        </Card>
+      )}
+
+      {applied && applied.result.written > 0 && (
+        <div className="pa-applied" role="status">
+          <Icon name="check" size={14} />
+          <span>
+            {applied.result.written} month row{applied.result.written === 1 ? ' carries' : 's now carry'} {monthLabel(month)}’s
+            attendance. Every slip below re-computed on it — gross, provident fund, insurance, tax and take-home.
+          </span>
+          <div className="pa-links">
+            {applied.plan.matches.map(m => (
+              <button key={m.employee_id} type="button" className="pa-link" onClick={() => onOpenSlip(m.employee_id)}>
+                {m.name}
+              </button>
+            ))}
+          </div>
+          <button type="button" className="pa-link-x" onClick={() => setApplied(null)} aria-label="Dismiss the receipt">
+            <Icon name="x" size={14} />
+          </button>
+        </div>
+      )}
+
       <Card pad={false} style={{ marginBottom: '1rem' }}>
         <div className="pr-pad" style={{ paddingBottom: 0 }}>
           <div className="tf-row-between tf-wrap" style={{ gap: 10 }}>
@@ -855,10 +1072,15 @@ function MonthTab({ store, month, slips, summary, roster, openSlip, onOpenSlip, 
               {roster.off.length > 0 && ` ${roster.off.length} person${roster.off.length === 1 ? ' is' : 's are'} not in it below.`}
               {' '}A slip you have not opened still pays the structure — an attendance row only records the exceptions to it.
             </p>
-            <Button size="sm" variant="ghost" icon="download" disabled={slips.length === 0}
-              onClick={() => download(`payroll-${month}.csv`, toCsv(PAYROLL_CSV_HEADERS, payrollCsvRows(slips)))}>
-              Register CSV
-            </Button>
+            <div className="tf-row tf-wrap" style={{ gap: 8 }}>
+              <Button size="sm" variant={sheetOpen ? 'primary' : 'ghost'} icon="upload" onClick={() => setSheetOpen(o => !o)}>
+                {sheetOpen ? 'Close the sheet' : 'Read an attendance sheet'}
+              </Button>
+              <Button size="sm" variant="ghost" icon="download" disabled={slips.length === 0}
+                onClick={() => download(`payroll-${month}.csv`, toCsv(PAYROLL_CSV_HEADERS, payrollCsvRows(slips)))}>
+                Register CSV
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -950,6 +1172,134 @@ function MonthTab({ store, month, slips, summary, roster, openSlip, onOpenSlip, 
         </Card>
       )}
     </>
+  )
+}
+
+/**
+ * The preview a sheet gets before it gets a salary: which lines matched, whose lost days move from
+ * what to what, which lines are refused with the reason and the line number, and which people on the
+ * rolls the sheet never mentioned. The Apply button is the only write in this panel.
+ */
+function SheetPlan({ plan, onCancel, onApply }: {
+  plan: AttendancePlan
+  onCancel: () => void
+  onApply: () => void
+}) {
+  if (plan.blockers.length > 0) {
+    return (
+      <div className="pa-block">
+        <div className="pa-block-head">
+          <Icon name="alert" size={15} />
+          <b>The sheet is refused before anything is written</b>
+        </div>
+        <ul className="pa-points">
+          {plan.blockers.map((b, i) => <li key={i}>{b}</li>)}
+        </ul>
+        <p className="pa-hint">Not one month row changed. Correct the sheet, or the month on this screen, and read it again.</p>
+      </div>
+    )
+  }
+
+  const changed = plan.matches.filter(m => m.changed)
+  const loose = plan.matches.filter(m => m.matched_on === 'approximate')
+  const missing = plan.findings.filter(f => f.employee_id)
+  const readings = plan.findings.filter(f => !f.employee_id)
+
+  return (
+    <div className="pa-plan">
+      <div className="pa-plan-head">
+        <div className="tf-row tf-wrap" style={{ gap: 7 }}>
+          <Badge tone={changed.length > 0 ? 'blue' : 'grey'} dot={false}>{changed.length} to change</Badge>
+          {plan.unchanged > 0 && <Badge tone="grey" dot={false}>{plan.unchanged} already agree</Badge>}
+          {loose.length > 0 && <Badge tone="amber" dot={false}>{loose.length} matched loosely</Badge>}
+          {plan.refusals.length > 0 && <Badge tone="red" dot={false}>{plan.refusals.length} refused</Badge>}
+          {missing.length > 0 && <Badge tone="amber" dot={false}>{missing.length} not named</Badge>}
+        </div>
+        <span className="pa-hint">
+          {plan.rows_read} line{plan.rows_read === 1 ? '' : 's'} read, split on {plan.delimiter === '\t' ? 'tabs' : `“${plan.delimiter}”`}
+          {' '}· {plan.grid ? 'a day grid' : 'one row per person'} · {plan.basis.days}-day basis
+        </span>
+      </div>
+
+      {plan.matches.length === 0 && (
+        <p className="pa-note">Nothing matched, so nothing would be written. The refusals say what the register could not read.</p>
+      )}
+
+      {plan.matches.length > 0 && (
+        <div className="pa-rows">
+          {plan.matches.map(m => (
+            <div className={`pa-row ${m.changed ? '' : 'is-same'}`} key={`${m.line}-${m.employee_id}`}>
+              <div className="pr-name">
+                <b>{m.name}</b>
+                <span>
+                  {m.code || 'no code'} · line {m.line}
+                  {m.matched_on === 'approximate' ? ' · matched on part of the name' : m.matched_on === 'name' ? ' · matched on the name' : ''}
+                </span>
+              </div>
+              <div className="pa-fig">{m.read}</div>
+              <div className="pa-lop">
+                {m.before === null
+                  ? <span>a new row, {count(m.lop_days, 'day')} lost</span>
+                  : m.changed
+                    ? <span>{count(m.before, 'day')} <Icon name="swap" size={11} /> <b>{count(m.lop_days, 'day')}</b></span>
+                    : <span>stays at {count(m.lop_days, 'day')}</span>}
+              </div>
+              {m.overflow && <span className="pa-over" title="The sheet counts more days present than the month has — taken as a full month, never as a payment.">more days than the month</span>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {plan.refusals.length > 0 && (
+        <>
+          <p className="pa-sub">Lines the register will not write</p>
+          <ul className="pr-findings">
+            {plan.refusals.map((r, i) => (
+              <li className="pr-finding is-red" key={`r-${i}`}>
+                <Icon name="alert" size={14} />
+                <span><b style={{ color: 'var(--ink)' }}>Line {r.line}</b> · {r.text}<br />{r.reason}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {readings.length > 0 && (
+        <ul className="pr-findings">
+          {readings.map((f, i) => (
+            <li className="pr-finding is-grey" key={`c-${i}`}>
+              <Icon name="compare" size={14} />
+              <span>{f.message}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {missing.length > 0 && (
+        <>
+          <p className="pa-sub">On the rolls, and not on the sheet</p>
+          <div className="pr-misses">
+            {missing.map(f => (
+              <div className="pr-miss" key={f.employee_id}>
+                <Icon name="users" size={14} />
+                <span>{f.message}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      <div className="pa-apply">
+        <Button variant="primary" size="sm" icon="check" onClick={onApply} disabled={plan.matches.length === 0}>
+          Apply {plan.matches.length} row{plan.matches.length === 1 ? '' : 's'}
+        </Button>
+        <Button variant="ghost" size="sm" icon="x" onClick={onCancel}>Do not apply</Button>
+        <span className="pa-hint">
+          Lost days and the sentence saying where they came from — arrears, bonuses, recoveries and every other month
+          stay exactly as they are.
+        </span>
+      </div>
+    </div>
   )
 }
 
