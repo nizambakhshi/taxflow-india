@@ -11,8 +11,10 @@ import {
   computeProfitLoss, computeBalanceSheet,
   loadOpeningBalances, saveOpeningBalances, currentFY,
   type OpeningBalances, type ProfitLoss, type BalanceSheet,
+  type JournalSlot,
   type LedgerInvoice, type LedgerBill, type LedgerExpense, type LedgerPayment, type LedgerProduct,
 } from '@/lib/ledger'
+import { journalRows, loadJournal, plugProof, type JournalRow } from '@/lib/journal'
 
 const inr0 = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })
 const money = (v: number) => inr0.format(Number(v) || 0)
@@ -42,7 +44,7 @@ const OPENING_FIELDS: { key: keyof OpeningBalances; label: string; hint: string 
 
 /** One statement line: label left, amount right, optional sign colour. */
 function Line({
-  label, value, minus, bold, indent, tone,
+  label, value, minus, bold, indent, tone, tag,
 }: {
   label: string
   value: number
@@ -50,6 +52,8 @@ function Line({
   bold?: boolean
   indent?: boolean
   tone?: 'profit' | 'danger'
+  /** Names where the figure came from, printed beside it — judgement and paper never look alike. */
+  tag?: string
 }) {
   const shownAsMinus = minus || value < 0
   const cls = [
@@ -62,7 +66,10 @@ function Line({
 
   return (
     <div className={cls}>
-      <span>{label}</span>
+      <span>
+        {label}
+        {tag && <em className="ac-tag">{tag}</em>}
+      </span>
       <span className="ac-amt">{shownAsMinus ? '− ' : ''}{money(Math.abs(value))}</span>
     </div>
   )
@@ -101,6 +108,11 @@ export default function FinancialStatementsPage() {
   const [showOpening, setShowOpening] = useState(false)
   const [draftOpening, setDraftOpening] = useState<OpeningBalances>(opening)
   const [openingSaved, setOpeningSaved] = useState(false)
+
+  // The manual journal is judgement kept on this device, so it is read here the same way the
+  // opening balances are — one synchronous read once the organisation is known, then folded into
+  // both derivations below. Drafts never arrive: `journalRows` hands out posted entries only.
+  const [journalLines, setJournalLines] = useState<JournalRow[]>([])
 
   async function loadAll(oid: string) {
     const [inv, bill, exp, pay, prod] = await Promise.all([
@@ -141,6 +153,11 @@ export default function FinancialStatementsPage() {
       setOpening(ob)
       setDraftOpening(ob)
 
+      // The manual journal is kept on this device, not in the document tables, so its rows are read
+      // straight off the register and handed to both derivations — one array, two statements, so the
+      // P&L and the balance sheet cannot read different judgements.
+      setJournalLines(journalRows(loadJournal(oid)))
+
       await loadAll(oid)
       setLoading(false)
     }
@@ -150,28 +167,41 @@ export default function FinancialStatementsPage() {
 
   // P&L for the selected period
   const pl: ProfitLoss = useMemo(
-    () => computeProfitLoss(raw.invoices, raw.bills, raw.expenses, start, end),
-    [raw, start, end],
+    () => computeProfitLoss(raw.invoices, raw.bills, raw.expenses, start, end, journalLines),
+    [raw, start, end, journalLines],
   )
 
   // Cumulative net profit up to the period end (for retained earnings)
   const cumulativeProfit = useMemo(
-    () => computeProfitLoss(raw.invoices, raw.bills, raw.expenses, '0000-01-01', end).netProfit,
-    [raw, end],
+    () => computeProfitLoss(raw.invoices, raw.bills, raw.expenses, '0000-01-01', end, journalLines).netProfit,
+    [raw, end, journalLines],
   )
 
   const bs: BalanceSheet = useMemo(
     () => computeBalanceSheet({
       invoices: raw.invoices, bills: raw.bills, expenses: raw.expenses,
       payments: raw.payments, products: raw.products,
-      opening, cumulativeNetProfit: cumulativeProfit,
+      opening, cumulativeNetProfit: cumulativeProfit, journal: journalLines,
     }, end),
-    [raw, opening, cumulativeProfit, end],
+    [raw, opening, cumulativeProfit, end, journalLines],
   )
 
   const margin = pl.revenue > 0 ? Math.round((pl.netProfit / pl.revenue) * 100) : null
   const stockLines = raw.products.filter(p => p.track_inventory && p.type === 'goods').length
   const plug = Math.abs(bs.balancingReserve)
+  // The register's own arithmetic, read over the rows the balance sheet was actually given — an entry
+  // dated after `end` is on the register but not on this sheet, so it is not in this proof either.
+  // The claim the statements rest on, printed instead of asserted.
+  const proof = plugProof(journalLines.filter(r => r.date && r.date <= end))
+  /** A line the journal moved, printed beside the figure it moved, never merged into its name. */
+  const ofJournal = (label: string, amount?: number) =>
+    amount ? <Line label={label} value={amount} indent tag="from the journal" /> : null
+
+  // A fold keeps only the lines it leaves changed, so a slot that netted to zero is absent rather than
+  // ₹0. The assets note is gated on the asset side actually showing a journal figure — a reversed pair
+  // says nothing about money, so it gets no sentence.
+  const ASSET_SLOTS: JournalSlot[] = ['receivables', 'inventory', 'cash', 'bank', 'fixedAssets', 'otherAsset']
+  const sideMoved = (slots: JournalSlot[]) => slots.some(s => (bs.journal.bySlot[s] ?? 0) !== 0)
 
   function applyPreset(key: string) {
     const now = new Date()
@@ -219,11 +249,14 @@ export default function FinancialStatementsPage() {
       <PageHeader
         eyebrow="Money"
         title="Financial Statements"
-        subtitle={`${orgName} — a profit and loss account and a balance sheet derived from your invoices, bills, expenses and payments. Nothing here is posted to a ledger; it is read from the documents you already entered.`}
+        subtitle={`${orgName} — a profit and loss account and a balance sheet derived from your invoices, bills, expenses and payments${journalLines.length > 0 ? ', and from the manual journal postings kept on this device' : ''}. Nothing here is posted to a ledger; it is read from the documents you already entered.`}
         actions={
-          <Button variant="subtle" icon="scale" onClick={() => { setDraftOpening(opening); setShowOpening(true) }}>
-            Opening balances
-          </Button>
+          <>
+            <Button variant="subtle" icon="scale" onClick={() => { setDraftOpening(opening); setShowOpening(true) }}>
+              Opening balances
+            </Button>
+            <Button variant="ghost" icon="journal" href="/journal">Journal register</Button>
+          </>
         }
         right={openingSaved ? <span className="ac-saved"><Icon name="check" size={13} />Saved to this browser</span> : undefined}
       />
@@ -277,21 +310,48 @@ export default function FinancialStatementsPage() {
 
           <GroupLabel>Income</GroupLabel>
           <Line label="Sales revenue (net of tax)" value={pl.revenue} />
+          {ofJournal('of which the journal stated', pl.journal.bySlot.revenue)}
           <GroupLabel>Direct costs</GroupLabel>
           <Line label="Purchases (net of tax)" value={pl.purchases} minus />
+          {ofJournal('of which the journal stated', pl.journal.bySlot.purchases)}
           <Line label="Gross profit" value={pl.grossProfit} bold tone="profit" />
 
           <GroupLabel>Operating expenses</GroupLabel>
           {pl.expensesByCategory.length === 0 ? (
             <div className="ac-empty-line">No expenses in this period.</div>
-          ) : pl.expensesByCategory.map(e => (
-            <Line key={e.label} label={e.label} value={e.amount} indent minus />
-          ))}
+          ) : pl.expensesByCategory.map(e => {
+            const fromJournal = pl.journal.expenseLines.find(x => x.label === e.label)?.amount
+            return (
+              <div key={e.label}>
+                <Line label={e.label} value={e.amount} indent minus tag={fromJournal === undefined ? undefined : 'partly from the journal'} />
+                {ofJournal('of which the journal stated', fromJournal)}
+              </div>
+            )
+          })}
           <Line label="Total expenses" value={pl.totalExpenses} minus />
 
           <div className="ac-final">
             <Line label="NET PROFIT" value={pl.netProfit} bold tone="profit" />
           </div>
+
+          {pl.journal.entries > 0 && (
+            <div className="ac-foot">
+              {pl.journal.touched === 0 ? (
+                <>
+                  {pl.journal.entries} journal entr{pl.journal.entries === 1 ? 'y' : 'ies'} ({pl.journal.legs} legs) fold into this
+                  period and answer each other — every line they name nets back to where it stood, so no figure here moved.
+                  Read or write them on the <Link href="/journal">journal register</Link>.
+                </>
+              ) : (
+                <>
+                  {pl.journal.entries} journal entr{pl.journal.entries === 1 ? 'y' : 'ies'} ({pl.journal.legs} legs) moved{' '}
+                  {pl.journal.touched === 1 ? 'a line' : `${pl.journal.touched} lines`} in this
+                  period — they are the shop&apos;s own words, not documents, and each one balanced on the way in.
+                  Read or write them on the <Link href="/journal">journal register</Link>.
+                </>
+              )}
+            </div>
+          )}
         </Card>
       )}
 
@@ -301,19 +361,28 @@ export default function FinancialStatementsPage() {
             <div className="ac-panel-title">Assets</div>
             <div className="ac-panel-sub">As on {formatDateIN(end)}{opening.as_of ? ` · books opened ${formatDateIN(opening.as_of)}` : ''}</div>
             <Line label="Sundry debtors (receivables)" value={bs.receivables} />
-            {bs.openingReceivables > 0 && (
-              <Line label="of which opened with the books" value={bs.openingReceivables} indent />
-            )}
+            {ofJournal('of which the journal stated', bs.journal.bySlot.receivables)}
             <Line label="Inventory (stock × cost)" value={bs.inventory} />
+            {ofJournal('of which the journal stated', bs.journal.bySlot.inventory)}
             <Line label="Cash & bank (derived)" value={bs.cash} tone="danger" />
+            {ofJournal('of which the journal stated', bs.journal.bySlot.cash)}
             {bs.bank > 0 && <Line label="Cash at bank (opening)" value={bs.bank} />}
+            {ofJournal('of which the journal stated', bs.journal.bySlot.bank)}
             <Line label="Fixed assets" value={bs.fixedAssets} />
+            {ofJournal('of which the journal stated', bs.journal.bySlot.fixedAssets)}
+            {bs.otherAssets !== 0 && <Line label="Other assets" value={bs.otherAssets} tag="from the journal" />}
             <div className="ac-final">
               <Line label="TOTAL ASSETS" value={bs.totalAssets} bold />
             </div>
             <div className="ac-foot">
               {stockLines ? `${stockLines} stock line(s) valued at purchase price.` : 'No stock tracked, so inventory is nil.'}
               {bs.openingReceivables > 0 && ' A payment grows cash but cannot reduce the opening receivable — the engine will not guess which pre-books paper it settled; a debt you have settled belongs on an invoice, not in the opening.'}
+              {sideMoved(ASSET_SLOTS) && (
+                <>
+                  {' '}{bs.journal.entries} journal {bs.journal.entries === 1 ? 'entry has' : 'entries have'} renamed money on this side — the{' '}
+                  <Link href="/journal">journal register</Link>{' holds the words behind each figure.'}
+                </>
+              )}
             </div>
           </Card>
 
@@ -324,14 +393,20 @@ export default function FinancialStatementsPage() {
             {bs.openingPayables > 0 && (
               <Line label="of which opened with the books" value={bs.openingPayables} indent />
             )}
+            {ofJournal('of which the journal stated', bs.journal.bySlot.payables)}
             <Line label="Outstanding expenses" value={bs.outstandingExpenses} />
+            {ofJournal('of which the journal stated', bs.journal.bySlot.outstandingExpenses)}
             <Line label="GST payable" value={bs.gstLiability} />
+            {ofJournal('of which the journal stated', bs.journal.bySlot.gstLiability)}
             <Line label="Loans" value={bs.loans} />
+            {ofJournal('of which the journal stated', bs.journal.bySlot.loans)}
+            {bs.otherLiabilities !== 0 && <Line label="Other liabilities" value={bs.otherLiabilities} tag="from the journal" />}
             <Line label="Total liabilities" value={bs.totalLiabilities} bold />
 
             <GroupLabel>Owner&apos;s funds</GroupLabel>
             <Line label="Opening capital" value={bs.openingCapital} />
             <Line label="Retained earnings (cumulative profit)" value={bs.retainedEarnings} tone="danger" />
+            {bs.journalCapital !== 0 && <Line label="Capital the journal stated" value={bs.journalCapital} tag="from the journal" />}
             <Line label="Capital account (derived)" value={bs.balancingReserve} tone="danger" />
             <Line label="Total owner's funds" value={bs.ownersFunds} bold />
 
@@ -344,6 +419,18 @@ export default function FinancialStatementsPage() {
                   : 'Assets = Liab. + Funds'}
               </span>
             </div>
+            {bs.journal.entries > 0 && (
+              <div className="ac-foot">
+                {proof.ok ? (
+                  <>The {proof.entries} journal {proof.entries === 1 ? 'entry' : 'entries'} this sheet read balanced to the paisa —{' '}
+                    {money(proof.debits)} on each side — so the derived capital line did not move by a rupee. A journal renames money; it does not explain it.</>
+                ) : (
+                  <>The register handed rows whose debits ({money(proof.debits)}) and credits ({money(proof.credits)}) differ by{' '}
+                    {money(Math.abs(proof.residual))}. That difference is exactly what the derived capital line has absorbed — check the{' '}
+                    <Link href="/journal">journal register</Link>.</>
+                )}
+              </div>
+            )}
           </Card>
         </div>
       )}
@@ -455,6 +542,11 @@ export default function FinancialStatementsPage() {
         .ac-line-bold { padding: 10px 0; font-size: 14px; font-weight: 700; color: var(--ink);
           border-top: 1px solid var(--line); }
         .ac-line-indent > span:first-child { padding-left: 12px; }
+        /* Names the source of a figure — a journal line never reads like a document line. */
+        .ac-tag { display: inline-block; margin-left: 7px; padding: 1px 6px; border: 1px solid var(--line);
+          border-radius: 999px; background: var(--surface-2); font-style: normal; font-size: 10px;
+          font-weight: 600; letter-spacing: 0.02em; color: var(--faint); white-space: nowrap;
+          vertical-align: 1px; }
         .ac-amt { font-variant-numeric: tabular-nums; white-space: nowrap; }
         .ac-pos { color: var(--green); }
         .ac-neg { color: var(--red); }

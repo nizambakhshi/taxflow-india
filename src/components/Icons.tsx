@@ -340,6 +340,13 @@ const P: Record<string, React.ReactNode> = {
     <line x1="7.6" y1="14.2" x2="16.4" y2="14.2" />
     <circle cx="10.6" cy="17.4" r="0.9" />
   </>),
+  // A T-account drawn on a leaf: debit on the left arm, credit on the right — the journal's own shape.
+  journal: (<>
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+    <polyline points="14 2 14 8 20 8" />
+    <line x1="12" y1="11" x2="12" y2="19.5" />
+    <line x1="8" y1="13" x2="16" y2="13" />
+  </>),
 }
 
 export type IconName = keyof typeof P

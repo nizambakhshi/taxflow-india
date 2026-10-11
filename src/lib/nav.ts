@@ -88,6 +88,7 @@ export const NAV_ITEMS: NavSection[] = [
       { label: 'Statutory Registers', href: '/reports/registers', icon: 'clipboard' },
       { label: 'Account Ledger', href: '/ledger', icon: 'book' },
       { label: 'Financial Statements', href: '/accounting', icon: 'scale' },
+      { label: 'Journal Entries', href: '/journal', icon: 'journal' },
       { label: 'Cost Centres', href: '/cost-centres', icon: 'layers' },
       { label: 'Projects & Time', href: '/projects', icon: 'briefcase' },
       { label: 'Payroll & Salary', href: '/payroll', icon: 'users' },

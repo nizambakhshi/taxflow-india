@@ -673,6 +673,26 @@ export function buildActionCommands(): Command[] {
       badge: 'Action',
       keywords: 'audit trail log who changed what when history events refused writes integrity unbroken checksum evidence compliance control period locks seals releases notes trail tamper edit history',
     },
+    {
+      id: 'action:journal-entry',
+      kind: 'action',
+      label: 'Strike a journal entry',
+      sublabel: 'Move a figure between the shop\'s own heads — the statements read it, the plug does not move',
+      href: '/journal?new=1',
+      icon: 'journal',
+      badge: 'Action',
+      keywords: 'journal entry voucher manual posting debit credit pass journal contra adjustment reclassification transfer head ledger account name double entry bookkeeping accrual provision drawings capital opening balance statements profit loss balance sheet must balance draft post reverse',
+    },
+    {
+      id: 'action:journal-heads',
+      kind: 'action',
+      label: 'Name a journal head',
+      sublabel: 'The shop\'s own name for a line of the statements',
+      href: '/journal?tab=heads',
+      icon: 'tag',
+      badge: 'Action',
+      keywords: 'journal head chart of accounts name register declare statement line profit loss balance sheet asset liability income expense closing reopening starter chart delete usage',
+    },
   ]
 }
 

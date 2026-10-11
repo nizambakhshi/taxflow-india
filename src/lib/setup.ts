@@ -40,9 +40,9 @@ export const SETUP_VERSION = 1
 
 // ── the shape ─────────────────────────────────────────────────────────────────
 
-export type SeriesKind = 'invoice' | 'quotation' | 'challan' | 'sales_order' | 'purchase_order'
+export type SeriesKind = 'invoice' | 'quotation' | 'challan' | 'sales_order' | 'purchase_order' | 'journal'
 
-export const SERIES_KINDS: SeriesKind[] = ['invoice', 'quotation', 'challan', 'sales_order', 'purchase_order']
+export const SERIES_KINDS: SeriesKind[] = ['invoice', 'quotation', 'challan', 'sales_order', 'purchase_order', 'journal']
 
 /** The three dials of a document number: what it starts with, how wide the count is, and
  *  whether the financial year sits inside it (Rule: every Indian series resets each April). */
@@ -92,6 +92,7 @@ export const DEFAULT_SERIES: Record<SeriesKind, SeriesFormat> = {
   challan: { prefix: 'DC', pad: 4, include_fy: true },
   sales_order: { prefix: 'SO', pad: 4, include_fy: true },
   purchase_order: { prefix: 'PO', pad: 4, include_fy: true },
+  journal: { prefix: 'JR', pad: 4, include_fy: true },
 }
 
 export const SERIES_KIND_LABEL: Record<SeriesKind, { label: string; plural: string; href: string }> = {
@@ -100,6 +101,7 @@ export const SERIES_KIND_LABEL: Record<SeriesKind, { label: string; plural: stri
   challan: { label: 'Delivery challan', plural: 'Delivery challans', href: '/challans' },
   sales_order: { label: 'Sales order', plural: 'Sales orders', href: '/sales-orders' },
   purchase_order: { label: 'Purchase order', plural: 'Purchase orders', href: '/purchase-orders' },
+  journal: { label: 'Journal entry', plural: 'Journal entries', href: '/journal' },
 }
 
 // ── small helpers, local so this register owes nothing to another ─────────────

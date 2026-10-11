@@ -243,15 +243,15 @@ function BusinessPageInner() {
     const res = writeSeries(orgId, editRow)
     if (!res.ok) { setSeriesProblems(res.problems); return }
     setStore(res.store)
-    const label = SERIES_KIND_LABEL[editRow.kind].label
+    const pluralLabel = SERIES_KIND_LABEL[editRow.kind].plural
     setEditRow(null)
-    flash(`${label}s now wear ${res.store.series.find(s => s.kind === editRow.kind)?.prefix}… — from the next number onwards.`)
+    flash(`${pluralLabel} now wear ${res.store.series.find(s => s.kind === editRow.kind)?.prefix}… — from the next number onwards.`)
   }
 
   function revertSeries(kind: SeriesKind) {
     if (!orgId) return
     setStore(clearSeries(orgId, kind))
-    flash(`${SERIES_KIND_LABEL[kind].label}s are back to the shape they were born with.`)
+    flash(`${SERIES_KIND_LABEL[kind].plural} are back to the shape they were born with.`)
   }
 
   function exportSeries() {

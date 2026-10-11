@@ -12,6 +12,7 @@ import {
   type AskAnswer,
   type AskDataset,
 } from '@/lib/ask'
+import { journalRows, loadJournal } from '@/lib/journal'
 
 // Supabase returns at most 1000 rows per call, so walk pages up to a cap. The
 // cap keeps the browser responsive on a busy book and the engine is told when
@@ -94,6 +95,9 @@ export default function AskMyBooksPage() {
           bills: bills.rows,
           expenses: exp.rows,
           payments: pay.rows,
+          // The register this device keeps, read exactly the way /accounting reads it: one array of
+          // posted legs, so a spoken answer and the printed sheet cannot diverge on a profit.
+          journal: journalRows(loadJournal(oid)),
           truncated: inv.truncated || bills.truncated || exp.truncated || pay.truncated,
         })
       } catch (e: any) {
@@ -114,6 +118,7 @@ export default function AskMyBooksPage() {
   }
 
   const docCount = data.invoices.length + data.bills.length + data.expenses.length + data.payments.length
+  const readJournal = data.journal?.length ?? 0
   const maxBar = answer?.series.length ? Math.max(...answer.series.map(p => Math.abs(p.value)), 1) : 1
 
   return (
@@ -121,7 +126,7 @@ export default function AskMyBooksPage() {
       <PageHeader
         eyebrow="AI"
         title="Ask my books"
-        subtitle="Ask in plain English. Answers are computed here in your browser from your own invoices, bills, expenses and payments — nothing is sent to a server or a language model."
+        subtitle={`Ask in plain English. Answers are computed here in your browser from your own invoices, bills, expenses and payments${readJournal > 0 ? ', and from the journal postings your financial statements read' : ''} — nothing is sent to a server or a language model.`}
       />
 
       {error && (

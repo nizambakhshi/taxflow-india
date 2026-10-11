@@ -5,7 +5,7 @@
 // them, which is what a business owner needs before acting on a number.
 
 import { formatINR } from '@/lib/gst-engine'
-import { computeProfitLoss } from '@/lib/ledger'
+import { computeProfitLoss, type LedgerJournalRow } from '@/lib/ledger'
 
 type Row = Record<string, any>
 
@@ -14,6 +14,10 @@ export interface AskDataset {
   bills: Row[]
   expenses: Row[]
   payments: Row[]
+  /** The journal legs the statements read — the same rows `/accounting` is handed, so a question
+   *  answered here cannot print a different profit from the sheet printed there. Optional: a shop
+   *  with no register answers from its documents alone, exactly as before. */
+  journal?: LedgerJournalRow[]
   // True when the page hit its row cap and the figures below are incomplete.
   truncated?: boolean
 }
@@ -805,6 +809,23 @@ function askPurchases(ctx: Ctx): AskAnswer {
   })
 }
 
+/** A journal expense head is judgement, not a bill. It is never folded into the document rows an
+ *  expense answer sums; the answer says the statements carry that extra line, and names it — so the
+ *  two figures can differ on purpose, in print, rather than by accident. */
+function journalExpenseCaveat(ctx: Ctx): string | null {
+  const rows = (ctx.data.journal ?? []).filter(r => r.slot === 'expense' && inRange(r.date, ctx.period.start, ctx.period.end))
+  if (rows.length === 0) return null
+  const by = new Map<string, number>()
+  for (const r of rows) by.set(r.label, (by.get(r.label) ?? 0) + r.signed)
+  const parts = [...by.entries()]
+    .filter(([, v]) => Math.round(v * 100) !== 0)
+    .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+    .slice(0, 3)
+    .map(([label, v]) => `${label} ${v >= 0 ? 'adds' : 'reduces by'} ${money(Math.abs(v))}`)
+  if (parts.length === 0) return null
+  return `Your financial statements also carry journal expense heads for this period — ${parts.join(', ')} — those are judgement rather than a bill, so they are not counted in the figures above.`
+}
+
 function askExpenses(ctx: Ctx): AskAnswer {
   const rows = expenseRows(ctx)
   const net = sumBy(rows, r => expenseNet(r))
@@ -824,7 +845,8 @@ function askExpenses(ctx: Ctx): AskAnswer {
     series: seriesFor(ctx.period, (s, e) => sumBy(expenseRows(ctx, s, e), r => expenseNet(r))),
     seriesCaption: 'Expenses',
     comparison: cmp,
-    caveats: ['Expenses are counted net of GST, since the GST portion is either ITC or a liability, not cost.'],
+    caveats: ['Expenses are counted net of GST, since the GST portion is either ITC or a liability, not cost.']
+      .concat([journalExpenseCaveat(ctx)].filter((c): c is string => !!c)),
     links: [{ label: 'Expenses', href: '/expenses' }],
   })
 }
@@ -841,18 +863,23 @@ function askExpenseBreakdown(ctx: Ctx): AskAnswer {
     sentence: `Your ${money(net)} of expenses in ${ctx.period.label} splits as ${grouped.slice(0, 4).map(g => `${g.label} ${money(g.value)}`).join(', ')}${grouped.length > 4 ? ', and the rest elsewhere' : ''}.`,
     rows: grouped.map(g => ({ ...g, meta: `${net > 0 ? ((g.value / net) * 100).toFixed(1) : '0'}% of spend` })),
     rowsCaption: 'Biggest categories first',
-    caveats: ['Expenses are counted net of GST.'],
+    caveats: ['Expenses are counted net of GST.']
+      .concat([journalExpenseCaveat(ctx)].filter((c): c is string => !!c)),
     links: [{ label: 'Expenses', href: '/expenses' }],
   })
 }
 
 function askProfit(ctx: Ctx): AskAnswer {
+  // One array, every window: the fold reads each row's own date, so the journal figure answered for
+  // a period is the same figure the statement prints for that period — never a second arithmetic.
+  const journal = ctx.data.journal ?? []
   const pl = computeProfitLoss(
     saleInvoices(ctx) as any,
     purchaseBills(ctx) as any,
     expenseRows(ctx) as any,
     ctx.period.start,
     ctx.period.end,
+    journal,
   )
   const prev = previousPeriod(ctx.period)
   const prevPL = computeProfitLoss(
@@ -861,8 +888,10 @@ function askProfit(ctx: Ctx): AskAnswer {
     expenseRows(ctx, prev.start, prev.end) as any,
     prev.start,
     prev.end,
+    journal,
   )
   const margin = pl.revenue > 0 ? (pl.netProfit / pl.revenue) * 100 : null
+  const fromJournal = pl.journal.entries > 0
   return answer(ctx, {
     intent: 'profit',
     headline: 'Net profit',
@@ -876,6 +905,7 @@ function askProfit(ctx: Ctx): AskAnswer {
       purchaseBills(ctx, s, e) as any,
       expenseRows(ctx, s, e) as any,
       s, e,
+      journal,
     ).netProfit),
     seriesCaption: 'Net profit',
     comparison: {
@@ -884,8 +914,12 @@ function askProfit(ctx: Ctx): AskAnswer {
       label: ctx.period.label,
       previousLabel: prev.label,
     },
-    caveats: ['Profit here is sales minus purchases minus expenses. It does not yet value opening/closing stock, so it is a management view, not a filed P&L.'],
-    links: [{ label: 'Financial statements', href: '/accounting' }, { label: 'Reports', href: '/reports' }],
+    caveats: ['Profit here is sales minus purchases minus expenses. It does not yet value opening/closing stock, so it is a management view, not a filed P&L.']
+      .concat(fromJournal
+        ? [`This period also reads ${pl.journal.entries} journal ${pl.journal.entries === 1 ? 'posting' : 'postings'} — the same rows the financial statements fold, tagged "from the journal".`]
+        : []),
+    links: [{ label: 'Financial statements', href: '/accounting' }, { label: 'Reports', href: '/reports' }]
+      .concat(fromJournal ? [{ label: 'Journal register', href: '/journal' }] : []),
   })
 }
 
@@ -1174,7 +1208,7 @@ export const SUGGESTED_QUESTIONS = [
 ]
 
 export function emptyDataset(): AskDataset {
-  return { invoices: [], bills: [], expenses: [], payments: [] }
+  return { invoices: [], bills: [], expenses: [], payments: [], journal: [] }
 }
 
 // "What did Sharma buy" and "how much did I pay Gujarat Papers" name a party and

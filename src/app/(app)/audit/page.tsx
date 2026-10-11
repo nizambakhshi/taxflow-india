@@ -51,10 +51,19 @@ const TABS: { value: Tab; label: string }[] = [
 // them rather than let "period lock" imply a coverage the wiring has not earned.
 const GUARDED: { href: string; label: string; live: boolean }[] = [
   { href: '/invoices/new', label: 'New invoice', live: true },
+  { href: '/journal', label: 'Journal entry', live: true },
   { href: '/bills/new', label: 'New purchase bill', live: false },
   { href: '/payments', label: 'Payment received', live: false },
   { href: '/gst/gstr1', label: 'GSTR-1 filing', live: false },
 ]
+
+/** The doors a seal actually closes, named straight off `GUARDED` — a sentence on this page can never
+ *  claim a coverage the wiring has not earned, and a new door shows up in the copy by itself. */
+function sealedDoors(): string {
+  const names = GUARDED.filter(d => d.live).map(d => `the ${d.label.toLowerCase()}`)
+  if (names.length === 0) return 'no path yet'
+  return names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+}
 
 function stamp(isoStr: string): string {
   if (!isoStr) return '—'
@@ -172,7 +181,7 @@ function AuditPageInner() {
     setSeal(null)
     setSealError('')
     setTab('seals')
-    setNotice({ msg: `The period is sealed. Documents dated inside it are now refused at the invoice form.`, bad: false })
+    setNotice({ msg: `The period is sealed. A write dated inside it is now refused at ${sealedDoors()}, and each refusal lands on the trail.`, bad: false })
   }
 
   function runRelease() {
@@ -429,7 +438,7 @@ function AuditPageInner() {
               </div>
               <ul className="au-preview-list">
                 <li>A standing seal on the period<span className="au-preview-take">a locked window</span></li>
-                <li>New invoices dated inside it are refused at the form<span className="au-preview-take">lock</span></li>
+                <li>A write dated inside it is refused at {sealedDoors()}<span className="au-preview-take">lock</span></li>
                 <li>A line on the trail<span className="au-preview-take">+1 event</span></li>
               </ul>
             </div>

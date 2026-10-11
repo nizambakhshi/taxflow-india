@@ -29,7 +29,7 @@
 //    when a file came from a shape this build does not fully understand.
 //  * **A damaged page does not void the book.** Each register carries a FNV-1a checksum over its
 //    own serialised content. A block that does not match is refused and named; the other
-//    restorable registers — twenty-eight in all — still restore. It is a checksum against truncation and hand-editing, not a
+//    restorable registers — twenty-nine in all — still restore. It is a checksum against truncation and hand-editing, not a
 //    signature — nothing here proves who wrote the file, and the page prints "checked" rather than
 //    implying a security property it does not have.
 //
@@ -55,6 +55,7 @@ import * as gstr4 from '@/lib/gstr4'
 import * as gstr9 from '@/lib/gstr9'
 import { isInvoiceTemplate, loadInvoiceTemplate, saveInvoiceTemplate } from '@/lib/invoice-template'
 import { loadJob, saveJob } from '@/lib/jobwork'
+import { loadJournal, saveJournal } from '@/lib/journal'
 import { loadOpeningBalances, saveOpeningBalances } from '@/lib/ledger'
 import { loadStore, saveStore } from '@/lib/orderflow'
 import { loadUpiSettings, saveUpiSettings } from '@/lib/payments'
@@ -442,6 +443,28 @@ export const REGISTERS: RegisterSpec[] = [
     verify: (orgId) => { const s = loadAudit(orgId); return s.seals.length + s.events.length },
   },
   {
+    id: 'journal',
+    prefix: 'taxflow:journal:',
+    label: 'Journal register',
+    what: 'The shop\'s own heads — each naming the statement line it moves — and every manual entry struck against them: drafts, postings, reversals, the number each carried and the series that gave it',
+    unit: 'row',
+    group: 'workpapers',
+    module: 'src/lib/journal.ts',
+    pageLabel: 'Journal entries',
+    pageHref: '/journal',
+    encoding: 'json',
+    count: (v) => arrCount(v, 'heads') + arrCount(v, 'entries'),
+    detail: (v) => `${plural(arrCount(v, 'heads'), 'head')} · ${plural(arrCount(v, 'entries'), 'posting')}`,
+    // The register reads back through `parseJournal`, which drops a leg naming a head the file never
+    // carried. A wrong-version file would restore as a shorter register and print as a success, so
+    // the two lists are required by shape before anything is written.
+    accepts: (v) => (isObj(v) && Array.isArray(field(v, 'heads')) && Array.isArray(field(v, 'entries'))
+      ? null
+      : 'not a journal register — the head list and the entry list are both missing'),
+    write: (orgId, v) => saveJournal(orgId, v as Parameters<typeof saveJournal>[1]),
+    verify: (orgId) => { const s = loadJournal(orgId); return s.heads.length + s.entries.length },
+  },
+  {
     id: 'gstr9',
     prefix: 'taxflow:gstr9:',
     label: 'GSTR-9 / 9C workpaper',
@@ -566,7 +589,7 @@ export const REGISTERS: RegisterSpec[] = [
     group: 'settings',
     module: 'src/lib/ledger.ts',
     pageLabel: 'Financial statements',
-    pageHref: '/reports/financials',
+    pageHref: '/accounting',
     encoding: 'json',
     // A stored zero is the same answer as no entry, so only figures that say something count.
     // `as_of` joined in R3-2 and is a date, not a rupee — it counts when it stands.
