@@ -13,6 +13,8 @@ import {
 import { INDIAN_STATES } from '@/lib/constants'
 import { GST_RATES } from '@/lib/gst-rates'
 import { createPurchaseBill } from '@/lib/create-bill'
+import { askSeal } from '@/lib/audit'
+import SealNotice from '@/components/SealNotice'
 import {
   extractBill,
   deriveTaxSplit,
@@ -322,6 +324,15 @@ export default function ScanBillPage() {
     if (!valid.length) { setError('Add at least one line with an item, quantity and rate.'); return }
     if (!billDate) { setError('Bill date is required.'); return }
 
+    // A scanned receipt that lands as an *expense* is typed straight into the expenses table — no
+    // shared creator carries the seal for it, so this page is that door. The scanned *bill* half
+    // needs no ask here: `createPurchaseBill` asks the seal itself, throws the sentence, and the
+    // catch at the bottom of this function prints it.
+    if (saveMode === 'expense') {
+      const stop = askSeal(orgId, { date: billDate, target: 'expense', ref: billNumber || 'scanned receipt' })
+      if (stop) { setError(stop.why); return }
+    }
+
     setSaving(true)
     setError('')
 
@@ -606,6 +617,7 @@ export default function ScanBillPage() {
               <div>
                 <label className="sb-label">Bill date <Chip bill={parsed} field="bill_date" /></label>
                 <input className="tf-input" type="date" value={billDate} onChange={e => setBillDate(e.target.value)} />
+                <SealNotice orgId={orgId} date={billDate} />
               </div>
               <div>
                 <label className="sb-label">Place of supply</label>

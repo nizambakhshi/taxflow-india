@@ -13,6 +13,7 @@ import {
 import { INDIAN_STATES } from '@/lib/constants'
 import { GST_RATES } from '@/lib/gst-rates'
 import { createDebitNote } from '@/lib/creditnote'
+import SealNotice from '@/components/SealNotice'
 
 const inputStyle = {
   width: '100%', padding: '8px 10px',
@@ -374,6 +375,7 @@ function DebitNotesPageInner() {
                 <label style={labelStyle}>Debit Note Date *</label>
                 <input style={inputStyle} type="date" value={debitDate}
                   onChange={e => setDebitDate(e.target.value)} />
+                <SealNotice orgId={orgId} date={debitDate} />
               </div>
               <div>
                 <label style={labelStyle}>Reason *</label>

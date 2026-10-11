@@ -17,10 +17,14 @@
 //    that the `seq` numbers run 1..n with no gap, duplicate or reorder. That is what a
 //    hand-edit leaves behind. It cannot say *who* held the keyboard; only the actor each
 //    write path chose to stamp is as good as that write path's own login.
-//  * **The seal only closes the doors that ask it.** Today the invoice creation form asks
-//    `sealGuard` before it saves, so a document dated in a sealed month is refused and the
-//    attempt is logged here. Every other path is printed by name, not implied. A lock that
-//    covers some doors and says nothing is worse than a smaller lock that is honest.
+//  * **The seal only closes the doors that ask it.** Since R3-5 the question is asked by the
+//    shared writers — `createInvoice`, `createPurchaseBill`, `createNote` — so an invoice, a bill,
+//    a credit or debit note, a POS sale, a recurring catch-up, a converted order or challan, a
+//    Tally voucher or an offline replay dated inside a sealed window is refused before a sequence
+//    number is spent on it, and the attempt is logged here. The paths that type straight into a
+//    table (expenses, payments, cancelling or marking a document paid) ask from their own page.
+//    Anything still not wired is printed below by name, not implied: a lock that quietly covers
+//    some doors is worse than a smaller lock that says which ones it covers.
 
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
@@ -47,22 +51,56 @@ const TABS: { value: Tab; label: string }[] = [
   { value: 'trail', label: 'The trail' },
 ]
 
-// The doors, named. A seal is only as strong as the paths that consult it, so the page prints
-// them rather than let "period lock" imply a coverage the wiring has not earned.
-const GUARDED: { href: string; label: string; live: boolean }[] = [
-  { href: '/invoices/new', label: 'New invoice', live: true },
-  { href: '/journal', label: 'Journal entry', live: true },
-  { href: '/bills/new', label: 'New purchase bill', live: false },
-  { href: '/payments', label: 'Payment received', live: false },
-  { href: '/gst/gstr1', label: 'GSTR-1 filing', live: false },
+// The doors, named. A seal is only as strong as the paths that consult it, so the page prints them
+// rather than let "period lock" imply a coverage the wiring has not earned.
+//
+// `by` says *where* the question is asked, which matters to a shop reading this list: a door marked
+// **the writer** is closed inside the shared creator (`createInvoice`, `createPurchaseBill`,
+// `createNote`), so every page that saves through it inherits the seal — including pages that never
+// mention a seal. A door marked **its own engine** is closed inside that register's library rather
+// than on the form above it, so the sentence a refusal prints is the engine's, not the page's. A door
+// marked **this page** types straight into its table, so the page carries the door itself. Since R3-5
+// the writer covers most of the money paths, and the residue is named here.
+const GUARDED: { href: string; label: string; by: 'the writer' | 'its own engine' | 'this page' | null }[] = [
+  { href: '/invoices/new', label: 'New invoice', by: 'the writer' },
+  { href: '/pos', label: 'POS counter sale', by: 'the writer' },
+  { href: '/recurring', label: 'Recurring catch-up bill', by: 'the writer' },
+  { href: '/offline', label: 'Outbox replay', by: 'the writer' },
+  { href: '/sales-orders', label: 'Sales order → invoice', by: 'the writer' },
+  { href: '/purchase-orders', label: 'Purchase order → bill', by: 'the writer' },
+  { href: '/challans', label: 'Challan → invoice', by: 'the writer' },
+  { href: '/tally', label: 'Tally import', by: 'the writer' },
+  { href: '/ai/scan-bill', label: 'Scanned purchase bill', by: 'the writer' },
+  { href: '/bills', label: 'New purchase bill', by: 'the writer' },
+  { href: '/credit-notes', label: 'Credit note', by: 'the writer' },
+  { href: '/debit-notes', label: 'Debit note', by: 'the writer' },
+  { href: '/journal', label: 'Journal entry', by: 'its own engine' },
+  { href: '/expenses', label: 'Expense entry', by: 'this page' },
+  { href: '/payments', label: 'Payment received', by: 'this page' },
+  { href: '/invoices', label: 'Invoice paid stamp / cancel', by: 'this page' },
+  { href: '/bills', label: 'Bill paid stamp / cancel', by: 'this page' },
+  { href: '/quotations', label: 'Quotation → invoice', by: 'this page' },
+  // The scan page has two halves and they are guarded by two different hands: the bill goes through
+  // `createPurchaseBill`, the receipt kept as an expense is typed into `expenses` by the page.
+  { href: '/ai/scan-bill', label: 'Scanned receipt kept as an expense', by: 'this page' },
+  // Open on purpose, and printed as open. A master record (customer, vendor, product, settings)
+  // carries no date and moves no rupee on a statement, so a period seal has nothing to close it.
+  { href: '/gst/gstr1', label: 'GSTR-1 filing status', by: null },
+  { href: '/customers', label: 'Master records', by: null },
 ]
 
-/** The doors a seal actually closes, named straight off `GUARDED` — a sentence on this page can never
- *  claim a coverage the wiring has not earned, and a new door shows up in the copy by itself. */
+/** How many doors actually ask, in the shop's own terms — a count is honest at thirteen in a way a
+ *  comma-separated sentence stops being. */
+const doorsAsking = GUARDED.filter(d => d.by).length
+const doorsWriter = GUARDED.filter(d => d.by === 'the writer').length
+const doorsEngine = GUARDED.filter(d => d.by === 'its own engine').length
+const doorsPage = GUARDED.filter(d => d.by === 'this page').length
+
+/** The doors a seal actually closes, counted off `GUARDED` — a sentence on this page can never claim
+ *  a coverage the wiring has not earned, and a new door changes the count by itself. */
 function sealedDoors(): string {
-  const names = GUARDED.filter(d => d.live).map(d => `the ${d.label.toLowerCase()}`)
-  if (names.length === 0) return 'no path yet'
-  return names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+  if (doorsAsking === 0) return 'no path yet'
+  return `the ${doorsAsking} paths listed on the seals page`
 }
 
 function stamp(isoStr: string): string {
@@ -286,16 +324,20 @@ function AuditPageInner() {
           <SectionTitle icon="lock">What a seal stops</SectionTitle>
           <ul className="au-doors">
             {GUARDED.map(d => (
-              <li key={d.href} className={d.live ? 'is-live' : 'is-dormant'}>
-                <span className={`au-door-dot ${d.live ? 'is-live' : 'is-dormant'}`} />
+              <li key={`${d.href}#${d.label}`} className={d.by ? 'is-live' : 'is-dormant'}>
+                <span className={`au-door-dot ${d.by ? 'is-live' : 'is-dormant'}`} />
                 <Link href={d.href} className="au-door-link">{d.label}</Link>
-                <span className="au-door-tag">{d.live ? 'asks the seal' : 'not yet wired'}</span>
+                <span className="au-door-tag">{d.by ?? 'not wired'}</span>
               </li>
             ))}
           </ul>
           <p className="au-bounds-note">
-            Only the paths marked <em>asks the seal</em> consult it before they save — and when one is stopped, the attempt is
-            written here as a <strong>Write refused</strong> event, so the edit that never happened is still on the record.
+            {doorsAsking} of {GUARDED.length} paths consult the seal before they save, and the list says where each one does it:{' '}
+            <strong>{doorsWriter}</strong> are closed inside the shared writers, so any page that saves an invoice, a bill or a note
+            through them inherits the door; <strong>{doorsEngine}</strong> is closed inside its own register library; <strong>{doorsPage}</strong>{' '}
+            type straight into their own table and carry it themselves.
+            When a path is stopped, the attempt is written here as a <strong>Write refused</strong> event, so the edit that never
+            happened is still on the record — and the paths still open are named above rather than left out of the list.
           </p>
           <p className="au-bounds-note">
             A seal is also <em>read</em>, not only refused. The <Link href="/gst/filings" className="au-door-link">filings register</Link> prints a

@@ -7,10 +7,18 @@
 // inside it. The counter itself stays exactly where it always was — the
 // `invoice_sequences` row per org per FY — so changing the shape never re-issues
 // a number: the row counts, the register dresses.
+//
+// Since R3-5 this path also *asks the seal* before it does anything else
+// (`requireOpenSeal`, audit.ts). Every route that can raise an invoice — the form,
+// the POS counter, a recurring catch-up, a quotation or challan being converted, a
+// Tally voucher, an offline replay — comes through this one door, so a date inside
+// a sealed period is refused here rather than at whichever page happened to host
+// the button. The refusal is on the trail, and the caller shows the sentence.
 
 import { getFinancialYear } from '@/lib/gst-engine'
 import { recordSale } from '@/lib/batches'
 import { composeNumber, loadSetup, resolveSeries } from '@/lib/setup'
+import { requireOpenSeal, todayISO } from '@/lib/audit'
 
 export type InvoiceFields = Record<string, unknown>
 export type ItemFields = Record<string, unknown>
@@ -27,6 +35,12 @@ export async function createInvoice(
   items: ItemFields[],
 ): Promise<CreatedInvoice> {
   const invoiceDate = invoiceFields.invoice_date as string | undefined
+  // The seal first, the sequence second: a refused save must not burn a number.
+  requireOpenSeal(orgId, {
+    date: invoiceDate || todayISO(),
+    target: 'invoice',
+    ref: (invoiceFields.invoice_number as string) || '',
+  })
   const fy = getFinancialYear(invoiceDate ? new Date(invoiceDate) : new Date())
   const fmt = resolveSeries(loadSetup(orgId), 'invoice')
 

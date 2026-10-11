@@ -1,6 +1,12 @@
 // Single write-path for a purchase bill: bill row → line items → inward stock
 // movements. Used by the bills form and by the bill scanner so a scanned bill
 // lands in exactly the same shape as a typed one.
+//
+// Since R3-5 the seal is asked here, before the row exists: the form, the scanner,
+// the Tally bridge and a purchase order being converted all come through this door,
+// so a bill dated inside a closed period is refused no matter which page raised it.
+
+import { requireOpenSeal, todayISO } from '@/lib/audit'
 
 export type BillFields = Record<string, unknown>
 export type BillItemFields = Record<string, unknown>
@@ -16,6 +22,12 @@ export async function createPurchaseBill(
   billFields: BillFields,
   items: BillItemFields[],
 ): Promise<CreatedBill> {
+  requireOpenSeal(orgId, {
+    date: (billFields.bill_date as string) || todayISO(),
+    target: 'bill',
+    ref: (billFields.bill_number as string) || '',
+  })
+
   const { data: bill, error: billError } = await supabase
     .from('purchase_bills')
     .insert({ ...billFields, organization_id: orgId })

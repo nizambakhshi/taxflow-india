@@ -13,6 +13,7 @@ import {
 import { INDIAN_STATES } from '@/lib/constants'
 import { GST_RATES } from '@/lib/gst-rates'
 import { createCreditNote } from '@/lib/creditnote'
+import SealNotice from '@/components/SealNotice'
 
 const inputStyle = {
   width: '100%', padding: '8px 10px',
@@ -381,6 +382,7 @@ function CreditNotesPageInner() {
                 <label style={labelStyle}>Credit Note Date *</label>
                 <input style={inputStyle} type="date" value={creditDate}
                   onChange={e => setCreditDate(e.target.value)} />
+                <SealNotice orgId={orgId} date={creditDate} />
               </div>
               <div>
                 <label style={labelStyle}>Reason *</label>

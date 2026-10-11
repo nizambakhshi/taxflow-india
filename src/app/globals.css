@@ -23,6 +23,12 @@
   --muted: #64748b;
   --faint: #94a3b8;
 
+  /* Type */
+  /* Numbers that must line up — amounts, document numbers, journal legs — have wanted one monospace
+     stack since the first invoice page, and each page spelled its own. `--mono` was already *used*
+     (with a fallback) before it was ever defined; now the token is the thing itself. */
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
   /* Brand */
   --brand: #2563eb;
   --brand-dark: #1d4ed8;
@@ -378,6 +384,35 @@ body {
 }
 
 .tf-input-clear:hover { background: var(--surface-2); color: var(--ink-2); }
+
+/* ── NOTICES ── */
+/* A field-level stop the shop cannot type past. Today there is one: the period seal, drawn by
+   SealNotice.tsx under whichever date field a write path is about to save. One markup for every
+   page, so a sealed month refuses an invoice, a bill, a payment and an expense in the same words
+   and the same red — and so a page cannot quietly shorten the sentence. */
+.tf-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-top: 7px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--red-soft);
+  border: 1px solid var(--red);
+  color: var(--red);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.tf-notice svg { flex-shrink: 0; margin-top: 1px; }
+
+.tf-notice-link {
+  color: var(--red);
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.tf-notice-link:hover { text-decoration: none; }
 
 /* ── PROGRESS ── */
 .tf-bar-track {
@@ -752,7 +787,7 @@ body {
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--surface-2);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--mono);
   font-size: 10.5px;
   line-height: 1.35;
   color: var(--muted);

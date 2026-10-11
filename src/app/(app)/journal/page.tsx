@@ -973,7 +973,7 @@ function JournalPageInner() {
         .jn-findings { list-style: none; margin: 7px 0 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
         .jn-findings li { display: flex; align-items: flex-start; gap: 7px; font-size: 11.5px; color: var(--muted); line-height: 1.55; }
         .jn-findings svg { flex-shrink: 0; margin-top: 1px; color: var(--amber); }
-        .jn-mono { font-family: var(--mono, ui-monospace, monospace); font-size: 0.94em; }
+        .jn-mono { font-family: var(--mono); font-size: 0.94em; }
 
         .jn-bounds { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 1.15rem; }
         .jn-bounds-col { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 15px 16px; }

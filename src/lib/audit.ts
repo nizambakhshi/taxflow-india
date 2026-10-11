@@ -27,12 +27,16 @@
 //    visible as a released seal. A silent unlock is exactly what an auditor looks for, so an
 //    empty reason is refused rather than guessed at.
 //  * **The seal is enforced where it is wired, and the refusal is logged.** `sealGuard` is the
-//    one door a document write path calls: it reads the register, answers whether that document
-//    date falls inside a standing seal, and returns the register's own sentence. When the answer
-//    is yes, the invoice page stops the save *and* `recordRefusal` appends a `refused` event — so
-//    an attempt to edit a closed period is itself on the record, even though nothing was changed.
-//    Which paths consult the seal is printed on the page, because a lock that quietly covers only
-//    some doors is worse than one that says which doors it covers.
+//    one question a document write path asks: does this date fall inside a standing seal? It
+//    answers with the register's own sentence, so no page has to invent one. `askSeal` is that
+//    question *plus* the trail — it asks, and when the answer is yes it appends a `refused` event
+//    before returning, so an attempt to edit a closed period is itself on the record even though
+//    nothing was changed. `requireOpenSeal` is the throwing form the shared money writers use
+//    (`create-invoice.ts`, `create-bill.ts`, `creditnote.ts`), which means a sealed window stops a
+//    POS sale, a recurring catch-up bill and an offline replay as surely as it stops the invoice
+//    form — the door is on the writer, not on the page that happens to host it. Which paths
+//    consult the seal is printed on the page, because a lock that quietly covers only some doors
+//    is worse than one that says which doors it covers.
 
 const KEY_AUDIT = 'taxflow:audit:'
 const AUDIT_VERSION = 1
@@ -501,6 +505,64 @@ export function recordRefusal(
     ...s,
     events: append(s, 'refused', input.date, input.target, input.ref, input.actor ?? '', note),
   }))
+}
+
+/**
+ * Ask the seal, and if it answers "sealed" put the attempt on the trail before handing the
+ * sentence back. Returns null when the date is free, so the caller's happy path stays one line.
+ * The journal uses this form because it wants to *report* the stop, not throw through it.
+ */
+export function askSeal(
+  orgId: string,
+  input: { date: string; target: string; ref?: string; actor?: string },
+): SealGuard | null {
+  const guard = sealGuard(orgId, input.date)
+  if (!guard.sealed) return null
+  recordRefusal(orgId, {
+    date: input.date,
+    target: input.target,
+    ref: input.ref ?? '',
+    actor: input.actor,
+    guard,
+  })
+  return guard
+}
+
+/**
+ * The seal as an exception. A shared money writer has no banner to draw and no screen of its
+ * own — it is called by a page, by the POS, by the recurring catch-up and by the offline replay.
+ * So it refuses by throwing the register's own sentence, and whichever of those callers is
+ * nearest the user prints it. `name` is stable so a caller can tell a sealed stop from any other
+ * failure (the outbox keeps both as a queued `error`, but only a sealed one names the period).
+ */
+export class SealedWriteError extends Error {
+  readonly sealed = true
+  readonly date: string
+  readonly target: string
+  readonly ref: string
+  readonly label: string
+  constructor(guard: SealGuard, input: { date: string; target: string; ref?: string }) {
+    super(guard.why)
+    this.name = 'SealedWriteError'
+    this.date = input.date
+    this.target = input.target
+    this.ref = input.ref ?? ''
+    this.label = guard.label
+  }
+}
+
+/**
+ * The door on the writer: `createInvoice`, `createPurchaseBill` and `createNote` call this before
+ * they take a sequence number, so a sealed window cannot be half-written and left behind. A date
+ * that is not a real calendar day cannot fall inside a window, so it passes — the writer's own
+ * validation owns that case, not the seal.
+ */
+export function requireOpenSeal(
+  orgId: string,
+  input: { date: string; target: string; ref?: string; actor?: string },
+): void {
+  const guard = askSeal(orgId, input)
+  if (guard) throw new SealedWriteError(guard, input)
 }
 
 /** A plain line on the trail that changed no seal and wrote no document. */

@@ -2041,8 +2041,7 @@ function shapeRow(
   const consequences = consequencesFor(store, form, period, args.today)
   const blocked = consequences.some(c => c.severity === 'block')
 
-  const range = periodRange(period)
-  const seal: PeriodSeal | null = args.audit && range ? sealForDate(args.audit, range.from) : null
+  const seal: PeriodSeal | null = sealForPeriod(args.audit, period)
 
   let state: FilingState
   if (filed) state = nil ? 'nil' : (days > 0 ? 'late' : 'filed')
@@ -2108,12 +2107,16 @@ export function registerStats(rows: RegisterRow[], board: BoardRow[]): RegisterS
  * A filing record is a transcript, not a book entry, so this register does not ask `sealGuard` before
  * it writes. It does read the seals — a sealed period is shown as closed paper — and it offers to
  * close one through /audit's own `sealPeriod`, which keeps its rules: an ended period, no overlap.
+ *
+ * This is the only place that turns a *period label* into a seal: /audit's `sealForDate` answers for a
+ * day, a filing row is a month or a quarter, so the span is folded to its first day here rather than at
+ * each caller. Two spellings of the same question (`sealOf` beside `sealForDate`) read as two different
+ * rules, which is how a register ends up asking the wrong one.
  */
-export function sealOf(audit: AuditStore | null, period: string): { sealed: boolean; label: string } {
+export function sealForPeriod(audit: AuditStore | null | undefined, period: string): PeriodSeal | null {
   const range = periodRange(period)
-  if (!audit || !range) return { sealed: false, label: '' }
-  const s = sealForDate(audit, range.from)
-  return { sealed: !!s, label: s?.label ?? '' }
+  if (!audit || !range) return null
+  return sealForDate(audit, range.from)
 }
 
 export function sealFilingsPeriod(
@@ -2135,7 +2138,7 @@ export function sealFilingsPeriod(
   // Rule 40's seal kinds are a month or a year; a quarter is three months of paper.
   const store = loadAudit(orgId)
   const months = periodMonths(period)
-  const open = months.filter(m => !sealForDate(store, periodRange(m)?.from ?? ''))
+  const open = months.filter(m => !sealForPeriod(store, m))
   if (!open.length) return { result: { ok: true, store, why: `All three months of ${periodLabel(period)} are already sealed.` }, label: periodLabel(period) }
   return {
     result: {

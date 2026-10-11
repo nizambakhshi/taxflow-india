@@ -6,6 +6,8 @@ import { createClient } from '@/lib/supabase'
 import { formatINR } from '@/lib/gst-engine'
 import { formatDateIN } from '@/lib/format'
 import { Badge, Button, Card, EmptyState, PageHeader, SearchInput, Segmented, StatCard } from '@/components/ui'
+import SealNotice from '@/components/SealNotice'
+import { askSeal } from '@/lib/audit'
 import Icon from '@/components/Icons'
 import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
 
@@ -257,6 +259,20 @@ function PaymentsPageInner() {
 
     if (amount > maxAmount) {
       setError(`Amount cannot exceed balance due of ₹${formatINR(maxAmount)}`)
+      return
+    }
+
+    // A payment is money on a date, so the seal is asked for that date. It is deliberately *not*
+    // asked for the date of the document being settled: collecting a March invoice in October is
+    // trading, not re-typing history — the invoice itself is untouched, and a seal that stopped a
+    // shop from recording a real receipt would be a lock on the till, not on the books.
+    const stop = askSeal(orgId, {
+      date: paymentDate,
+      target: 'payment',
+      ref: (selectedInvoice?.invoice_number ?? selectedBill?.bill_number ?? referenceNumber) as string,
+    })
+    if (stop) {
+      setError(stop.why)
       return
     }
 
@@ -555,6 +571,7 @@ function PaymentsPageInner() {
                   onChange={e => setPaymentAmount(e.target.value)} />
               </label>
             </div>
+            <SealNotice orgId={orgId} date={paymentDate} />
 
             <div className="pm-grid">
               <label className="pm-field">

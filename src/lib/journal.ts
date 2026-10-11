@@ -34,10 +34,11 @@
 //    to nothing, and an auditor sees the correction instead of a vanished entry. Same doctrine as
 //    a run that has been sold on (R2-29) and a seal that is released rather than deleted (R3-1).
 //  * **The seal is the second door.** `postEntry`, `reverseEntry` and the draft write all ask
-//    `sealGuard` for the entry's own date. A date inside a standing seal is refused *before any
-//    leg is checked* and `recordRefusal` appends a `refused` event, so a closed period cannot be
-//    journalled into and the attempt to try is on the trail. This is the second write path in the
-//    app to consult the seal, after `/invoices/new`, and `/audit` names both.
+//    `askSeal` for the entry's own date. A date inside a standing seal is refused *before any leg
+//    is checked*, and the ask itself appends a `refused` event — so a closed period cannot be
+//    journalled into, and the attempt to try is on the trail. R3-5 put the same door onto the
+//    shared document writers, which means the journal and the money documents now refuse a sealed
+//    date in the register's own words; `/audit` prints which paths are covered by it.
 //  * **A head that has been used is closed, not deleted.** Heads are the shop's own names — not a
 //    statutory chart — and each declares *which line of the statements it moves* (`slot`), so no
 //    rupee can be filed under an undeclared place. While any leg references a head, deleting it is
@@ -51,7 +52,7 @@
 // reach the bank — the review's *reconciliation controls* half stays where it already lives, on
 // `/bank`, which matches statements to documents and has no interest in a journal row.
 
-import { recordRefusal, sealGuard } from '@/lib/audit'
+import { askSeal } from '@/lib/audit'
 import {
   DEFAULT_SERIES, composeNumber, loadSetup, resolveSeries, seqKeyFor, seriesHistory, usedNumber, usedNumberAnyYear,
   type SeriesFormat, type SeriesKind,
@@ -643,10 +644,13 @@ export interface SealStop {
  * put on the trail, so an edit that never happened is still evidence.
  */
 function stopForSeal(orgId: string, date: string, ref: string, actor: string): SealStop | null {
-  const guard = sealGuard(orgId, date)
-  if (!guard.sealed) return null
-  recordRefusal(orgId, { date, target: 'journal', ref: ref || 'entry', actor: actor || undefined, guard })
-  return { sealed: true, why: guard.why }
+  const guard = askSeal(orgId, {
+    date,
+    target: 'journal',
+    ref: ref || 'entry',
+    actor: actor || undefined,
+  })
+  return guard ? { sealed: true, why: guard.why } : null
 }
 
 // ── the number: dressed here, counted nowhere else ────────────────────────────

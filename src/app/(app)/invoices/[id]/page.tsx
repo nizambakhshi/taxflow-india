@@ -14,7 +14,9 @@ import {
   INVOICE_TEMPLATES, loadInvoiceTemplate, saveInvoiceTemplate, type InvoiceTemplate,
 } from '@/lib/invoice-template'
 import { loadSetup, branchCodeOf, branchByCode, type Branch } from '@/lib/setup'
+import { askSeal } from '@/lib/audit'
 import { INDIAN_STATES } from '@/lib/constants'
+import SealNotice from '@/components/SealNotice'
 
 export default function InvoiceDetailPage() {
   const router = useRouter()
@@ -31,6 +33,8 @@ export default function InvoiceDetailPage() {
   const [loading, setLoading] = useState(true)
   const [downloading, setDownloading] = useState(false)
   const [template, setTemplate] = useState<InvoiceTemplate>('classic')
+  // R3-5 — the sentence from the seal, when this page's own buttons are refused.
+  const [sealStop, setSealStop] = useState('')
 
   useEffect(() => {
     const segments = window.location.pathname.split('/')
@@ -93,6 +97,14 @@ export default function InvoiceDetailPage() {
   }, [id])
 
   async function handleMarkPaid() {
+    // A paid stamp is a decision about a document that already belongs to a period. If that
+    // period is sealed, the stamp waits — the seal is asked on the invoice's own date, and the
+    // attempt is written to the trail even though the row does not move.
+    const stop = org?.id
+      ? askSeal(org.id, { date: invoice.invoice_date, target: 'invoice', ref: invoice.invoice_number || '' })
+      : null
+    if (stop) { setSealStop(`Marking this invoice paid is refused — ${stop.why}`); return }
+
     await supabase
       .from('invoices')
       .update({
@@ -111,6 +123,12 @@ export default function InvoiceDetailPage() {
 
   async function handleCancel() {
     if (!confirm('Cancel this invoice?')) return
+
+    const stop = org?.id
+      ? askSeal(org.id, { date: invoice.invoice_date, target: 'invoice', ref: invoice.invoice_number || '' })
+      : null
+    if (stop) { setSealStop(`Cancelling this invoice is refused — ${stop.why}`); return }
+
     await supabase.from('invoices').update({ status: 'cancelled' }).eq('id', id)
     setInvoice((p: any) => ({ ...p, status: 'cancelled' }))
   }
@@ -282,6 +300,19 @@ export default function InvoiceDetailPage() {
         <div id="cancel-banner" className="id-cancelled" role="alert">
           <Icon name="alert" size={14} strokeWidth={2.2} />
           This invoice has been cancelled
+        </div>
+      )}
+
+      {/*
+        R3-5 — the seal, read off this invoice's own date. Marking it paid and cancelling it are
+        writes to a period, so both are refused while the window stands; the banner says so before
+        the shop reaches for either button, and a pressed button still lands on the trail.
+      */}
+      <SealNotice orgId={org?.id ?? ''} date={invoice.invoice_date ?? ''} />
+      {sealStop && (
+        <div className="tf-notice" role="alert" style={{ marginTop: 8 }}>
+          <Icon name="lock" size={14} strokeWidth={2.2} />
+          <span>{sealStop}</span>
         </div>
       )}
 

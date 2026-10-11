@@ -6,6 +6,8 @@ import { createClient } from '@/lib/supabase'
 import { formatDateIN } from '@/lib/format'
 import { GST_RATES } from '@/lib/gst-rates'
 import { Badge, Button, Card, EmptyState, PageHeader, SearchInput, StatCard } from '@/components/ui'
+import SealNotice from '@/components/SealNotice'
+import { askSeal } from '@/lib/audit'
 import Icon from '@/components/Icons'
 
 interface Expense {
@@ -143,6 +145,15 @@ export default function ExpensesPage() {
       setError('Please enter a valid amount')
       return
     }
+
+    // Expenses write straight into their table — no shared creator carries the seal for them,
+    // so this page is the door: the date typed here is the date the money moves in.
+    const stop = askSeal(orgId, {
+      date: form.expense_date,
+      target: 'expense',
+      ref: form.bill_number || form.category,
+    })
+    if (stop) { setError(stop.why); return }
 
     setSaving(true)
     setError('')
@@ -338,6 +349,7 @@ export default function ExpensesPage() {
                 </select>
               </label>
             </div>
+            <SealNotice orgId={orgId} date={form.expense_date} />
 
             <label className="ex-field">
               <span>Description</span>

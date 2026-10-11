@@ -13,6 +13,7 @@ import {
 import { INDIAN_STATES } from '@/lib/constants'
 import { GST_RATES } from '@/lib/gst-rates'
 import { loadSetup, resolveSeries, composeNumber } from '@/lib/setup'
+import { askSeal } from '@/lib/audit'
 
 const inputStyle = {
   width: '100%', padding: '8px 10px',
@@ -309,6 +310,19 @@ function QuotationsPageInner() {
       return
     }
     if (!confirm(`Convert ${quotation.quotation_number} to an invoice?`)) return
+
+    // This conversion types its invoice straight into the table, so it does not pass through the
+    // writer that carries the seal. The door is therefore on this page, asked before an invoice
+    // number is spent: a refused conversion should not leave a gap in the series behind it.
+    {
+      const stop = askSeal(orgId, {
+        date: new Date().toISOString().split('T')[0],
+        target: 'invoice',
+        ref: `${quotation.quotation_number} → invoice`,
+      })
+      if (stop) { alert(stop.why); return }
+    }
+
     setConverting(true)
     try {
       const { data: items } = await supabase.from('quotation_items').select('*').eq('quotation_id', quotation.id).order('sort_order')

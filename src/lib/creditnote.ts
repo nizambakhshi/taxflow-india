@@ -2,8 +2,15 @@
 // item rows. Used by the credit-notes and debit-notes forms and by the Tally
 // bridge, so every route produces identical rows. A note is a signed document
 // that reduces the period it is dated in — it never inverts an invoice.
+//
+// Since R3-5 the seal is asked before the number is taken, exactly as it is on an
+// invoice: a note is the document a shop reaches for *after* a period is closed,
+// when it finds something to correct in it. Refusing that at the writer is the
+// whole point of a seal — and the refusal lands on the trail, so the attempt is
+// visible to whoever has to file the period.
 
 import { getFinancialYear } from '@/lib/gst-engine'
+import { requireOpenSeal, todayISO } from '@/lib/audit'
 
 export type NoteFields = Record<string, unknown>
 export type NoteItemFields = Record<string, unknown>
@@ -21,6 +28,8 @@ interface NoteSpec {
   numberField: string
   dateField: string
   idField: string
+  /** How the trail and the banner name this document. */
+  target: string
 }
 
 const CREDIT: NoteSpec = {
@@ -31,6 +40,7 @@ const CREDIT: NoteSpec = {
   numberField: 'credit_note_number',
   dateField: 'credit_note_date',
   idField: 'credit_note_id',
+  target: 'credit note',
 }
 
 const DEBIT: NoteSpec = {
@@ -41,6 +51,7 @@ const DEBIT: NoteSpec = {
   numberField: 'debit_note_number',
   dateField: 'debit_note_date',
   idField: 'debit_note_id',
+  target: 'debit note',
 }
 
 async function createNote(
@@ -51,6 +62,11 @@ async function createNote(
   items: NoteItemFields[],
 ): Promise<CreatedNote> {
   const date = fields[spec.dateField] as string | undefined
+  requireOpenSeal(orgId, {
+    date: date || todayISO(),
+    target: spec.target,
+    ref: (fields[spec.numberField] as string) || '',
+  })
   // The note is numbered in the financial year it is dated in, the way
   // createInvoice numbers an invoice — not in the year today happens to fall in.
   const fy = getFinancialYear(date ? new Date(date) : new Date())

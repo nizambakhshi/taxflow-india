@@ -13,8 +13,10 @@ import {
   type LineItemResult
 } from '@/lib/gst-engine'
 import { createPurchaseBill } from '@/lib/create-bill'
+import { askSeal } from '@/lib/audit'
 import { INDIAN_STATES } from '@/lib/constants'
 import { GST_RATES } from '@/lib/gst-rates'
+import SealNotice from '@/components/SealNotice'
 
 const inputStyle = {
   width: '100%', padding: '8px 10px',
@@ -305,6 +307,11 @@ function BillsPageInner() {
   }
 
   async function markBillPaid(bill: any) {
+    // The row's own date decides: a paid stamp moves money inside a period, so a
+    // seal on that month stops it here, in the page that owns the button.
+    const stop = askSeal(orgId, { date: bill.bill_date, target: 'bill', ref: bill.bill_number || '' })
+    if (stop) { setError(stop.why); return }
+
     await supabase
       .from('purchase_bills')
       .update({
@@ -323,6 +330,11 @@ function BillsPageInner() {
 
   async function cancelBill(bill: any) {
     if (!confirm(`Cancel bill ${bill.bill_number}? It will be excluded from reports, GSTR-3B and ITC.`)) return
+
+    // Asked after the confirm, not before: a dialog the shop walked away from is not an
+    // attempt to edit a closed period, and must not land on the trail as one.
+    const stop = askSeal(orgId, { date: bill.bill_date, target: 'bill', ref: bill.bill_number || '' })
+    if (stop) { setError(stop.why); return }
     await supabase
       .from('purchase_bills')
       .update({ status: 'cancelled' })
@@ -613,6 +625,7 @@ function BillsPageInner() {
                   style={inputStyle} type="date"
                   value={billDate}
                   onChange={e => setBillDate(e.target.value)} />
+                <SealNotice orgId={orgId} date={billDate} />
               </div>
               <div>
                 <label style={labelStyle}>Due Date</label>
