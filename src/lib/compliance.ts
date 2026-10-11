@@ -1,4 +1,5 @@
 import { formatDateIN } from '@/lib/format'
+import { INDIAN_STATES } from '@/lib/constants'
 
 export type ComplianceCategory = 'gst' | 'tds' | 'income-tax' | 'payroll' | 'other'
 
@@ -32,10 +33,64 @@ export interface Profile {
   employees: boolean
   deductsTds: boolean
   professionalTax: boolean
+  /**
+   * Two digits of the GSTIN — the state of the principal place of business. Only a QRMP filer is
+   * split by it: rule 61(1)(ii) puts the summary return on the twenty-second day for the states in
+   * the first row of its table and the twenty-fourth for the second, so without a state the calendar
+   * can name the quarter but not the day. It is optional, and `DEFAULT_PROFILE` leaves it blank.
+   */
+  stateCode?: string
 }
 
 export const DEFAULT_PROFILE: Profile = {
   filing: 'monthly', taxAudit: false, employees: false, deductsTds: true, professionalTax: false,
+}
+
+/* ── rule 61(1)(ii)'s two rows of states ────────────────────────────────────── */
+
+/**
+ * The two lists in the table to rule 61(1)(ii), read from the rule text and matched by state *name*
+ * against `INDIAN_STATES` — the codes in that list are the app's own and are not all the codes the
+ * portal issues, so a name is the safer key. One table, two readers: the calendar's emitter uses it
+ * to date a quarterly return and `filings.ts` uses it to check the date the calendar printed, so the
+ * two screens cannot drift apart on which day a state is in.
+ *
+ * Read off the rule as CBIC prints it, not off a summary: Chandigarh and Delhi are both in the
+ * twenty-fourth row, and the twenty-second row's union-territory list is Daman and Diu, Dadra and
+ * Nagar Haveli, Puducherry, Andaman and Nicobar Islands and Lakshadweep. A reorganisation notice has
+ * merged the first two into one Union territory since, which the rule's own table has not been
+ * re-tabulated for — the app places both names, so either spelling of that shop's state lands on the
+ * twenty-second rather than going unanswered.
+ */
+const QRMP_TWENTY_SECOND = [
+  'chhattisgarh', 'madhya pradesh', 'gujarat', 'maharashtra', 'karnataka', 'goa', 'kerala',
+  'tamil nadu', 'telangana', 'andhra pradesh', 'andhra pradesh (old)', 'daman & diu',
+  'dadra & nagar haveli', 'puducherry', 'andaman & nicobar islands', 'lakshadweep',
+]
+const QRMP_TWENTY_FOURTH = [
+  'himachal pradesh', 'punjab', 'uttarakhand', 'haryana', 'rajasthan', 'uttar pradesh', 'bihar',
+  'sikkim', 'arunachal pradesh', 'nagaland', 'manipur', 'mizoram', 'tripura', 'meghalaya', 'assam',
+  'west bengal', 'jharkhand', 'odisha', 'jammu & kashmir', 'jammu and kashmir', 'ladakh',
+  'chandigarh', 'delhi',
+]
+
+export interface QrmpCategory {
+  day: 22 | 24
+  state: string
+  cited: string
+}
+
+/** Which of rule 61(1)(ii)'s two rows a shop sits in — or null when the app cannot say. */
+export function qrmpCategory(stateCode: string | undefined): QrmpCategory | null {
+  const code = (stateCode ?? '').trim()
+  if (!code) return null
+  const hit = INDIAN_STATES.find(s => s.value === code)
+  if (!hit) return null
+  const name = hit.label.toLowerCase().trim()
+  const cited = 'rule 61(1)(ii), Table row '
+  if (QRMP_TWENTY_SECOND.includes(name)) return { day: 22, state: hit.label, cited: cited + '1 (twenty-second day)' }
+  if (QRMP_TWENTY_FOURTH.includes(name)) return { day: 24, state: hit.label, cited: cited + '2 (twenty-fourth day)' }
+  return null
 }
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -50,9 +105,19 @@ function fyMonth(fyStart: number, index: number) {
 }
 
 /**
- * One year of statutory deadlines for a given financial year (April `fyStart`
- * to March `fyStart + 1`). Dates follow the usual monthly/quarterly calendar;
- * notifications that shift due dates are not modelled.
+ * One year of statutory deadlines for a given financial year (April `fyStart` to March
+ * `fyStart + 1`), shaped by how this shop actually files: a monthly filer gets twelve GSTR-1s and
+ * twelve GSTR-3Bs, a QRMP filer gets four of each **plus** the eight deposits and eight IFF windows
+ * the quarter leaves behind, and a composition dealer gets four CMP-08s and a GSTR-4 for the year.
+ *
+ * Two limits are printed rather than hidden. Dates that the rules themselves state — the twentieth
+ * under rule 61(1)(i), the twenty-second or twenty-fourth under rule 61(1)(ii), the eighteenth under
+ * rule 62(1)(i), the twenty-fifth under rule 61(3) and the thirteenth that closes the IFF window under
+ * rule 59(2) — are derived here; the dates the CBIC sets by notification (GSTR-1's eleventh, a quarter's
+ * thirteenth) are the app's reading of the current table and no notification shift in this year is
+ * modelled. And a quarterly filer whose state is not named cannot be placed in either row of
+ * rule 61(1)(ii)'s table: the earlier of the two days is printed, the row says so, and the filings
+ * register at `/gst/filings` prints that date as unchecked rather than confirmed.
  */
 export function generateEvents(fyStart: number, profile: Profile = DEFAULT_PROFILE): ComplianceEvent[] {
   const events: ComplianceEvent[] = []
@@ -78,24 +143,50 @@ export function generateEvents(fyStart: number, profile: Profile = DEFAULT_PROFI
         })
       }
     } else if (profile.filing === 'qrmp') {
-      const quarterEnd = [2, 5, 8, 11].includes(i)
-      if (quarterEnd) {
-        const q = fyMonth(fyStart, i + 1)
+      // A QRMP filer files quarterly and pays monthly, so only the money keeps a month: rule 59 gives
+      // the quarter its GSTR-1, rule 61(1)(ii) gives the quarter its summary return, and rule 61(3)
+      // asks for a deposit in FORM GST PMT-06 on the twenty-fifth of each of the quarter's first two
+      // months. Emitting the twelve monthly summary rows instead — which is what this file used to do
+      // — put a date on the calendar that the rule this shop is under cannot produce.
+      if ([2, 5, 8, 11].includes(i)) {
+        const cat = qrmpCategory(profile.stateCode)
         push({
-          key: `r1-${q.y}-${q.m}`, title: 'GSTR-1 quarterly return', form: 'GSTR-1',
-          category: 'gst', due: iso(q.y, q.m + 1, 11),
+          key: `r1-${next.y}-${next.m}`, title: 'GSTR-1 quarterly return', form: 'GSTR-1',
+          category: 'gst', due: iso(next.y, next.m + 1, 13),
           period: `for ${quarterLabel(fyStart, i)}`,
-          description: 'Outward supplies statement under the QRMP scheme.',
+          description: 'Outward supplies statement for the quarter under the QRMP scheme — the eleventh is a monthly filer\'s date; a quarter\'s statement is on the thirteenth.',
           href: '/gst/gstr1',
           penalty: { lateFeePerDay: 50, nilFeePerDay: 20, lateFeeCap: 5000, note: '₹50/day (₹20/day on a nil return), capped at ₹5,000 per GSTIN.' },
         })
         push({
-          key: `iff-${q.y}-${q.m}`, title: 'Invoice Furnishing Facility', form: 'IFF',
-          category: 'gst', due: iso(q.y, q.m + 1, 13),
-          period: `for ${MONTHS[supply.m]} ${supply.y}`,
-          description: 'Upload B2B invoices of the first two months of the quarter.',
+          key: `r3b-${next.y}-${next.m}`, title: 'GSTR-3B quarterly summary', form: 'GSTR-3B',
+          category: 'gst', due: iso(next.y, next.m + 1, cat ? cat.day : 22),
+          period: `for ${quarterLabel(fyStart, i)}`,
+          description: cat
+            ? `Summary of the quarter's supplies with the tax payment. ${cat.state} is in ${cat.cited}, so the return is on the ${cat.day === 22 ? 'twenty-second' : 'twenty-fourth'} day of the month succeeding the quarter.`
+            : 'Summary of the quarter\'s supplies with the tax payment. Rule 61(1)(ii) puts it on the twenty-second day for the states in the first row of its table and the twenty-fourth for the second; the earlier of the two is printed here until the state is named above, and the filings register refuses to check the date until it is.',
+          href: '/gst/gstr3b',
+          penalty: { interestPct: 18, note: 'No late fee since Circular 231/2024, but 18% p.a. interest runs on the unpaid tax.' },
+        })
+      } else {
+        // The first two months of a quarter carry paper and money but no return: the invoices go up
+        // through the IFF, the tax through PMT-06, and both are repeated inside the quarter's own two
+        // dates above. The third month of a quarter has neither — its invoices are the quarter's GSTR-1.
+        push({
+          key: `iff-${supply.y}-${pad(supply.m + 1)}`, title: 'Invoice Furnishing Facility', form: 'IFF',
+          category: 'gst', due: iso(next.y, next.m + 1, 13),
+          period: `for ${supply.label}`,
+          description: 'B2B invoices of this month, furnished while the quarter is still running so your buyers can take credit before the quarter\'s statement — up to a cumulative ₹50 lakh of business-to-business supplies a month, inter-State and intra-State both (rule 59(5)(a) names both of them), and nothing furnished here may be furnished again in that quarter\'s GSTR-1 (rule 59(3)).',
           href: '/gst/gstr1',
-          penalty: { note: 'Invoices slip to the next quarter, delaying your buyers’ ITC.' },
+          penalty: { note: 'Rule 59(2) fixes the window in its own words: it opens "from the 1st day of the month succeeding such month till the 13th day of the said month", so no circular has to be read into it and nothing here is a choice between two readings. Invoices that miss it wait for the quarter\'s statement and hold up your buyers’ ITC. No fee runs on the window either: rule 59(2) reads "may furnish", and section 47’s late fee attaches to a default in furnishing a return, which this is not.' },
+        })
+        push({
+          key: `pmt06-${supply.y}-${pad(supply.m + 1)}`, title: 'PMT-06 monthly tax deposit', form: 'PMT-06',
+          category: 'gst', due: iso(next.y, next.m + 1, 25),
+          period: `for ${supply.label}`,
+          description: 'The deposit that keeps a QRMP filer paying monthly while filing quarterly. Rule 61(3) asks for "the tax due under proviso to sub-section (7) of section 39" for each of the quarter\'s first two months, deposited in FORM GST PMT-06 "by the twenty fifth day of the month succeeding such month". The rule states no sum of money, because section 39(7) leaves the amount to be notified. The fixed sum is notified law — Notification No. 85/2020-Central Tax, dated 10.11.2020, issued under section 148 read with the proviso to section 39(7), prescribes it as thirty-five per cent of the tax paid by debiting the electronic cash ledger in the return for the preceding quarter — and the Board spells out both shapes it takes in Circular No. 143/13/2020-GST, dated 10.11.2020, para 6.1: that fixed sum, which the portal pre-fills, or a self-assessed amount for this month\'s own liability. Whatever the two deposits leave unpaid is settled by the quarter\'s summary return, and rule 61(4) debits against it what was already put in.',
+          href: '/gst/gstr3b',
+          penalty: { interestPct: 18, note: 'Nothing is charged per day on a deposit — it is not a return under section 39, so section 47\'s late fee does not reach it. What does run is interest: para 8.1(ii) of Circular No. 143/13/2020-GST, dated 10.11.2020, payable "at the applicable rate" from the twenty-fifth till the day the cash arrives, and this app works it at the eighteen per annum of section 50(1) that the filings register uses everywhere. Para 8.1(i) is the relief beside it: deposit the system-calculated fixed sum on time and clear the whole quarter in its own GSTR-3B by its due date, and no interest is charged even when the month\'s real liability turned out higher than the deposit.' },
         })
       }
     } else {
@@ -109,7 +200,10 @@ export function generateEvents(fyStart: number, profile: Profile = DEFAULT_PROFI
       })
     }
 
-    if (profile.filing !== 'composition') push({
+    // Rule 61(1)(i) puts a monthly filer's summary return on the twentieth; rule 61(1)(ii) puts a
+    // quarterly filer's on the twenty-second or twenty-fourth after the quarter, which is emitted in
+    // the branch above, and a composition dealer files no GSTR-3B at all.
+    if (profile.filing === 'monthly') push({
       key: `r3b-${next.y}-${next.m}`, title: 'GSTR-3B summary return', form: 'GSTR-3B',
       category: 'gst', due: iso(next.y, next.m + 1, 20),
       period: `for ${supply.label}`,

@@ -5,9 +5,10 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import {
-  DEFAULT_PROFILE, estimateLateCharge, generateEvents, googleCalendarUrl,
-  loadStatuses, saveStatuses, toIcs, type ComplianceEvent, type Profile, type StatusMap,
+  DEFAULT_PROFILE, estimateLateCharge, generateEvents, googleCalendarUrl, loadStatuses,
+  qrmpCategory, saveStatuses, toIcs, type ComplianceEvent, type Profile, type StatusMap,
 } from '@/lib/compliance'
+import { INDIAN_STATES } from '@/lib/constants'
 import { download } from '@/lib/party-ledger'
 import { itc04Cadence, itc04Periods, loadJob } from '@/lib/jobwork'
 import { isExportDoc, loadExp, todayISO, watchRows, type ExportBookInvoice, type FxDealLite, type WatchRow } from '@/lib/exports'
@@ -157,6 +158,8 @@ export default function ComplianceCalendarPage() {
   const [monthFilter, setMonthFilter] = useState<string>('all')
   /** Export invoices from the books — the rupee half of the watch list the register also reads. */
   const [expBooks, setExpBooks] = useState<ExportBookInvoice[]>([])
+  /** The principal place of business as the registration states it — offered as a prefill, never forced. */
+  const [shopState, setShopState] = useState('')
 
   useEffect(() => {
     async function load() {
@@ -175,6 +178,21 @@ export default function ComplianceCalendarPage() {
         const saved = localStorage.getItem(PROFILE_KEY + oid)
         if (saved) setProfile({ ...DEFAULT_PROFILE, ...JSON.parse(saved) })
       } catch { /* fall back to defaults */ }
+
+      /*
+       * A QRMP quarter is dated by the state of the principal place of business, so the shop's own
+       * registration answers that question better than a dropdown does. The registration is read after
+       * the saved profile — a state the owner already named here wins, and the GSTIN's two digits fill
+       * the blank rather than overwrite it.
+       */
+      const { data: reg } = await supabase
+        .from('gst_registrations')
+        .select('state_code')
+        .eq('organization_id', oid)
+        .eq('is_primary', true)
+        .single()
+      if (reg?.state_code) setShopState(reg.state_code)
+      setProfile(p => (p.stateCode || !reg?.state_code ? p : { ...p, stateCode: reg.state_code }))
 
       // The export watch list is invoices plus paperwork, so the calendar reads the same book rows
       // the register does — same columns, same 800-row cap — rather than a summary that could drift.
@@ -333,6 +351,39 @@ export default function ComplianceCalendarPage() {
             ))}
           </div>
         </div>
+        {profile.filing === 'qrmp' && (() => {
+          const cat = qrmpCategory(profile.stateCode)
+          const shopCat = !cat ? qrmpCategory(shopState) : null
+          return (
+            <div className="cal-state">
+              <label className="cal-field">
+                <span>Principal place of business — the two digits of the GSTIN</span>
+                <select className="cal-select" value={profile.stateCode || ''}
+                  onChange={e => updateProfile({ ...profile, stateCode: e.target.value })}>
+                  <option value="">Not stated</option>
+                  {INDIAN_STATES.map(s => <option key={s.value} value={s.value}>{s.value} — {s.label}</option>)}
+                </select>
+              </label>
+              {shopCat && (
+                <button className="cal-prefill" onClick={() => updateProfile({ ...profile, stateCode: shopState })}>
+                  <Icon name="target" size={12} strokeWidth={2.4} />
+                  {`Take the registration's state (${shopState} — ${shopCat.state})`}
+                </button>
+              )}
+              <p className="cal-state-note">
+                {cat
+                  ? <>Rule 61(1)(ii) keeps two dates for a quarterly summary return: the {cat.day === 22 ? 'twenty-second' : 'twenty-fourth'}
+                    {' '}day of the month after the quarter. <strong>{cat.state}</strong> sits in {cat.cited.replace('rule 61(1)(ii), ', '')},
+                    so this year&apos;s four GSTR-3B rows carry that day.</>
+                  : <>Rule 61(1)(ii) keeps two dates for a quarterly summary return — the twenty-second or twenty-fourth day of the month
+                    after the quarter, by the state of the principal place of business. No state is named here, so the rows print{' '}
+                    <strong>the earlier of the two days</strong>: never later than the rule allows, and a day early at worst. The{' '}
+                    <Link href="/gst/filings" style={{ color: 'var(--brand)', fontWeight: 600, textDecoration: 'none' }}>filings register</Link>{' '}
+                    reports an undated state as a gap rather than a pass.</>}
+              </p>
+            </div>
+          )
+        })()}
         {payRows.length > 0 && (
           <p style={{ fontSize: 11.5, color: 'var(--faint)', margin: '11px 0 0', maxWidth: 720, lineHeight: 1.5 }}>
             {payRows.length} {payRows.length === 1 ? 'deadline' : 'deadlines'} this year {payRows.length === 1 ? 'is' : 'are'}
@@ -379,6 +430,11 @@ export default function ComplianceCalendarPage() {
             return caps at ₹500 — the{' '}
             <Link href="/gst/filings" style={{ color: 'var(--brand)', fontWeight: 600, textDecoration: 'none' }}>filings register</Link>{' '}
             works that out from the shop&apos;s own slab and names the notification that decided it.
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--faint)', marginTop: 6, lineHeight: 1.55 }}>
+            Only rows that are returns are counted here. A QRMP shop&apos;s monthly GST PMT-06 deposit on the twenty-fifth
+            adds nothing to this figure even when it slips: section 47&apos;s late fee attaches to a default in furnishing a
+            return, and a challan is not one — what runs late on a deposit is interest, and that is extra.
           </div>
         </Card>
       </div>
@@ -472,7 +528,7 @@ export default function ComplianceCalendarPage() {
           border: 1px solid var(--line); background: var(--surface); color: var(--muted);
           transition: all .15s ease;
         }
-        .toggle-chip.is-on { background: var(--brand-soft); border-color: #bfdbfe; color: var(--brand-dark); }
+        .toggle-chip.is-on { background: var(--brand-soft); border-color: var(--brand-line); color: var(--brand-dark); }
         .month-pill {
           display: inline-flex; align-items: center; gap: 7px;
           font-family: inherit; font-size: 12px; font-weight: 600;
@@ -489,6 +545,23 @@ export default function ComplianceCalendarPage() {
           flex-shrink: 0; padding: 0; min-height: 0;
         }
         .done-box.is-done { background: var(--green); border-color: var(--green); }
+        .cal-state {
+          margin-top: 14px; padding-top: 13px; border-top: 1px dashed var(--line);
+          display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px;
+        }
+        .cal-field { display: flex; flex-direction: column; gap: 5px; }
+        .cal-field > span { font-size: 11px; font-weight: 650; color: var(--muted); letter-spacing: .01em; }
+        .cal-select {
+          font-family: inherit; font-size: 12.5px; color: var(--ink);
+          padding: 7px 10px; border-radius: 9px; border: 1px solid var(--line);
+          background: var(--surface); min-width: 240px; max-width: 320px;
+        }
+        .cal-prefill {
+          display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+          font-family: inherit; font-size: 11.5px; font-weight: 600; color: var(--brand-dark);
+          padding: 7px 11px; border-radius: 9px; border: 1px solid var(--brand-line); background: var(--brand-soft);
+        }
+        .cal-state-note { flex: 1 1 420px; min-width: 0; font-size: 11.5px; color: var(--faint); line-height: 1.55; margin: 0; }
         @media (prefers-reduced-motion: reduce) { .tf-rise { animation: none !important; } }
       `}</style>
     </div>

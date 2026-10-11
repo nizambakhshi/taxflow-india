@@ -33,6 +33,9 @@
   --brand: #2563eb;
   --brand-dark: #1d4ed8;
   --brand-soft: #eff6ff;
+  /* The hairline a *soft* brand block is edged with — `--brand-soft` alone is too pale for a border to
+     read as a box, and `--brand` is too loud for one. Pages that needed it each typed the literal. */
+  --brand-line: #bfdbfe;
   --brand-ring: rgba(37, 99, 235, 0.22);
   --brand-grad: linear-gradient(135deg, #2563eb 0%, #4f46e5 55%, #7c3aed 100%);
 

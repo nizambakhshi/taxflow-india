@@ -22,12 +22,15 @@
 //    principal place of business is in, 18th under rule 62(1)(i), 30th June under the proviso to rule
 //    62(1)(ii) from FY 2024-25 — and `expectedRows()` prints every place the two disagree. A
 //    register that silently trusts its own calendar is a register that repeats a mistake forever.
-//    Two shapes of that disagreement are worth naming. `compliance.ts` emits a **monthly** summary row
-//    even for a quarterly filer, so `eventPeriod()` folds twelve of those rows into the four quarters
-//    rule 61(1)(ii) actually speaks of — and says so in `calendarObjections()` instead of hiding the
-//    fold. And Q4 of a financial year is January–March of the *following* calendar year, so a quarter's
-//    statutory due date has to carry that year with it; a roll that lost it dated a 2026-Q4 return in
-//    April 2026, a year early.
+//    Two limits of that audit are worth naming. Rule 61(1)(ii) dates a quarterly summary by the state of
+//    the principal place of business, so until `stateCode` is named on this register's own settings
+//    `expectedRows()` can say a date is unchecked but never that it is right — meanwhile the calendar
+//    prints the earlier of the two days, so the date on screen is at worst a day early, and says all of
+//    that in `calendarObjections()`.
+//    And Q4 of a financial year is January–March of the *following* calendar year, so a quarter's statutory
+//    due date has to carry that year with it; a roll that lost it dated a 2026-Q4 return in April 2026, a
+//    year early. The month-to-quarter fold still happens in `eventPeriod()`, but for keys rather than for
+//    rows: a filing saved against any month of a quarter has to land in the quarter that owns it.
 //  * **Late fee is computed by the slab that applies, not the headline the app prints.** Section 47
 //    says ₹50 a day capped at ₹5,000; Notifications No. 19, 20 and 21/2021-Central Tax, dated
 //    01.06.2021, cut the ceiling to ₹2,000 up to ₹1.5 crore of the preceding year's turnover, ₹5,000
@@ -63,15 +66,14 @@
 // the 25th under rule 61(3) are named in `NOT_TRACKED` with their rule, not quietly left out.
 
 import {
-  DEFAULT_PROFILE, generateEvents, loadStatuses,
-  type ComplianceEvent, type Profile, type StatusMap,
+  DEFAULT_PROFILE, generateEvents, loadStatuses, qrmpCategory,
+  type ComplianceEvent, type Profile, type QrmpCategory, type StatusMap,
 } from '@/lib/compliance'
 import { RECON_TOLERANCE, emptyHeads, headsOf, round2, type Heads } from '@/lib/gstr9'
 import {
   fyLabel as auditFyLabel, loadAudit, monthLabel, recordNote, sealForDate, sealPeriod, todayISO,
   type AuditStore, type PeriodSeal, type SealResult,
 } from '@/lib/audit'
-import { INDIAN_STATES } from '@/lib/constants'
 
 const KEY_FILINGS = 'taxflow:filings:'
 export const FILINGS_VERSION = 1
@@ -141,10 +143,20 @@ export const FORM_BY_CALENDAR: Record<string, FilingForm> = {
 
 /** GST paper the calendar carries and this register deliberately does not. */
 export const UNTRACKED_CALENDAR_FORMS: Record<string, string> = {
-  IFF: 'The Invoice Furnishing Facility is not a return with a payment. Rule 59(2) gives it a window '
-    + 'from the 1st to the 13th of the month succeeding, for the first two months of a quarter, up to '
-    + '₹50 lakh of B2B value a month — and rule 59(3) says what goes through it must not be furnished '
-    + 'again in that quarter\'s GSTR-1. Nothing here tracks it.',
+  IFF: 'The Invoice Furnishing Facility is not a return with a payment. Rule 59(2) gives it a window of its '
+    + 'own — "from the 1st day of the month succeeding such month till the 13th day of the said month" — for '
+    + 'supplies made to a registered person up to a cumulative ₹50 lakh in each of a quarter\'s first two '
+    + 'months, and rule 59(5)(a) says those details cover inter-State and intra-State business-to-business '
+    + 'supplies both, not the one. Rule 59(3) says what goes through it must not be furnished again in that '
+    + 'quarter\'s GSTR-1. Nothing here tracks it.',
+  'PMT-06': 'A deposit, not a return. Rule 61(3) asks for "the tax due under proviso to sub-section (7) of '
+    + 'section 39" for each of a quarter\'s first two months, in FORM GST PMT-06 by the twenty-fifth day of the '
+    + 'month succeeding; it states no sum, because section 39(7) leaves the amount to be notified, and the '
+    + 'notified amount is either the portal\'s fixed sum — thirty-five per cent of the tax paid in cash in the '
+    + 'last GSTR-3B of the preceding quarter, prescribed by Notification No. 85/2020-Central Tax dated 10.11.2020 '
+    + 'under section 148 read with the proviso to section 39(7) and explained in para 6.1(a) of Circular No. '
+    + '143/13/2020-GST of the same date — or a self-assessed figure for the month. This register keeps returns and their history, so it keeps no '
+    + 'PMT-06 row; the calendar has carried the day since R3-6, and the money itself belongs to the cash ledger.',
   'CMP-02': 'The composition opt-in under section 10(2) is an election, not a filing. This register '
     + 'keeps returns and statements; the opt-in date stays on /gst/calendar.',
 }
@@ -317,11 +329,12 @@ export function periodFromDue(form: FilingForm, due: string, cadence: Cadence): 
 }
 
 /**
- * The period a calendar row stands for, in this register's keys. One thing is folded: the app's
- * calendar still emits a GSTR-3B row every month for a QRMP filer, while rule 61(1)(ii) puts that
- * filer's summary return on a quarter. The register keys the row by the quarter — which is what the
- * statute asks for — and lets the disagreement print as drift on the row rather than hiding it by
- * keeping a monthly date the rule cannot have meant.
+ * The period a calendar row stands for, in this register's keys. A quarterly filer's summary return is
+ * dated in the month *succeeding the quarter* — the twenty-second or twenty-fourth under rule 61(1)(ii) —
+ * so the month one step back is that quarter's last month, and the quarter is keyed off it. Before R3-6
+ * the calendar emitted that return twelve times a year, once per month, and this function had to fold the
+ * twelve into the four the rule speaks of; the fold stays because a register keeps periods, not dates, and
+ * a row saved against any month of a quarter still has to land in the quarter that owns it.
  */
 function eventPeriod(form: FilingForm, due: string, cadence: Cadence): string {
   const m = periodFromDue(form, due, cadence)
@@ -348,8 +361,13 @@ export const CADENCE_META: Record<Cadence, { label: string; why: string }> = {
     label: 'QRMP (quarterly)',
     why: 'Quarterly returns with monthly payment. Rule 61(1)(ii) sets the summary return on the '
       + 'twenty-second day for the states in the first row of its table and the twenty-fourth for the '
-      + 'states in the second, and rule 61(3) still wants the tax for the first two months of the '
-      + 'quarter deposited by the twenty-fifth of the succeeding month in FORM GST PMT-06.',
+      + 'states in the second. Rule 61(3) still wants money every month — "the tax due under proviso to '
+      + 'sub-section (7) of section 39" for each of the quarter\'s first two months, in FORM GST PMT-06 by '
+      + 'the twenty-fifth of the month succeeding. The rule names no percentage because section 39(7) leaves '
+      + 'the sum to be notified: on the portal it is thirty-five per cent of the cash tax paid in the last '
+      + 'GSTR-3B of the preceding quarter (Notification No. 85/2020-Central Tax, dated 10.11.2020, notified '
+      + 'under section 148 read with the proviso to section 39(7); Circular No. 143/13/2020-GST of the same '
+      + 'date, para 6.1 explains it), or the month\'s own liability on self-assessment. The calendar carries both days since R3-6.',
   },
   composition: {
     label: 'Composition',
@@ -359,40 +377,13 @@ export const CADENCE_META: Record<Cadence, { label: string; why: string }> = {
 }
 
 /**
- * The two lists in the table to rule 61(1)(ii), read from the rule text and matched by state *name*
- * against `INDIAN_STATES` — the codes in that list are the app's own and are not all the codes the
- * portal issues, so a name is the safer key.
+ * Rule 61(1)(ii)'s two rows of states live in `compliance.ts`, because the calendar's emitter needs the
+ * same answer this register needs: one to date a quarterly return, one to check the date it printed. Two
+ * copies of that table would drift into a register that disputes its own calendar over a state neither of
+ * them had finished reading, so the register re-exports the emitter's function and `/gst/filings` keeps
+ * importing it from here.
  */
-const QRMP_TWENTY_SECOND = [
-  'chhattisgarh', 'madhya pradesh', 'gujarat', 'maharashtra', 'karnataka', 'goa', 'kerala',
-  'tamil nadu', 'telangana', 'andhra pradesh', 'andhra pradesh (old)', 'daman & diu',
-  'dadra & nagar haveli', 'puducherry', 'andaman & nicobar islands', 'lakshadweep',
-]
-const QRMP_TWENTY_FOURTH = [
-  'himachal pradesh', 'punjab', 'uttarakhand', 'haryana', 'rajasthan', 'uttar pradesh', 'bihar',
-  'sikkim', 'arunachal pradesh', 'nagaland', 'manipur', 'mizoram', 'tripura', 'meghalaya', 'assam',
-  'west bengal', 'jharkhand', 'odisha', 'jammu & kashmir', 'jammu and kashmir', 'ladakh',
-  'chandigarh', 'delhi',
-]
-
-export interface QrmpCategory {
-  day: 22 | 24
-  state: string
-  cited: string
-}
-
-/** Which of rule 61(1)(ii)'s two rows a shop sits in — or null when the register cannot say. */
-export function qrmpCategory(stateCode: string): QrmpCategory | null {
-  const code = (stateCode ?? '').trim()
-  if (!code) return null
-  const hit = INDIAN_STATES.find(s => s.value === code)
-  if (!hit) return null
-  const name = hit.label.toLowerCase().trim()
-  const cited = 'rule 61(1)(ii), Table row '
-  if (QRMP_TWENTY_SECOND.includes(name)) return { day: 22, state: hit.label, cited: cited + '1 (twenty-second day)' }
-  if (QRMP_TWENTY_FOURTH.includes(name)) return { day: 24, state: hit.label, cited: cited + '2 (twenty-fourth day)' }
-  return null
-}
+export { qrmpCategory, type QrmpCategory }
 
 export interface StatutoryDue {
   /** '' when the rule fixes a day but the register cannot say which one applies to this shop. */
@@ -434,7 +425,7 @@ export function statutoryDue(
         return {
           date: '', cited: true,
           citation: 'rule 61(1)(ii) — the twenty-second or twenty-fourth day by the state of the '
-            + 'principal place of business; state it in Settings and this row can be checked',
+            + 'principal place of business; name it under Cadence & slabs and this row can be checked',
         }
       }
       return { date: isoDate(a.y, a.m, cat.day), cited: true, citation: `${cat.cited} — ${cat.state}` }
@@ -477,7 +468,10 @@ export function statutoryDue(
       const next = monthAfter(a.y, a.m)
       return {
         date: isoDate(next.y, next.m, 13), cited: false,
-        citation: 'the quarterly date for a QRMP filer, notified under section 37(2); rule 59(2) fixes the IFF window inside it, 1st to 13th',
+        citation: 'the quarterly date for a QRMP filer — the thirteenth of the month succeeding the quarter, '
+          + 'which the CBIC fixes by notification under section 37(2) rather than in rule 59, so this register '
+          + 'marks it uncited rather than name an instrument it has not read. Rule 59(2) sets a thirteenth of '
+          + 'its own inside the quarter: the IFF window for each of the first two months closes on that day.',
       }
     }
     case 'gstr1a':
@@ -1535,7 +1529,14 @@ export function openAmendmentsFor(store: FilingsStore, period: string): Amendmen
 /* ── the calendar, and whether it still matches the rule ───────────────────── */
 
 export function profileFor(settings: FilingsSettings): Profile {
-  return { ...DEFAULT_PROFILE, filing: settings.cadence, taxAudit: settings.taxAudit }
+  // The state travels with the profile because R3-6: since then the calendar's own emitter reads it to
+  // decide which of rule 61(1)(ii)'s two days a quarter's summary return falls on. Handing it over is what
+  // makes the two screens print the same date — the register still refuses to *confirm* a date it cannot
+  // place in a table row, so an unnamed state shows as unchecked here and as the earlier day there.
+  return {
+    ...DEFAULT_PROFILE, filing: settings.cadence, taxAudit: settings.taxAudit,
+    stateCode: settings.stateCode,
+  }
 }
 
 export interface ExpectedRow {
@@ -1665,22 +1666,37 @@ export function calendarObjections(
       out.push({
         title: 'The quarterly summary returns cannot be checked against rule 61(1)(ii) yet',
         why: `Rule 61(1)(ii) puts ${unchecked.size} of them on the twenty-second or twenty-fourth day by `
-          + 'the state of the principal place of business. The register does not know which category this shop '
-          + 'is in — name the state in Settings and the drift is checked automatically. The app\'s calendar also '
-          + 'carries these as twelve monthly rows; a QRMP filer furnishes four, so this register folds them onto '
-          + 'the quarter and prints the disagreement on each row.',
+          + 'the state of the principal place of business, and the register does not know which category this shop '
+          + 'is in — name the state under Cadence & slabs and the drift is checked automatically. Until it is named the '
+          + 'calendar prints the earlier of the two days, so the date on screen is never later than the one the '
+          + 'rule allows; it is this register that stays silent about whether it is right.',
         citation: 'rule 61(1)(ii)',
         severity: 'info',
       })
     }
     out.push({
-      title: 'A QRMP filer still pays monthly, and the calendar does not carry that day',
-      why: 'Rule 61(3) wants the tax for the first two months of the quarter deposited in FORM GST PMT-06 by '
-        + 'the twenty-fifth day of the month succeeding. It is a payment, not a return, so it is not this '
-        + "register's to keep — and the calendar emits no PMT-06 row, so this objection is where a quarterly "
-        + 'filer hears the day at all.',
-      citation: 'rule 61(3) with the proviso to section 39(7)',
-      severity: 'warn',
+      title: 'The calendar now carries the monthly days a QRMP filer owes, and this register keeps neither of them',
+      why: 'Since R3-6 the calendar emits eight deposit rows and eight invoice rows a year for this cadence: '
+        + 'the FORM GST PMT-06 deposit on the twenty-fifth under rule 61(3), and the Invoice Furnishing Facility '
+        + 'window for the first two months of the quarter. Neither is a return, so neither has a row here — which '
+        + 'leaves a gap worth stating out loud: a shop that reads only this register sees a quarter with two '
+        + 'deposits in it and no trace of either. The deposits live on the cash ledger, the invoices on the '
+        + 'statement that the quarter\'s GSTR-1 folds together.',
+      citation: 'rule 61(3) with rule 59(2), Notification No. 85/2020-Central Tax dated 10.11.2020, and Circular No. 143/13/2020-GST of the same date, paras 5.2 and 6.1',
+      severity: 'info',
+    })
+    out.push({
+      title: 'The deposit the calendar now prints states a day it is sure of and an amount it does not have',
+      why: 'Rule 61(3) asks for "the tax due under proviso to sub-section (7) of section 39" and stops there — '
+        + 'the sum is left to be notified, and the two shapes the notified sum takes both need a figure this '
+        + 'register has not been read for: the fixed sum is thirty-five per cent of the tax paid in *cash* in the '
+        + 'last return of the immediately preceding quarter, and the alternative is this month\'s own liability on '
+        + 'self-assessment. The twenty-fifth is therefore printed with confidence while the rupee amount beside it '
+        + 'stays the shop\'s to state. What the cash tax actually was is held in this register\'s own filed rows '
+        + 'and in the cash ledger; folding the two together into a pre-computed challan is the next round\'s work, '
+        + 'not a number this one should guess.',
+      citation: 'rule 61(3) with the proviso to section 39(7) — the fixed sum notified by Notification No. 85/2020-Central Tax dated 10.11.2020, explained in para 6.1(a) of Circular No. 143/13/2020-GST of the same date',
+      severity: 'info',
     })
   }
   const monthly3b = list.filter(e => e.category === 'gst' && e.form === 'GSTR-3B')
@@ -2183,9 +2199,9 @@ export const NOT_TRACKED: { title: string; why: string }[] = [
     title: 'The PMT-06 deposit a QRMP filer owes monthly',
     why: 'Rule 61(3) wants the tax for the first two months of a quarter deposited in FORM GST PMT-06 by the '
       + 'twenty-fifth day of the month succeeding. It is a payment, not a return, so a deposit belongs on '
-      + '/payments — and the compliance calendar carries no PMT-06 day yet, which is the other half of why '
-      + 'it is named here: a quarterly filer who reads only this register, or only the calendar, would never '
-      + 'be told.',
+      + '/payments and the day belongs on /gst/calendar, which has carried it since R3-6. It is named here '
+      + 'all the same because a quarterly filer who reads only this register would see four returns in a '
+      + 'year and none of the eight deposits between them.',
   },
   {
     title: 'Refunds, notices and demands',
