@@ -31,7 +31,10 @@ const PRESETS = [
 ]
 
 const OPENING_FIELDS: { key: keyof OpeningBalances; label: string; hint: string }[] = [
-  { key: 'cash', label: 'Opening cash & bank', hint: 'Money in hand / accounts at start' },
+  { key: 'cash', label: 'Opening cash in hand', hint: 'Notes in the drawer when the books started' },
+  { key: 'bank', label: 'Opening cash at bank', hint: 'Bank balance on the day the books opened — it stays put; payments move cash' },
+  { key: 'receivables', label: 'Opening receivables', hint: 'Owed to you before TaxFlow counted a rupee — a settled debt is an invoice with a number, not an opening figure' },
+  { key: 'payables', label: 'Opening payables', hint: 'You owed it before the books opened' },
   { key: 'fixedAssets', label: 'Opening fixed assets', hint: 'Equipment, vehicles, etc. at cost' },
   { key: 'loans', label: 'Opening loans', hint: 'Outstanding borrowings' },
   { key: 'capital', label: 'Opening capital', hint: 'Owner’s invested amount' },
@@ -89,8 +92,12 @@ export default function FinancialStatementsPage() {
   const [periodLabel, setPeriodLabel] = useState(fy.label)
   const [preset, setPreset] = useState('this_fy')
 
-  // Opening balances modal
-  const [opening, setOpening] = useState<OpeningBalances>({ cash: 0, fixedAssets: 0, loans: 0, capital: 0 })
+  // Opening balances modal — R3-2 grew the set: bank, receivables and payables join
+  // the four originals, and `as_of` (the day the books were picked up) decides when
+  // the new lines start standing. The four originals keep flowing unconditionally.
+  const [opening, setOpening] = useState<OpeningBalances>(
+    { cash: 0, bank: 0, receivables: 0, payables: 0, fixedAssets: 0, loans: 0, capital: 0, as_of: '' }
+  )
   const [showOpening, setShowOpening] = useState(false)
   const [draftOpening, setDraftOpening] = useState<OpeningBalances>(opening)
   const [openingSaved, setOpeningSaved] = useState(false)
@@ -292,23 +299,31 @@ export default function FinancialStatementsPage() {
         <div className="ac-cols">
           <Card className="ac-panel">
             <div className="ac-panel-title">Assets</div>
-            <div className="ac-panel-sub">As on {formatDateIN(end)}</div>
+            <div className="ac-panel-sub">As on {formatDateIN(end)}{opening.as_of ? ` · books opened ${formatDateIN(opening.as_of)}` : ''}</div>
             <Line label="Sundry debtors (receivables)" value={bs.receivables} />
+            {bs.openingReceivables > 0 && (
+              <Line label="of which opened with the books" value={bs.openingReceivables} indent />
+            )}
             <Line label="Inventory (stock × cost)" value={bs.inventory} />
             <Line label="Cash & bank (derived)" value={bs.cash} tone="danger" />
+            {bs.bank > 0 && <Line label="Cash at bank (opening)" value={bs.bank} />}
             <Line label="Fixed assets" value={bs.fixedAssets} />
             <div className="ac-final">
               <Line label="TOTAL ASSETS" value={bs.totalAssets} bold />
             </div>
             <div className="ac-foot">
               {stockLines ? `${stockLines} stock line(s) valued at purchase price.` : 'No stock tracked, so inventory is nil.'}
+              {bs.openingReceivables > 0 && ' A payment grows cash but cannot reduce the opening receivable — the engine will not guess which pre-books paper it settled; a debt you have settled belongs on an invoice, not in the opening.'}
             </div>
           </Card>
 
           <Card className="ac-panel">
             <div className="ac-panel-title">Liabilities &amp; Owner&apos;s Funds</div>
-            <div className="ac-panel-sub">As on {formatDateIN(end)}</div>
+            <div className="ac-panel-sub">As on {formatDateIN(end)}{opening.as_of ? ` · books opened ${formatDateIN(opening.as_of)}` : ''}</div>
             <Line label="Sundry creditors (payables)" value={bs.payables} />
+            {bs.openingPayables > 0 && (
+              <Line label="of which opened with the books" value={bs.openingPayables} indent />
+            )}
             <Line label="Outstanding expenses" value={bs.outstandingExpenses} />
             <Line label="GST payable" value={bs.gstLiability} />
             <Line label="Loans" value={bs.loans} />
@@ -338,7 +353,9 @@ export default function FinancialStatementsPage() {
         double-entry). Cash is estimated from recorded payment flows plus your opening balance, so it may
         differ from a bank statement. “Capital account (derived)” is a balancing figure covering owner
         contributions and any money movement TaxFlow isn’t tracking as a document. For statutory books,
-        reconcile with your accountant.
+        reconcile with your accountant. The balances you opened the books on — and the day you opened
+        them — are edited above and kept in this browser beside the{' '}
+        <Link href="/business">business register</Link>.
       </p>
 
       <p className="ac-foot-note">
@@ -380,6 +397,19 @@ export default function FinancialStatementsPage() {
                   <span className="ac-hint">{f.hint}</span>
                 </label>
               ))}
+            </div>
+
+            <div className="ac-grid" style={{ gridTemplateColumns: '1fr', marginTop: 12 }}>
+              <label className="ac-field">
+                <span>Books opened on (optional)</span>
+                <input className="tf-input" type="date" value={draftOpening.as_of}
+                  onChange={e => setDraftOpening(prev => ({ ...prev, as_of: e.target.value }))} />
+                <span className="ac-hint">
+                  The day those figures were struck. Bank, opening receivables and opening payables stand only
+                  on a balance sheet drawn on or after it; empty means they always stand. The four original
+                  lines (cash in hand, fixed assets, loans, capital) keep flowing as they always did.
+                </span>
+              </label>
             </div>
 
             <div className="ac-modal-foot">

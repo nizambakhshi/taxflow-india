@@ -1,9 +1,16 @@
 // Single online write-path for creating an invoice: sequence number → invoice
 // row → line items → stock movements. Used by the invoice form, the POS counter,
 // and the offline outbox replay so every route produces identical rows.
+//
+// Since R3-2 the *shape* of the number is the shop's: the business-setup register
+// (setup.ts) answers the prefix, the padding and whether the financial year sits
+// inside it. The counter itself stays exactly where it always was — the
+// `invoice_sequences` row per org per FY — so changing the shape never re-issues
+// a number: the row counts, the register dresses.
 
 import { getFinancialYear } from '@/lib/gst-engine'
 import { recordSale } from '@/lib/batches'
+import { composeNumber, loadSetup, resolveSeries } from '@/lib/setup'
 
 export type InvoiceFields = Record<string, unknown>
 export type ItemFields = Record<string, unknown>
@@ -21,6 +28,7 @@ export async function createInvoice(
 ): Promise<CreatedInvoice> {
   const invoiceDate = invoiceFields.invoice_date as string | undefined
   const fy = getFinancialYear(invoiceDate ? new Date(invoiceDate) : new Date())
+  const fmt = resolveSeries(loadSetup(orgId), 'invoice')
 
   // Get or create the sequence, then take the next number.
   let { data: seq } = await supabase
@@ -40,11 +48,11 @@ export async function createInvoice(
   } else {
     await supabase
       .from('invoice_sequences')
-      .insert({ organization_id: orgId, prefix: 'INV', financial_year: fy, last_number: 1 })
+      .insert({ organization_id: orgId, prefix: fmt.prefix, financial_year: fy, last_number: 1 })
     nextNumber = 1
   }
 
-  const invoiceNumber = `INV-${fy}-${String(nextNumber).padStart(4, '0')}`
+  const invoiceNumber = composeNumber(fmt, nextNumber, fy)
 
   const { data: invoice, error: invError } = await supabase
     .from('invoices')

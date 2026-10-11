@@ -60,6 +60,7 @@ import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
 import { fyLabel, fyStartYear } from '@/lib/targets'
 import { getFinancialYear } from '@/lib/gst-engine'
 import { loadStore, saveStore, newDoc, raiseDrafts, validateDoc, type FlowDoc } from '@/lib/orderflow'
+import { loadSetup, resolveSeries } from '@/lib/setup'
 import {
   BUILD_CSV_HEADERS, BUILD_STATUS_META, MAX_MINUTES_PER_RUN, MAX_UNITS_PER_BUILD, PLAN_CSV_HEADERS,
   RECIPE_CSV_HEADERS, RECIPE_STATUSES, RECIPE_STATUS_META, SHOPPING_CSV_HEADERS,
@@ -475,7 +476,10 @@ function RecipesPageInner() {
       warn(skipped.length ? `None of the drafts pass the register: ${skipped.join(' · ')}` : 'There is nothing grouped to order yet.')
       return
     }
-    const next = raiseDrafts('purchase_order', loadStore('purchase_order', orgId), fy, drafts)
+    // R3-2 — the shop's series shape for purchase orders rides the raise; the
+    // register's own counter stays where it always was.
+    const poFmt = resolveSeries(loadSetup(orgId), 'purchase_order')
+    const next = raiseDrafts('purchase_order', loadStore('purchase_order', orgId), fy, drafts, poFmt)
     saveStore('purchase_order', orgId, next.store)
     setRaised(next.docs.map(d => ({ number: d.number, id: d.id, vendor: d.party_name })))
     flash(`${next.docs.length} purchase order${next.docs.length === 1 ? '' : 's'} drafted${skipped.length ? ` — ${skipped.length} skipped` : ''}. Open one on the register to confirm it.`)

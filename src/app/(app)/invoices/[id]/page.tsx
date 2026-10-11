@@ -13,6 +13,8 @@ import {
 import {
   INVOICE_TEMPLATES, loadInvoiceTemplate, saveInvoiceTemplate, type InvoiceTemplate,
 } from '@/lib/invoice-template'
+import { loadSetup, branchCodeOf, branchByCode, type Branch } from '@/lib/setup'
+import { INDIAN_STATES } from '@/lib/constants'
 
 export default function InvoiceDetailPage() {
   const router = useRouter()
@@ -23,6 +25,9 @@ export default function InvoiceDetailPage() {
   const [items, setItems] = useState<any[]>([])
   const [org, setOrg] = useState<any>(null)
   const [gstReg, setGstReg] = useState<any>(null)
+  // R3-2 — the issuing branch, read back from the [branch CODE] stamp in notes.
+  const [issuedBranch, setIssuedBranch] = useState<Branch | null>(null)
+  const [stampedCode, setStampedCode] = useState('')
   const [loading, setLoading] = useState(true)
   const [downloading, setDownloading] = useState(false)
   const [template, setTemplate] = useState<InvoiceTemplate>('classic')
@@ -67,6 +72,13 @@ export default function InvoiceDetailPage() {
 
       if (!inv) { router.push('/invoices'); return }
       setInvoice(inv)
+
+      // R3-2 — the notes carry the issuer: a [branch CODE] stamp resolves against
+      // the business register. An unresolved stamp (the branch was deleted after
+      // this invoice) is named on screen and falls back to the primary registration.
+      const code = branchCodeOf(inv.notes || '')
+      setStampedCode(code)
+      if (code) setIssuedBranch(branchByCode(loadSetup(membership.organization_id), code) ?? null)
 
       const { data: lineItems } = await supabase
         .from('invoice_items')
@@ -133,12 +145,33 @@ export default function InvoiceDetailPage() {
   const showIGST = Number(invoice.igst_amount) > 0
   const hasBank = org?.bank_name || org?.bank_account_number || org?.bank_upi_id
 
+  // R3-2 — printed identity. When the invoice's branch stamp resolves, the header
+  // carries that branch's name, GSTIN, state and address; otherwise the primary
+  // registration as always. The bank details stay the shop's (one till, many counters).
+  const issuedState = issuedBranch
+    ? INDIAN_STATES.find(s => s.value === issuedBranch.state_code)?.label || ''
+    : ''
+  const issuedOrg = issuedBranch ? {
+    ...org,
+    name: issuedBranch.name,
+    trade_name: issuedBranch.name,
+    address_line1: issuedBranch.address,
+    address_line2: '',
+    city: issuedBranch.city,
+    state: issuedState,
+    pincode: '',
+    phone: issuedBranch.phone || org?.phone,
+  } : org
+  const issuedReg = issuedBranch
+    ? { gstin: issuedBranch.gstin, state_code: issuedBranch.state_code }
+    : gstReg
+
   const orgFullAddress = [
-    org?.address_line1,
-    org?.address_line2,
-    org?.city,
-    org?.state,
-    org?.pincode,
+    issuedOrg?.address_line1,
+    issuedOrg?.address_line2,
+    issuedOrg?.city,
+    issuedOrg?.state,
+    issuedOrg?.pincode,
   ].filter(Boolean).join(', ')
 
   const fmtDate = (d: string) =>
@@ -274,6 +307,23 @@ export default function InvoiceDetailPage() {
         </div>
       )}
 
+      {/*
+        R3-2 — a stamp the register cannot answer. The notes name a branch that is no
+        longer on the business register (it was deleted after this invoice was issued).
+        The page says so and prints under the primary registration — an unsold mystery
+        header is worse than an honest fallback. On-screen only: the PDF stays clean.
+      */}
+      {stampedCode && !issuedBranch && (
+        <div id="branch-banner" className="id-export">
+          <Icon name="building" size={15} strokeWidth={2.0} />
+          <span>
+            Notes are stamped [branch {stampedCode}], but no such branch is on the business
+            register — this invoice prints under the primary registration.
+          </span>
+          <Button size="sm" variant="ghost" href="/business">Open the business register</Button>
+        </div>
+      )}
+
       {/* ── PAGE WRAPPER ── */}
       <div className="page-container">
 
@@ -297,7 +347,7 @@ export default function InvoiceDetailPage() {
         >
 
           {template !== 'classic' && (
-            <InvoiceDocument invoice={invoice} items={items} org={org} gstReg={gstReg} template={template} />
+            <InvoiceDocument invoice={invoice} items={items} org={issuedOrg} gstReg={issuedReg} template={template} />
           )}
 
           {/* ── INVOICE DOCUMENT (classic layout) ── */}
@@ -355,19 +405,19 @@ export default function InvoiceDetailPage() {
             </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: '9px', color: '#666', marginBottom: '1px' }}>
-                  GSTIN : {gstReg?.gstin || '—'}
+                  GSTIN : {issuedReg?.gstin || '—'}
                 </div>
                 <div style={{ fontSize: '15px', fontWeight: '800', color: '#1e293b', lineHeight: 1.2 }}>
-                  {org?.trade_name || org?.name}
+                  {issuedOrg?.trade_name || issuedOrg?.name}
                 </div>
                 {orgFullAddress && (
                   <div style={{ fontSize: '9px', color: '#374151', marginTop: '2px' }}>
                     {orgFullAddress}
                   </div>
                 )}
-                {(org?.phone || org?.email) && (
+                {(issuedOrg?.phone || issuedOrg?.email) && (
                   <div style={{ fontSize: '9px', color: '#374151', marginTop: '1px' }}>
-                    Contact No.: {[org?.phone, org?.email].filter(Boolean).join(' | ')}
+                    Contact No.: {[issuedOrg?.phone, issuedOrg?.email].filter(Boolean).join(' | ')}
                   </div>
                 )}
               </div>
@@ -677,7 +727,7 @@ export default function InvoiceDetailPage() {
                 justifyContent: 'space-between',
               }}>
                 <div style={{ fontWeight: '600' }}>
-                  For, {org?.trade_name || org?.name}
+                  For, {issuedOrg?.trade_name || issuedOrg?.name}
                 </div>
                 <div style={{
                   borderTop: '1px solid #000',

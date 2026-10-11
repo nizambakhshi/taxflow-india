@@ -25,6 +25,7 @@ import {
   computeTotals, isUsableLine, validateDoc, newDoc, sortDocs, docValue,
   type FlowDoc, type FlowLine, type GstType,
 } from '@/lib/orderflow'
+import { loadSetup, resolveSeries } from '@/lib/setup'
 
 interface CustomerRow {
   id: string
@@ -143,6 +144,12 @@ function ChallansPageInner() {
 
   const fy = getFinancialYear()
 
+  // R3-2 — the challan number's shape comes from the series register; the
+  // counter stays in this kind's own store. Default arg reads the org in state.
+  function fmtFor(oid: string = orgId) {
+    return resolveSeries(loadSetup(oid), KIND)
+  }
+
   useEffect(() => {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser()
@@ -195,7 +202,7 @@ function ChallansPageInner() {
       // State is set inline rather than via openCreate(): a function defined later
       // in the component cannot be called from the load effect (React compiler).
       if (searchParams.get('new') === '1') {
-        setModalDoc(newDoc(KIND, peekNumber(store, KIND, fy), todayISO()))
+        setModalDoc(newDoc(KIND, peekNumber(store, KIND, fy, fmtFor(oid)), todayISO()))
         setModalLines([emptyDraftLine()])
         setIsNewDoc(true)
         setModalError('')
@@ -207,7 +214,7 @@ function ChallansPageInner() {
   }, [])
 
   function openCreate() {
-    const doc = newDoc(KIND, peekNumber(loadStore(KIND, orgId), KIND, fy), todayISO())
+    const doc = newDoc(KIND, peekNumber(loadStore(KIND, orgId), KIND, fy, fmtFor()), todayISO())
     setModalDoc(doc)
     setModalLines([emptyDraftLine()])
     setIsNewDoc(true)
@@ -274,7 +281,7 @@ function ChallansPageInner() {
     let number = candidate.number
     let nextStore = store
     if (isNewDoc) {
-      const taken = takeNumber(store, KIND, fy)
+      const taken = takeNumber(store, KIND, fy, fmtFor())
       number = taken.number
       nextStore = taken.store
     }

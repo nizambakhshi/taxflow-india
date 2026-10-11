@@ -29,7 +29,7 @@
 //    when a file came from a shape this build does not fully understand.
 //  * **A damaged page does not void the book.** Each register carries a FNV-1a checksum over its
 //    own serialised content. A block that does not match is refused and named; the other
-//    restorable registers — twenty-seven in all — still restore. It is a checksum against truncation and hand-editing, not a
+//    restorable registers — twenty-eight in all — still restore. It is a checksum against truncation and hand-editing, not a
 //    signature — nothing here proves who wrote the file, and the page prints "checked" rather than
 //    implying a security property it does not have.
 //
@@ -61,6 +61,7 @@ import { loadUpiSettings, saveUpiSettings } from '@/lib/payments'
 import { loadPayroll, savePayroll } from '@/lib/payroll'
 import { loadProjects, saveProjects } from '@/lib/projects'
 import { loadEvents, loadUnits, saveEvents, saveUnits } from '@/lib/serials'
+import { loadSetup, saveSetup } from '@/lib/setup'
 import { loadSchedules, saveSchedules } from '@/lib/recurring'
 import { loadSettings as loadReorder, saveSettings as saveReorder } from '@/lib/reorder'
 import { loadPlan, savePlan } from '@/lib/targets'
@@ -560,18 +561,51 @@ export const REGISTERS: RegisterSpec[] = [
     id: 'opening',
     prefix: 'taxflow:opening:',
     label: 'Opening balances',
-    what: 'The four figures the balance sheet starts from: cash, fixed assets, loans, capital',
+    what: 'The figures the balance sheet starts from — cash in hand, cash at bank, debtors and creditors carried over, fixed assets, loans, capital — and the day the books were opened',
     unit: 'balance',
     group: 'settings',
     module: 'src/lib/ledger.ts',
     pageLabel: 'Financial statements',
     pageHref: '/reports/financials',
     encoding: 'json',
-    // A stored zero is the same answer as no entry, so only the figures that say something count.
-    count: (v) => Object.values(rec(v)).filter(x => n(x) !== 0).length,
-    detail: (v) => `cash ${n(field(v, 'cash'))} · assets ${n(field(v, 'fixedAssets'))} · loans ${n(field(v, 'loans'))} · capital ${n(field(v, 'capital'))}`,
+    // A stored zero is the same answer as no entry, so only figures that say something count.
+    // `as_of` joined in R3-2 and is a date, not a rupee — it counts when it stands.
+    count: (v) => Object.values(rec(v)).filter(x => typeof x === 'number' && x !== 0).length
+      + (str(field(v, 'as_of')) ? 1 : 0),
+    detail: (v) => `cash ${n(field(v, 'cash'))} · bank ${n(field(v, 'bank'))} · debtors ${n(field(v, 'receivables'))}`
+      + ` · creditors ${n(field(v, 'payables'))} · assets ${n(field(v, 'fixedAssets'))}`
+      + ` · loans ${n(field(v, 'loans'))} · capital ${n(field(v, 'capital'))}`
+      + (str(field(v, 'as_of')) ? ` · opened ${str(field(v, 'as_of'))}` : ''),
     write: (orgId, v) => saveOpeningBalances(orgId, v as Parameters<typeof saveOpeningBalances>[1]),
-    verify: (orgId) => Object.values(loadOpeningBalances(orgId)).filter(x => x !== 0).length,
+    verify: (orgId) => {
+      const o = loadOpeningBalances(orgId) as unknown as Record<string, unknown>
+      return Object.values(o).filter(x => typeof x === 'number' && x !== 0).length + (o.as_of ? 1 : 0)
+    },
+  },
+  {
+    id: 'setup',
+    prefix: 'taxflow:setup:',
+    label: 'Business setup — branches & series',
+    what: 'The branch register documents are issued under, and the document series that dresses each number — the counters themselves stayed where they were',
+    unit: 'record',
+    group: 'settings',
+    module: 'src/lib/setup.ts',
+    pageLabel: 'Business register',
+    pageHref: '/business',
+    encoding: 'json',
+    count: (v) => arrCount(v, 'branches') + arrCount(v, 'series'),
+    detail: (v) => {
+      const b = arrCount(v, 'branches')
+      const s = arrCount(v, 'series')
+      return `${b} branch${b === 1 ? '' : 'es'} · ${plural(s, 'series override')}`
+    },
+    // Refused by shape, like the audit register: the parser reads a wrong-version file as empty,
+    // and a blank register restored over a kept one looks like success.
+    accepts: (v) => (isObj(v) && Array.isArray(field(v, 'branches')) && Array.isArray(field(v, 'series'))
+      ? null
+      : 'not a branch & series register — the branches list and the series list are both missing'),
+    write: (orgId, v) => saveSetup(orgId, v as Parameters<typeof saveSetup>[1]),
+    verify: (orgId) => { const s = loadSetup(orgId); return s.branches.length + s.series.length },
   },
   {
     id: 'reorder',

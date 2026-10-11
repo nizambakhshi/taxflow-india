@@ -17,6 +17,10 @@ import { GST_RATES } from '@/lib/gst-rates'
 import { queueOfflineInvoice, isNetworkError } from '@/lib/outbox'
 import { createInvoice } from '@/lib/create-invoice'
 import { sealGuard, recordRefusal } from '@/lib/audit'
+import {
+  loadSetup, resolveSeries, composeNumber, activeBranches, stampBranchNote,
+  type Branch,
+} from '@/lib/setup'
 import { Button, Card, PageHeader, SectionTitle } from '@/components/ui'
 import Icon from '@/components/Icons'
 
@@ -58,6 +62,13 @@ export default function NewInvoicePage() {
   const [orgGstin, setOrgGstin] = useState('')
   const [orgAddress, setOrgAddress] = useState('')
   const [invoiceNumber, setInvoiceNumber] = useState('')
+
+  // R3-2 — issuing branch. '' means the primary registration on file (the values
+  // loaded from Supabase); picking a branch swaps the seller block to the branch's
+  // GSTIN/state/address and stamps the notes with [branch CODE].
+  const [branches, setBranches] = useState<Branch[]>([])
+  const [branchCode, setBranchCode] = useState('')
+  const [homeSeller, setHomeSeller] = useState({ name: '', gstin: '', state: '', address: '' })
 
   // Master data
   const [customers, setCustomers] = useState<any[]>([])
@@ -103,9 +114,10 @@ export default function NewInvoicePage() {
 
       const org = membership.organizations as any
       setOrgId(membership.organization_id)
+      const orgAddressStr = [org?.address_line1, org?.city].filter(Boolean).join(', ')
       setOrgName(org?.name || '')
       setOrgStateCode(org?.state_code || '')
-      setOrgAddress([org?.address_line1, org?.city].filter(Boolean).join(', '))
+      setOrgAddress(orgAddressStr)
 
       // Get primary GSTIN
       const { data: gstReg } = await supabase
@@ -115,12 +127,26 @@ export default function NewInvoicePage() {
         .eq('is_primary', true)
         .single()
 
-      if (gstReg) {
-        setOrgGstin(gstReg.gstin)
-        setOrgStateCode(gstReg.state_code || org?.state_code || '')
-      }
+      const homeState = gstReg?.state_code || org?.state_code || ''
+      if (gstReg) setOrgGstin(gstReg.gstin)
 
-      // Generate invoice number
+      // Mirror of the primary seller — selecting a branch overrides the four
+      // displayed fields, and picking "Head office" restores these.
+      setHomeSeller({
+        name: org?.name || '',
+        gstin: gstReg?.gstin || '',
+        state: homeState,
+        address: orgAddressStr,
+      })
+      if (homeState) setOrgStateCode(homeState)
+
+      // R3-2 — the branch register and the number's *shape*. The counter stays
+      // in invoice_sequences (the row still counts); the series register here
+      // dresses that count into a number. The save path in create-invoice.ts
+      // composes with the same format, so this preview is the number it writes.
+      const setup = loadSetup(membership.organization_id)
+      setBranches(activeBranches(setup))
+      const fmt = resolveSeries(setup, 'invoice')
       const fy = getFinancialYear()
       const { data: seq } = await supabase
         .from('invoice_sequences')
@@ -129,12 +155,7 @@ export default function NewInvoicePage() {
         .eq('financial_year', fy)
         .single()
 
-      if (seq) {
-        const next = seq.last_number + 1
-        setInvoiceNumber(`${seq.prefix}-${fy}-${String(next).padStart(4, '0')}`)
-      } else {
-        setInvoiceNumber(`INV-${fy}-0001`)
-      }
+      setInvoiceNumber(composeNumber(fmt, seq ? seq.last_number + 1 : 1, fy))
 
       // Load customers and products
       const { data: custs } = await supabase
@@ -257,6 +278,25 @@ export default function NewInvoicePage() {
     setLineItems(lineItems.filter((_, i) => i !== index))
   }
 
+  // R3-2 — issuing branch. Swaps the printed seller to the branch's own GSTIN /
+  // state / address (which re-runs the place-of-supply → GST-type effect), and
+  // restores the primary registration when the head office is picked again.
+  function handleBranchChange(code: string) {
+    setBranchCode(code)
+    const b = code ? branches.find(x => x.code.toUpperCase() === code.toUpperCase()) : null
+    if (!b) {
+      setOrgName(homeSeller.name)
+      setOrgGstin(homeSeller.gstin)
+      setOrgStateCode(homeSeller.state)
+      setOrgAddress(homeSeller.address)
+      return
+    }
+    setOrgName(b.name)
+    setOrgGstin(b.gstin)
+    setOrgStateCode(b.state_code)
+    setOrgAddress([b.address, b.city].filter(Boolean).join(', '))
+  }
+
   async function handleSave(status: 'draft' | 'sent') {
     if (!customerId) { setError('Please select a customer'); return }
     if (!placeOfSupply) { setError('Please select place of supply'); return }
@@ -316,7 +356,9 @@ export default function NewInvoicePage() {
       amount_paid: 0,
       balance_due: totals.grand_total,
       payment_status: 'unpaid',
-      notes,
+      // R3-2 — the branch stamp rides in the notes (invoices has no branch column;
+      // the durable record stays the document + this tag). '' clears the stamp.
+      notes: stampBranchNote(notes, branchCode),
       terms,
       status,
     }
@@ -403,6 +445,25 @@ export default function NewInvoicePage() {
           <div className="ni-seller-name">{orgName}</div>
           {orgGstin && <div className="ni-seller-line ni-mono">GSTIN: {orgGstin}</div>}
           {orgAddress && <div className="ni-seller-line">{orgAddress}</div>}
+          {branches.length > 0 && (
+            <div className="ni-field" style={{ marginTop: 10 }}>
+              <span>Issuing branch</span>
+              <select className="tf-input" style={{ cursor: 'pointer' }} value={branchCode}
+                onChange={e => handleBranchChange(e.target.value)}>
+                <option value="">Head office — primary registration</option>
+                {branches.map(b => (
+                  <option key={b.id} value={b.code}>
+                    {b.code} — {b.name}{b.is_head ? ' (head)' : ''}
+                  </option>
+                ))}
+              </select>
+              <div className="ni-seller-line" style={{ marginTop: 6 }}>
+                {branchCode
+                  ? `Issued under ${branchCode} — its GSTIN and state print on the invoice, and the notes carry [branch ${branchCode}].`
+                  : 'Add GST registrations and branches on the Business page to issue from them.'}
+              </div>
+            </div>
+          )}
         </Card>
 
         {/* Invoice details */}

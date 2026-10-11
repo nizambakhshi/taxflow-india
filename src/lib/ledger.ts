@@ -65,12 +65,23 @@ export interface LedgerProduct {
 
 export interface OpeningBalances {
   cash: number
+  /** Money the shop opened with in a bank account — kept apart from petty cash at hand. */
+  bank: number
+  /** Money customers owed the day the books were picked up. These are invoices from before the books began. */
+  receivables: number
+  /** Money the shop owed vendors the day the books were picked up. */
+  payables: number
   fixedAssets: number
   loans: number
   capital: number
+  /** The day these figures were true — printed on the balance sheet, never guessed. */
+  as_of: string
 }
 
-const EMPTY_OPENING: OpeningBalances = { cash: 0, fixedAssets: 0, loans: 0, capital: 0 }
+const EMPTY_OPENING: OpeningBalances = {
+  cash: 0, bank: 0, receivables: 0, payables: 0,
+  fixedAssets: 0, loans: 0, capital: 0, as_of: '',
+}
 
 // ── Profit & Loss ────────────────────────────────────────
 export interface ProfitLoss {
@@ -130,11 +141,17 @@ export function computeProfitLoss(
 export interface BalanceSheet {
   asOf: string
   receivables: number
+  /** The opening receivable the books were picked up with — inside `receivables`, shown so the page can name it. */
+  openingReceivables: number
   inventory: number
   cash: number
+  /** Money opened in a bank: nothing flows into or out of this line; payments move `cash`. */
+  bank: number
   fixedAssets: number
   totalAssets: number
   payables: number
+  /** The opening payable the books started with — inside `payables`, shown so the page can name it. */
+  openingPayables: number
   outstandingExpenses: number
   gstLiability: number
   loans: number
@@ -165,6 +182,16 @@ export function computeBalanceSheet(input: BalanceSheetInput, asOf: string): Bal
   for (const i of invoices) {
     if (i.status !== 'cancelled' && onOrBefore(i.invoice_date, asOf)) receivables += num(i.balance_due)
   }
+  // What the books were picked up owing is a receivable too — but only once the day those
+  // figures were struck has actually arrived. A balance sheet drawn before the books opened
+  // shows the documents it has, not an opening it was not yet standing on. The honest limit,
+  // printed beside the figure: a payment recorded later grows `cash` but cannot reduce this
+  // line — the engine will not guess which pre-books paper it settled. A settlement that wants
+  // to move both sides is an invoice with a number, not an opening figure.
+  const openingStood = !opening.as_of || opening.as_of <= asOf
+  const openingReceivables = openingStood ? num(opening.receivables) : 0
+  const openingPayables = openingStood ? num(opening.payables) : 0
+  receivables += openingReceivables
 
   let inventory = 0
   for (const p of products) {
@@ -185,9 +212,10 @@ export function computeBalanceSheet(input: BalanceSheetInput, asOf: string): Bal
     else expensesOutstanding += num(e.amount)
   }
   const cash = opening.cash + cashIn - cashOut - expensesPaid
+  const bank = openingStood ? num(opening.bank) : 0
   const fixedAssets = opening.fixedAssets
 
-  const totalAssets = receivables + inventory + cash + fixedAssets
+  const totalAssets = receivables + inventory + cash + bank + fixedAssets
 
   // Liabilities
   let billPayables = 0
@@ -208,7 +236,7 @@ export function computeBalanceSheet(input: BalanceSheetInput, asOf: string): Bal
   }
 
   const gstLiability = Math.max(0, outputTax - inputTax)
-  const payables = billPayables
+  const payables = billPayables + openingPayables
   const outstandingExpenses = expensesOutstanding
   const loans = opening.loans
 
@@ -221,8 +249,8 @@ export function computeBalanceSheet(input: BalanceSheetInput, asOf: string): Bal
 
   return {
     asOf,
-    receivables, inventory, cash, fixedAssets, totalAssets,
-    payables, outstandingExpenses, gstLiability, loans, totalLiabilities,
+    receivables, openingReceivables, inventory, cash, bank, fixedAssets, totalAssets,
+    payables, openingPayables, outstandingExpenses, gstLiability, loans, totalLiabilities,
     ownersFunds,
     openingCapital: opening.capital,
     retainedEarnings,

@@ -173,38 +173,69 @@ export function loadAllDocs(orgId: string): FlowDoc[] {
 }
 
 // ── Numbering ────────────────────────────────────────────────────────────────
+//
+// The shape of a number is the shop's, not the code's: since R3-2 these functions take an
+// optional series format from `setup.ts` (prefix / padding / whether the financial year sits
+// inside the number). With no format passed the kind is numbered exactly as it was born —
+// `DC-2026-27-0001` — and the counter slot is the same, so an untouched shop sees no change.
+// A shop that changes shape mid-year keeps its counts: the high-water walk reads every shape
+// the kind has worn, and a series that drops the year inherits the largest number the
+// year-shaped series had already reached.
 
-function seqKey(kind: FlowKind, fy: string): string {
-  return `${kind}:${fy}`
-}
+import {
+  composeNumber,
+  seqKeyFor,
+  seriesHistory,
+  usedNumber,
+  usedNumberAnyYear,
+  DEFAULT_SERIES,
+  type SeriesFormat,
+} from '@/lib/setup'
 
-function maxUsedInDocs(store: FlowStore, kind: FlowKind, fy: string): number {
-  const re = new RegExp(`^${KIND_META[kind].prefix}-${fy}-(\\d+)$`)
+function maxUsedInDocs(store: FlowStore, kind: FlowKind, fy: string, fmt?: SeriesFormat): number {
+  const f = fmt ?? DEFAULT_SERIES[kind]
+  const worn = seriesHistory(f, kind)
   let max = 0
   for (const d of store.docs) {
     if (d.kind !== kind) continue
-    const m = re.exec(d.number)
-    if (m) max = Math.max(max, parseInt(m[1], 10))
+    if (f.include_fy) {
+      const n = usedNumber(worn, fy, d.number)
+      if (n !== null) max = Math.max(max, n)
+    } else {
+      // a running series: every number this kind ever wore counts, year inside or not
+      for (const h of worn) {
+        const n = usedNumberAnyYear(h.prefix, d.number)
+        if (n !== null) max = Math.max(max, n)
+      }
+    }
   }
   return max
 }
 
 /** The number a new document will get — for the form preview, allocates nothing. */
-export function peekNumber(store: FlowStore, kind: FlowKind, fy: string): string {
-  const last = Math.max(store.seq[seqKey(kind, fy)] ?? 0, maxUsedInDocs(store, kind, fy))
-  return `${KIND_META[kind].prefix}-${fy}-${String(last + 1).padStart(4, '0')}`
+export function peekNumber(store: FlowStore, kind: FlowKind, fy: string, fmt?: SeriesFormat): string {
+  const f = fmt ?? DEFAULT_SERIES[kind]
+  const key = seqKeyFor(kind, fy, f)
+  const last = Math.max(store.seq[key] ?? 0, maxUsedInDocs(store, kind, fy, f))
+  return composeNumber(f, last + 1, fy)
 }
 
 /**
  * Allocate the next number and return the store that records it. The caller
  * saves the returned store — the high-water mark only moves forward.
  */
-export function takeNumber(store: FlowStore, kind: FlowKind, fy: string): { number: string; store: FlowStore } {
-  const key = seqKey(kind, fy)
-  const last = Math.max(store.seq[key] ?? 0, maxUsedInDocs(store, kind, fy))
+export function takeNumber(
+  store: FlowStore,
+  kind: FlowKind,
+  fy: string,
+  fmt?: SeriesFormat,
+): { number: string; store: FlowStore } {
+  const f = fmt ?? DEFAULT_SERIES[kind]
+  const key = seqKeyFor(kind, fy, f)
+  const last = Math.max(store.seq[key] ?? 0, maxUsedInDocs(store, kind, fy, f))
   const next = last + 1
   return {
-    number: `${KIND_META[kind].prefix}-${fy}-${String(next).padStart(4, '0')}`,
+    number: composeNumber(f, next, fy),
     store: { ...store, seq: { ...store.seq, [key]: next } },
   }
 }
@@ -223,8 +254,9 @@ export function appendDraft(
   store: FlowStore,
   fy: string,
   doc: FlowDoc,
+  fmt?: SeriesFormat,
 ): { doc: FlowDoc; store: FlowStore } {
-  const taken = takeNumber(store, kind, fy)
+  const taken = takeNumber(store, kind, fy, fmt)
   const numbered: FlowDoc = { ...doc, kind, number: taken.number, status: 'draft' }
   return { doc: numbered, store: { ...taken.store, docs: [...taken.store.docs, numbered] } }
 }
@@ -234,11 +266,12 @@ export function raiseDrafts(
   store: FlowStore,
   fy: string,
   docs: FlowDoc[],
+  fmt?: SeriesFormat,
 ): { docs: FlowDoc[]; store: FlowStore } {
   const raised: FlowDoc[] = []
   let next = store
   for (const doc of docs) {
-    const step = appendDraft(kind, next, fy, doc)
+    const step = appendDraft(kind, next, fy, doc, fmt)
     next = step.store
     raised.push(step.doc)
   }

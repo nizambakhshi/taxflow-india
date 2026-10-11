@@ -12,6 +12,7 @@ import {
 } from '@/lib/gst-engine'
 import { INDIAN_STATES } from '@/lib/constants'
 import { GST_RATES } from '@/lib/gst-rates'
+import { loadSetup, resolveSeries, composeNumber } from '@/lib/setup'
 
 const inputStyle = {
   width: '100%', padding: '8px 10px',
@@ -209,15 +210,18 @@ function QuotationsPageInner() {
     setError('')
     try {
       const fy = getFinancialYear()
+      // R3-2 — the row counts, the series register dresses: the quotation
+      // sequence keeps its counter here, the shape comes from the shop's series.
+      const qFmt = resolveSeries(loadSetup(orgId), 'quotation')
       let { data: seq } = await supabase.from('quotation_sequences').select('*').eq('organization_id', orgId).eq('financial_year', fy).single()
       let nextNumber = 1
       if (seq) {
         nextNumber = seq.last_number + 1
         await supabase.from('quotation_sequences').update({ last_number: nextNumber }).eq('id', seq.id)
       } else {
-        await supabase.from('quotation_sequences').insert({ organization_id: orgId, prefix: 'QT', financial_year: fy, last_number: 1 })
+        await supabase.from('quotation_sequences').insert({ organization_id: orgId, prefix: qFmt.prefix, financial_year: fy, last_number: 1 })
       }
-      const finalNumber = `QT-${fy}-${String(nextNumber).padStart(4, '0')}`
+      const finalNumber = composeNumber(qFmt, nextNumber, fy)
 
       const { data: q, error: qErr } = await supabase.from('quotations').insert({
         organization_id: orgId,
@@ -310,15 +314,18 @@ function QuotationsPageInner() {
       const { data: items } = await supabase.from('quotation_items').select('*').eq('quotation_id', quotation.id).order('sort_order')
 
       const fy = getFinancialYear()
+      // The converted invoice is numbered by the invoice series — same shape the
+      // invoice form's own save path composes (create-invoice.ts).
+      const iFmt = resolveSeries(loadSetup(orgId), 'invoice')
       let { data: seq } = await supabase.from('invoice_sequences').select('*').eq('organization_id', orgId).eq('financial_year', fy).single()
       let nextNumber = 1
       if (seq) {
         nextNumber = seq.last_number + 1
         await supabase.from('invoice_sequences').update({ last_number: nextNumber }).eq('id', seq.id)
       } else {
-        await supabase.from('invoice_sequences').insert({ organization_id: orgId, prefix: 'INV', financial_year: fy, last_number: 1 })
+        await supabase.from('invoice_sequences').insert({ organization_id: orgId, prefix: iFmt.prefix, financial_year: fy, last_number: 1 })
       }
-      const invoiceNumber = `INV-${fy}-${String(nextNumber).padStart(4, '0')}`
+      const invoiceNumber = composeNumber(iFmt, nextNumber, fy)
 
       const { data: invoice, error: invErr } = await supabase.from('invoices').insert({
         organization_id: orgId,

@@ -25,6 +25,7 @@ import {
   computeTotals, isUsableLine, validateDoc, newDoc, sortDocs, docValue,
   type FlowDoc, type FlowLine, type GstType,
 } from '@/lib/orderflow'
+import { loadSetup, resolveSeries } from '@/lib/setup'
 
 export type OrderKind = 'sales_order' | 'purchase_order'
 
@@ -201,6 +202,13 @@ function OrderRegisterInner({ kind }: { kind: OrderKind }) {
 
   const fy = getFinancialYear()
 
+  // R3-2 — the number's *shape* comes from the series register (prefix / pad /
+  // FY-inside); the counter stays in this kind's own store. Default arg reads
+  // the org already in state; the load effect passes the id it just fetched.
+  function fmtFor(oid: string = orgId) {
+    return resolveSeries(loadSetup(oid), kind)
+  }
+
   const views: { value: StatusFilter; label: string }[] = [
     { value: 'all', label: 'All' },
     { value: 'draft', label: meta.statusLabels.draft },
@@ -264,7 +272,7 @@ function OrderRegisterInner({ kind }: { kind: OrderKind }) {
       // editor open. State is set inline rather than via openCreate(): a function
       // defined later in the component cannot be called from the load effect.
       if (searchParams.get('new') === '1') {
-        setModalDoc(newDoc(kind, peekNumber(store, kind, fy), todayISO()))
+        setModalDoc(newDoc(kind, peekNumber(store, kind, fy, fmtFor(oid)), todayISO()))
         setModalLines([emptyDraftLine()])
         setIsNewDoc(true)
         setModalError('')
@@ -276,7 +284,7 @@ function OrderRegisterInner({ kind }: { kind: OrderKind }) {
   }, [])
 
   function openCreate() {
-    const doc = newDoc(kind, peekNumber(loadStore(kind, orgId), kind, fy), todayISO())
+    const doc = newDoc(kind, peekNumber(loadStore(kind, orgId), kind, fy, fmtFor()), todayISO())
     setModalDoc(doc)
     setModalLines([emptyDraftLine()])
     setIsNewDoc(true)
@@ -344,7 +352,7 @@ function OrderRegisterInner({ kind }: { kind: OrderKind }) {
     let number = candidate.number
     let nextStore = store
     if (isNewDoc) {
-      const taken = takeNumber(store, kind, fy)
+      const taken = takeNumber(store, kind, fy, fmtFor())
       number = taken.number
       nextStore = taken.store
     }
