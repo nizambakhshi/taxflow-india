@@ -374,6 +374,12 @@ export default function ComplianceCalendarPage() {
           <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
             Accumulated late fees on {overdue.length} overdue filing{overdue.length === 1 ? '' : 's'} — interest is extra.
           </div>
+          <div style={{ fontSize: 11.5, color: 'var(--faint)', marginTop: 6, lineHeight: 1.55 }}>
+            This is the ₹5,000 headline from section 47. The ceiling is lower on a small shop&apos;s turnover and a nil
+            return caps at ₹500 — the{' '}
+            <Link href="/gst/filings" style={{ color: 'var(--brand)', fontWeight: 600, textDecoration: 'none' }}>filings register</Link>{' '}
+            works that out from the shop&apos;s own slab and names the notification that decided it.
+          </div>
         </Card>
       </div>
 

@@ -77,6 +77,7 @@ export const NAV_ITEMS: NavSection[] = [
       { label: 'Job Work · ITC-04', href: '/gst/job-work', icon: 'factory' },
       { label: 'Exports · LUT / FEMA', href: '/gst/exports', icon: 'ship' },
       { label: 'Compliance Calendar', href: '/gst/calendar', icon: 'calendar' },
+      { label: 'Filings & Amendments', href: '/gst/filings', icon: 'filing' },
       { label: 'TDS & 194Q Workpaper', href: '/tds', icon: 'percent' },
     ]
   },

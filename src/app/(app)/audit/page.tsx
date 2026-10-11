@@ -297,6 +297,11 @@ function AuditPageInner() {
             Only the paths marked <em>asks the seal</em> consult it before they save — and when one is stopped, the attempt is
             written here as a <strong>Write refused</strong> event, so the edit that never happened is still on the record.
           </p>
+          <p className="au-bounds-note">
+            A seal is also <em>read</em>, not only refused. The <Link href="/gst/filings" className="au-door-link">filings register</Link> prints a
+            sealed period as closed paper and offers to close an ended one from its own row, but it guards no door here: a transcript of a
+            return moves no rupee on the statements, so it is shown the seal rather than stopped by it. Its status changes still land on this trail.
+          </p>
         </div>
         <div className="au-bounds-col">
           <SectionTitle icon="alert">What this register is not</SectionTitle>

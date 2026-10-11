@@ -29,7 +29,7 @@
 //    when a file came from a shape this build does not fully understand.
 //  * **A damaged page does not void the book.** Each register carries a FNV-1a checksum over its
 //    own serialised content. A block that does not match is refused and named; the other
-//    restorable registers — twenty-nine in all — still restore. It is a checksum against truncation and hand-editing, not a
+//    restorable registers — thirty in all — still restore. It is a checksum against truncation and hand-editing, not a
 //    signature — nothing here proves who wrote the file, and the page prints "checked" rather than
 //    implying a security property it does not have.
 //
@@ -49,6 +49,7 @@ import { loadBom, saveBom } from '@/lib/bom'
 import { loadStatuses, saveStatuses } from '@/lib/compliance'
 import { loadCC, saveCC } from '@/lib/costcentres'
 import { loadExp, saveExp } from '@/lib/exports'
+import { loadFilings, saveFilings } from '@/lib/filings'
 import { loadFx, saveFx } from '@/lib/fx'
 import { loadGodowns, saveGodowns } from '@/lib/godowns'
 import * as gstr4 from '@/lib/gstr4'
@@ -463,6 +464,29 @@ export const REGISTERS: RegisterSpec[] = [
       : 'not a journal register — the head list and the entry list are both missing'),
     write: (orgId, v) => saveJournal(orgId, v as Parameters<typeof saveJournal>[1]),
     verify: (orgId) => { const s = loadJournal(orgId); return s.heads.length + s.entries.length },
+  },
+  {
+    id: 'filings',
+    prefix: 'taxflow:filings:',
+    label: 'Filings & amendments register',
+    what: 'What the shop states each return is — status, the date it was due and where that date came from, the figures the return states, the fee and interest recorded as paid — beside every amendment it carries and the window that governs it',
+    unit: 'row',
+    group: 'workpapers',
+    module: 'src/lib/filings.ts',
+    pageLabel: 'Filings & amendments',
+    pageHref: '/gst/filings',
+    encoding: 'json',
+    count: (v) => arrCount(v, 'filings') + arrCount(v, 'amendments'),
+    detail: (v) => `${plural(arrCount(v, 'filings'), 'return')} · ${plural(arrCount(v, 'amendments'), 'amendment')}`,
+    // The register is one row per form and period, so a hand-edited duplicate would restore as two
+    // rows describing the same return. `parseFilings` keeps the first and drops the rest; requiring
+    // both arrays by shape means a wrong-version file is refused here rather than restored as an
+    // empty register that prints as a success.
+    accepts: (v) => (isObj(v) && Array.isArray(field(v, 'filings')) && Array.isArray(field(v, 'amendments'))
+      ? null
+      : 'not a filings register — the return list and the amendment list are both missing'),
+    write: (orgId, v) => saveFilings(orgId, v as Parameters<typeof saveFilings>[1]),
+    verify: (orgId) => { const s = loadFilings(orgId); return s.filings.length + s.amendments.length },
   },
   {
     id: 'gstr9',

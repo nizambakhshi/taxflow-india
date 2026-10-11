@@ -444,7 +444,9 @@ export default function GSTDashboardPage() {
         </div>
         <div className="gh-note" style={{ marginTop: '0.9rem' }}>
           Status is recorded per period so you can see what is still open. Filing itself happens on the GST portal —
-          nothing here is transmitted.
+          nothing here is transmitted. The <Link href="/gst/filings" className="gh-link-inline">filings register</Link> keeps the
+          same returns with the date they went in, what the return stated, the late-fee slab that applies, and the
+          amendment windows still open — the status here is a tick on this page; that register is the transcript.
         </div>
       </Card>
 
@@ -512,6 +514,9 @@ export default function GSTDashboardPage() {
         <Button variant="ghost" size="sm" href="/gst/calendar" icon="calendar">
           Compliance calendar
         </Button>
+        <Button variant="ghost" size="sm" href="/gst/filings" icon="filing">
+          Filings &amp; amendments
+        </Button>
       </div>
 
       <style>{`
@@ -542,6 +547,8 @@ export default function GSTDashboardPage() {
         .gh-due.is-soon { color: var(--amber); }
 
         .gh-note { font-size: 11.5px; color: var(--faint); line-height: 1.6; margin-top: 0.85rem; }
+        .gh-link-inline { color: var(--brand); font-weight: 600; text-decoration: none; }
+        .gh-link-inline:hover { text-decoration: underline; }
         .gh-links { margin-top: 1.5rem; }
         .gh-link { text-decoration: none; color: inherit; display: block; }
         .gh-link-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }

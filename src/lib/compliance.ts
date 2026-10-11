@@ -71,7 +71,7 @@ export function generateEvents(fyStart: number, profile: Profile = DEFAULT_PROFI
         push({
           key: `cmp-${q.y}-${q.m}`, title: 'CMP-08 composition return', form: 'CMP-08',
           category: 'gst', due: iso(q.y, q.m + 1, 18),
-          period: `for ${quarterLabel(supply, i)}`,
+          period: `for ${quarterLabel(fyStart, i)}`,
           description: 'Quarterly composition-scheme tax payment and return.',
           href: '/gst/gstr4',
           penalty: { lateFeePerDay: 50, lateFeeCap: 5000, interestPct: 18, note: '₹50/day, and 18% interest on the tax short-paid.' },
@@ -84,7 +84,7 @@ export function generateEvents(fyStart: number, profile: Profile = DEFAULT_PROFI
         push({
           key: `r1-${q.y}-${q.m}`, title: 'GSTR-1 quarterly return', form: 'GSTR-1',
           category: 'gst', due: iso(q.y, q.m + 1, 11),
-          period: `for ${quarterLabel(supply, i)}`,
+          period: `for ${quarterLabel(fyStart, i)}`,
           description: 'Outward supplies statement under the QRMP scheme.',
           href: '/gst/gstr1',
           penalty: { lateFeePerDay: 50, nilFeePerDay: 20, lateFeeCap: 5000, note: '₹50/day (₹20/day on a nil return), capped at ₹5,000 per GSTIN.' },
@@ -208,7 +208,9 @@ export function generateEvents(fyStart: number, profile: Profile = DEFAULT_PROFI
   if (profile.filing === 'composition') {
     push({
       key: `gstr4-${nextYear}`, form: 'GSTR-4', title: 'GSTR-4 annual return',
-      category: 'gst', due: iso(nextYear, 4, 30),
+      // The proviso to rule 62(1)(ii) moved the composition year's return from 30 April to 30 June for
+      // FY 2024-25 onwards; the older date still stands for a year before that.
+      category: 'gst', due: iso(nextYear, fyStart >= 2024 ? 6 : 4, 30),
       period: `for FY ${fyStart}-${String(nextYear).slice(2)}`,
       description: 'Annual statement for composition dealers.',
       href: '/gst/gstr4',
@@ -228,9 +230,11 @@ export function generateEvents(fyStart: number, profile: Profile = DEFAULT_PROFI
   return events.sort((a, b) => a.due.localeCompare(b.due))
 }
 
-function quarterLabel(supply: { y: number, m: number, label: string }, index: number) {
+function quarterLabel(fyStart: number, index: number) {
   const q = Math.floor(index / 3) + 1
-  return `Q${q} ${supply.y}-${String(supply.y + 1).slice(2)}`
+  // The quarter belongs to the financial year that started in April `fyStart`, whatever calendar year
+  // its last month falls in — Q4 of FY 2026-27 ends in March 2027 and must not read "2027-28".
+  return `Q${q} ${fyStart}-${String(fyStart + 1).slice(2)}`
 }
 
 export interface LateCharge {

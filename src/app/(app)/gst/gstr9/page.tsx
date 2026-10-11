@@ -494,6 +494,13 @@ export default function Gstr9Page() {
               title="GSTR-9C — books against the returns actually filed"
               note="Type the Table 6.1 figures from each GSTR-3B on the portal. The difference column is what the reconciliation statement has to explain."
             />
+            <div className="g9-filings-hint no-print">
+              Already transcribed? The{' '}
+              <Link href="/gst/filings">filings register</Link> keeps each filed GSTR-3B with the taxable and tax
+              figures that return states, period by period — that page&apos;s variance tab compares the same two sides,
+              from the same documents this workpaper reads. Type figures here for the year 9C must file; record them
+              there for the history of what went in.
+            </div>
             <div className="g9-tools no-print">
               <Button size="sm" variant="subtle" icon="swap" onClick={copyBooksIntoFiled}>Copy books figures</Button>
               <Button size="sm" variant="ghost" icon="x" onClick={clearFiled}>Clear declared figures</Button>
@@ -684,6 +691,10 @@ export default function Gstr9Page() {
         .g9-note:focus { outline: none; border-color: var(--brand); border-style: solid; box-shadow: 0 0 0 3px var(--brand-ring); }
         .g9-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
         .g9-saved { font-size: 11.5px; color: var(--faint); }
+        .g9-filings-hint { font-size: 12px; color: var(--muted); line-height: 1.6; background: var(--surface-2);
+          border: 1px solid var(--line); border-radius: 8px; padding: 8px 11px; margin-bottom: 12px; }
+        .g9-filings-hint a { color: var(--brand); font-weight: 600; text-decoration: none; }
+        .g9-filings-hint a:hover { text-decoration: underline; }
         .g9-select {
           font-family: inherit; font-size: 12.5px; color: var(--ink); background: var(--surface);
           border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; min-height: 0; cursor: pointer;

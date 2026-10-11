@@ -693,6 +693,26 @@ export function buildActionCommands(): Command[] {
       badge: 'Action',
       keywords: 'journal head chart of accounts name register declare statement line profit loss balance sheet asset liability income expense closing reopening starter chart delete usage',
     },
+    {
+      id: 'action:record-filing',
+      kind: 'action',
+      label: 'Record a filed return',
+      sublabel: 'Transcribe what the portal says a return is — status, date, the figures it states',
+      href: '/gst/filings?new=1',
+      icon: 'filing',
+      badge: 'Action',
+      keywords: 'record file return gstr 3b 1 9 4 cmp 08 1a status filed due date reference arn transcript portal nil part filed not filed late fee interest paid tax paid what did i file have i filed it filing register amendment season monthly quarterly',
+    },
+    {
+      id: 'action:amendment-board',
+      kind: 'action',
+      label: 'Open the amendment board',
+      sublabel: 'Rule 59(6) clocks: which windows are still open, which have run out',
+      href: '/gst/filings?tab=amendments',
+      icon: 'filing',
+      badge: 'Action',
+      keywords: 'amend amendment revise correct error gstr 1a 3b 9 window deadline rule 59(6) 61 days third next financial year sanchay date of amendment lapsed open clock board dangling document invoice omitted paper not filed amended return change a filed return',
+    },
   ]
 }
 

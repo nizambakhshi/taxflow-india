@@ -347,6 +347,16 @@ const P: Record<string, React.ReactNode> = {
     <line x1="12" y1="11" x2="12" y2="19.5" />
     <line x1="8" y1="13" x2="16" y2="13" />
   </>),
+  // A return with a date stamped across it: the sheet itself plus the day it was filed, because this
+  // register is a transcript of a return, not the workpaper that computes it.
+  filing: (<>
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h5" />
+    <polyline points="14 2 14 8 20 8" />
+    <line x1="16" y1="13" x2="8" y2="13" />
+    <line x1="12" y1="17" x2="8" y2="17" />
+    <circle cx="17.2" cy="17.2" r="4.2" />
+    <polyline points="17.2 15.4 17.2 17.2 18.7 17.2" />
+  </>),
 }
 
 export type IconName = keyof typeof P
