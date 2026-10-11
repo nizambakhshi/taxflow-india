@@ -16,6 +16,7 @@ import { INDIAN_STATES } from '@/lib/constants'
 import { GST_RATES } from '@/lib/gst-rates'
 import { queueOfflineInvoice, isNetworkError } from '@/lib/outbox'
 import { createInvoice } from '@/lib/create-invoice'
+import { sealGuard, recordRefusal } from '@/lib/audit'
 import { Button, Card, PageHeader, SectionTitle } from '@/components/ui'
 import Icon from '@/components/Icons'
 
@@ -269,6 +270,21 @@ export default function NewInvoicePage() {
     }
     if (!totals) { setError('Please complete line items'); return }
 
+    // Financial period lock (R3-1): a sealed GST period refuses this write, and
+    // the refusal itself goes on the append-only trail so the attempt is auditable.
+    const guard = sealGuard(orgId, invoiceDate)
+    if (guard.sealed) {
+      recordRefusal(orgId, {
+        date: invoiceDate,
+        target: 'invoice',
+        ref: 'draft',
+        actor: orgName || undefined,
+        guard,
+      })
+      setError(guard.why)
+      return
+    }
+
     setSaving(true)
     setError('')
 
@@ -401,6 +417,22 @@ export default function NewInvoicePage() {
               <span>Invoice date *</span>
               <input className="tf-input" type="date" value={invoiceDate}
                 onChange={e => setInvoiceDate(e.target.value)} required />
+              {orgId && sealGuard(orgId, invoiceDate).sealed && (
+                <div style={{
+                  display: 'flex', alignItems: 'flex-start', gap: 7, marginTop: 7,
+                  padding: '8px 10px', borderRadius: 8,
+                  background: 'var(--red-soft)', border: '1px solid var(--red)',
+                  fontSize: 12, lineHeight: 1.4, color: 'var(--red)',
+                }}>
+                  <Icon name="lock" size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+                  <span>
+                    {sealGuard(orgId, invoiceDate).why}{' '}
+                    <a href="/audit?tab=seals" style={{ color: 'var(--red)', fontWeight: 600, textDecoration: 'underline' }}>
+                      View seals
+                    </a>
+                  </span>
+                </div>
+              )}
             </div>
             <div className="ni-field">
               <span>Due date</span>

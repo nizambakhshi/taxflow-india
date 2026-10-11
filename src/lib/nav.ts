@@ -92,6 +92,7 @@ export const NAV_ITEMS: NavSection[] = [
       { label: 'Projects & Time', href: '/projects', icon: 'briefcase' },
       { label: 'Payroll & Salary', href: '/payroll', icon: 'users' },
       { label: 'Payslip', href: '/payroll/payslip', icon: 'printer' },
+      { label: 'Audit & Period Locks', href: '/audit', icon: 'lock' },
       { label: 'Scan Bill', href: '/ai/scan-bill', icon: 'scan' },
       { label: 'Ask My Books', href: '/ai/ask', icon: 'chat' },
     ]

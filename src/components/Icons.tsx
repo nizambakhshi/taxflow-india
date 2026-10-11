@@ -255,6 +255,19 @@ const P: Record<string, React.ReactNode> = {
   shield: (<>
     <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
   </>),
+  // A sealed period: the padlock that closes a GST month to edits.
+  lock: (<>
+    <rect x="4.5" y="11" width="15" height="9.5" rx="2" />
+    <path d="M8 11V7.5a4 4 0 0 1 8 0V11" />
+    <circle cx="12" cy="15.5" r="1.3" />
+  </>),
+  // A released seal: the same body, its shackle swung open — lifted, never deleted.
+  unlock: (<>
+    <rect x="4.5" y="11" width="15" height="9.5" rx="2" />
+    <path d="M8 11V7.5a4 4 0 0 1 7.8-1.1" />
+    <circle cx="12" cy="15.5" r="1.3" />
+  </>),
+  'chevron-left': <polyline points="15 5 8 12 15 19" />,
   warehouse: (<>
     <path d="M3 21V9.5L12 5l9 4.5V21" />
     <path d="M2 21h20" />

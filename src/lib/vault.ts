@@ -29,7 +29,7 @@
 //    when a file came from a shape this build does not fully understand.
 //  * **A damaged page does not void the book.** Each register carries a FNV-1a checksum over its
 //    own serialised content. A block that does not match is refused and named; the other
-//    twenty-nine still restore. It is a checksum against truncation and hand-editing, not a
+//    restorable registers — twenty-seven in all — still restore. It is a checksum against truncation and hand-editing, not a
 //    signature — nothing here proves who wrote the file, and the page prints "checked" rather than
 //    implying a security property it does not have.
 //
@@ -42,6 +42,7 @@
 // and marked as evidence. And the vault's own log (`taxflow:vault:`) is not in the vault — a
 // backup that remembers being backed up is a loop, not a record.
 
+import { loadAudit, saveAudit } from '@/lib/audit'
 import { loadBatches, loadMoves, saveBatches, saveMoves } from '@/lib/batches'
 import { loadBank, saveBank } from '@/lib/bank-statement'
 import { loadBom, saveBom } from '@/lib/bom'
@@ -417,6 +418,27 @@ export const REGISTERS: RegisterSpec[] = [
       : 'not a payroll register — employees and month rows are both missing'),
     write: (orgId, v) => savePayroll(orgId, v as Parameters<typeof savePayroll>[1]),
     verify: (orgId) => { const s = loadPayroll(orgId); return s.employees.length + s.inputs.length + s.attendance.length },
+  },
+  {
+    id: 'audit',
+    prefix: 'taxflow:audit:',
+    label: 'Audit trail and period seals',
+    what: 'The append-only record of every period sealed, seal released, refused write and note — who decided, and whether a closed period can still be typed over',
+    unit: 'record',
+    group: 'workpapers',
+    module: 'src/lib/audit.ts',
+    pageLabel: 'Audit & locks',
+    pageHref: '/audit',
+    encoding: 'json',
+    count: (v) => arrCount(v, 'seals') + arrCount(v, 'events'),
+    detail: (v) => `${plural(arrCount(v, 'seals'), 'seal')} · ${plural(arrCount(v, 'events'), 'event')}`,
+    // A store the parser cannot read back comes out empty, so a wrong-version file would restore as a
+    // blank trail and look like a success. Refused by shape — seals and events must both be arrays.
+    accepts: (v) => (isObj(v) && Array.isArray(field(v, 'seals')) && Array.isArray(field(v, 'events'))
+      ? null
+      : 'not an audit register — the seals list and the events list are both missing'),
+    write: (orgId, v) => saveAudit(orgId, v as Parameters<typeof saveAudit>[1]),
+    verify: (orgId) => { const s = loadAudit(orgId); return s.seals.length + s.events.length },
   },
   {
     id: 'gstr9',

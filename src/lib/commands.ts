@@ -653,6 +653,26 @@ export function buildActionCommands(): Command[] {
       badge: 'Action',
       keywords: 'restore put back recover vault file json upload pick import another device new laptop browser wiped lost data undo replace registers batches serials godowns lut workpapers targets splits settings checksum damaged truncated plan',
     },
+    {
+      id: 'action:seal-period',
+      kind: 'action',
+      label: 'Seal a period',
+      sublabel: 'Close a GST month or year that has ended, so it cannot be typed over',
+      href: '/audit?new=1',
+      icon: 'lock',
+      badge: 'Action',
+      keywords: 'seal lock close period month gst financial year freeze protect filed lock period audit trail edit protect after filing gstr 3b 1 annual stop editing past month retype tamper seal a period lock a month period lock gstr9',
+    },
+    {
+      id: 'action:audit-trail',
+      kind: 'action',
+      label: 'Open the audit trail',
+      sublabel: 'Every seal, release and refused write, numbered and unbroken',
+      href: '/audit?tab=trail',
+      icon: 'shield',
+      badge: 'Action',
+      keywords: 'audit trail log who changed what when history events refused writes integrity unbroken checksum evidence compliance control period locks seals releases notes trail tamper edit history',
+    },
   ]
 }
 
