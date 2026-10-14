@@ -48,14 +48,22 @@ import {
   Badge, Button, Card, EmptyState, PageHeader, SectionTitle, Segmented, StatCard, StatRow, SearchInput,
 } from '@/components/ui'
 import Icon from '@/components/Icons'
+import { toCsv } from '@/lib/registers'
+import { download } from '@/lib/party-ledger'
+import {
+  CLASS_META, PERSISTENCE_BOUNDARIES, PERSISTENCE_CSV_HEADERS, PERSISTENCE_READINGS, SEAL_META,
+  persistenceCsvRows, persistencePlan, persistenceTotals, readNotDoorRows, sealClaimGaps, sealClaims,
+  type PersistenceClass,
+} from '@/lib/persistence'
 
-type Tab = 'backup' | 'restore' | 'registers' | 'inside'
+type Tab = 'backup' | 'restore' | 'registers' | 'inside' | 'persistence'
 
 const TABS: { value: Tab; label: string }[] = [
   { value: 'backup', label: 'Backup' },
   { value: 'restore', label: 'Restore' },
   { value: 'registers', label: 'Registers' },
   { value: 'inside', label: 'Not in this file' },
+  { value: 'persistence', label: 'Server plan' },
 ]
 
 type GroupFilter = 'all' | VaultGroup
@@ -85,6 +93,19 @@ const GROUP_LABEL: Record<VaultGroup, string> = {
   workpapers: 'The workpapers you file',
   settings: 'The settings you chose',
   evidence: 'The logs a backup can only show',
+}
+
+/** The four persistence classes in the order a shop should read them — fastest to a server first —
+ *  and the badge colour each one wears. Ordered by `CLASS_META.rank`, so a re-ranked class reorders
+ *  the whole tab without this page being touched. */
+const CLASS_ORDER = (Object.keys(CLASS_META) as PersistenceClass[])
+  .sort((a, b) => CLASS_META[a].rank - CLASS_META[b].rank)
+
+const CLASS_TONE: Record<PersistenceClass, 'red' | 'amber' | 'violet' | 'grey'> = {
+  authoritative: 'red',
+  'decision-input': 'amber',
+  reconstructible: 'violet',
+  'device-by-design': 'grey',
 }
 
 /** Every plan state in the order a person should read them: what changes, then what does not. */
@@ -222,6 +243,19 @@ function VaultPageInner() {
     const max = top[0]?.chars ?? 1
     return top.map(r => ({ ...r, share: Math.max(4, (r.chars / max) * 100) }))
   }, [snap.preview])
+
+  // ── the server plan (R3-13) — a reading of the vault's own register list, so it needs no browser
+  // data and never re-reads a value; it is the shape of a future migration, not its contents. ──────
+  const plan_ = useMemo(() => persistencePlan(), [])
+  const pTotals = useMemo(() => persistenceTotals(plan_), [plan_])
+  const pSealClaims = useMemo(() => sealClaims(plan_), [plan_])
+  const pSealGaps = useMemo(() => sealClaimGaps(plan_), [plan_])
+  const pReadNotDoor = useMemo(() => readNotDoorRows(plan_), [plan_])
+  // Rows grouped by class, in the reading order the summary uses, so the table can print one section
+  // per class with its own header instead of a single flat list.
+  const pByClass = useMemo(() => CLASS_ORDER
+    .map(cls => ({ cls, rows: plan_.filter(r => r.cls === cls) }))
+    .filter(s => s.rows.length > 0), [plan_])
 
   function flash(msg: string) { setNotice({ msg, bad: false }) }
   function warn(msg: string) { setNotice({ msg, bad: true }) }
@@ -1030,6 +1064,192 @@ function VaultPageInner() {
         </div>
       )}
 
+      {/* ── SERVER PLAN (R3-13) ─────────────────────────────────────────────── */}
+      {tab === 'persistence' && (
+        <div className="tfv-stack">
+          <Card>
+            <SectionTitle
+              icon="cloud"
+              action={<Button variant="subtle" size="sm" icon="download"
+                onClick={() => download('taxflow-persistence-inventory.csv', toCsv(PERSISTENCE_CSV_HEADERS, persistenceCsvRows(plan_)))}>
+                Export the inventory</Button>}
+            >
+              Which of these books must reach a server
+            </SectionTitle>
+            <div className="tfv-note">
+              <Icon name="book" size={14} />
+              <span>
+                The vault already answers <em>which books exist</em>. This tab answers the next question a backend round
+                has to be planned against — <em>which of them are the only copy</em>, asked of a single test: what is
+                lost if this browser is wiped and no backup file is there to bring it back. The register list is read
+                live from the vault’s own inventory, so this page cannot disagree with the {pTotals.total} books it
+                counts; only the priority, the reason and a <em>proposed</em> home are added here. This is a reading,
+                not a migration — no schema, no <code>.sql</code>, no row is written (ADR-013 / Rule 21).
+              </span>
+            </div>
+
+            <div className="tfv-fresh-stats">
+              {CLASS_ORDER.filter(c => pTotals.byClass.find(b => b.cls === c)?.count).map(c => {
+                const b = pTotals.byClass.find(x => x.cls === c)!
+                return (
+                  <span key={c} className="tfv-fresh-chip">
+                    <Badge tone={CLASS_TONE[c]} dot={false}>{b.label}</Badge>
+                    <b>{b.count}</b>
+                    <span className="tfv-fresh-why">{CLASS_META[c].means}</span>
+                  </span>
+                )
+              })}
+              <span className="tfv-fresh-chip">
+                <Badge tone="cyan" dot={false}>Needs a server copy</Badge>
+                <b>{pTotals.needsServer}</b>
+                <span className="tfv-fresh-why">the only copy of a record or a decision — the two classes that belong on a server</span>
+              </span>
+              <span className="tfv-fresh-chip">
+                <Badge tone="grey" dot={false}>Restorable today</Badge>
+                <b>{pTotals.restorable}</b>
+                <span className="tfv-fresh-why">what the vault can already put back through its owning page</span>
+              </span>
+            </div>
+          </Card>
+
+          {/* ── THE FOUR CLASSES ───────────────────────────────────────────── */}
+          <Card>
+            <SectionTitle icon="layers">The four classes, and the one question that sorts them</SectionTitle>
+            <div className="tfv-decisions">
+              {CLASS_ORDER.map(c => (
+                <div key={c} className="tfv-decision">
+                  <span className="tfv-decision-icon"><Icon name={CLASS_META[c].serverBound ? 'cloud' : 'shield'} size={15} /></span>
+                  <div>
+                    <div className="tfv-decision-title">{CLASS_META[c].label} · {pTotals.byClass.find(b => b.cls === c)?.count ?? 0}</div>
+                    <div className="tfv-decision-body">{CLASS_META[c].means}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          {/* ── THE PERIOD-SEAL CROSS-CHECK ────────────────────────────────── */}
+          <Card>
+            <SectionTitle icon="lock">The seal column — what the wiring has actually earned</SectionTitle>
+            <div className="tfv-note">
+              <Icon name="shield" size={14} />
+              <span>
+                A register’s class answers the <em>backup</em> question; a period seal answers a different one — does a
+                dated money write pass a lock before it saves. <strong>{pSealClaims.length}</strong> of these registers
+                say yes: {pSealClaims.filter(s => s.seal === 'asked-through-a-writer').length} become paper through a
+                shared writer and {pSealClaims.filter(s => s.seal === 'asked-at-own-engine').length} calls the seal in its
+                own engine. Each claim names a route on the <Link href="/audit">audit page’s guarded-doors list</Link>,
+                and the test suite re-reads that list and refuses this count if a route is not really there — so this
+                sentence cannot outrun the wiring (Rule 42).
+                {pSealGaps.length > 0
+                  ? <> Right now {pSealGaps.length} claim{pSealGaps.length === 1 ? ' has' : 's have'} no route to stand on — printed below in red rather than hidden.</>
+                  : ' Every claim here carries its route; none is floating.'}
+              </span>
+            </div>
+            {pReadNotDoor.length > 0 && (
+              <div className="tfv-note">
+                <Icon name="book" size={14} />
+                <span>
+                  {pReadNotDoor.map(r => r.label).join(', ')} {pReadNotDoor.length === 1 ? 'reads' : 'read'} a period’s
+                  seal and shows it as closed paper, but guard no door — a transcript moves no rupee (Rule 41). The
+                  seal is offered there, never asked.
+                </span>
+              </div>
+            )}
+            <div className="table-frame">
+              <div className="responsive-table">
+                <div className="table-header tfv-row tfv-per-seal">
+                  <span data-label="Register">Register</span>
+                  <span data-label="Seal state">Period seal</span>
+                  <span data-label="Proof route">Proof route</span>
+                  <span data-label="Carried by">Carried by</span>
+                </div>
+                {pSealClaims.map(s => (
+                  <div key={s.id} className="table-row tfv-row tfv-per-seal">
+                    <span data-label="Register"><span className="tfv-name">{s.label}</span></span>
+                    <span data-label="Seal state"><Badge tone={s.seal === 'asked-at-own-engine' ? 'blue' : 'green'} dot={false}>{SEAL_META[s.seal].label}</Badge></span>
+                    <span data-label="Proof route"><span className="tfv-mono tfv-detail">{s.href}</span></span>
+                    <span data-label="Carried by"><span className="tfv-detail">{s.by}</span></span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Card>
+
+          {/* ── THE INVENTORY, ONE BLOCK PER CLASS ─────────────────────────── */}
+          {pByClass.map(section => (
+            <div key={section.cls} className="tfv-section">
+              <div className="tfv-section-head">
+                <h2><Icon name={CLASS_META[section.cls].serverBound ? 'cloud' : 'shield'} size={14} />{CLASS_META[section.cls].label}</h2>
+                <span className="tfv-section-sub">{section.rows.length} register{section.rows.length === 1 ? '' : 's'} · {CLASS_META[section.cls].serverBound ? 'belongs on a server' : 'stays on the device'}</span>
+              </div>
+              <div className="table-frame">
+                <div className="responsive-table">
+                  <div className="table-header tfv-row tfv-per">
+                    <span data-label="Register">Register</span>
+                    <span data-label="Why this class">Why this class</span>
+                    <span data-label="Server copy">Server</span>
+                    <span data-label="Period seal">Period seal</span>
+                    <span data-label="Proposed destination">Proposed destination</span>
+                    <span data-label="Restorable">Restorable</span>
+                  </div>
+                  {section.rows.map(r => (
+                    <div key={r.id} className={`table-row tfv-row tfv-per ${r.unclassified ? 'is-warn' : ''}`}>
+                      <span data-label="Register">
+                        <span className="tfv-name">{r.label}</span>
+                        <span className="tfv-sub tfv-mono">{r.id}</span>
+                      </span>
+                      <span data-label="Why this class"><span className="tfv-detail">{r.why}</span></span>
+                      <span data-label="Server copy">{r.serverBound ? <Badge tone="cyan" dot={false}>Needed</Badge> : <Badge tone="grey" dot={false}>No</Badge>}</span>
+                      <span data-label="Period seal"><Badge tone="grey" dot={false}>{SEAL_META[r.seal].label}</Badge></span>
+                      <span data-label="Proposed destination"><span className="tfv-detail">{r.destination}</span></span>
+                      <span data-label="Restorable">{r.restorable ? <Badge tone="green" dot={false}>Yes</Badge> : <Badge tone="amber" dot={false}>Evidence only</Badge>}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ))}
+
+          {pTotals.unclassified.length > 0 && (
+            <Card>
+              <div className="tfv-note is-hot">
+                <Icon name="alert" size={14} />
+                <span>
+                  {pTotals.unclassified.length} register{pTotals.unclassified.length === 1 ? ' is' : 's are'} in the vault
+                  without a persistence judgement ({pTotals.unclassified.join(', ')}). The inventory reads the vault’s list
+                  rather than a copy, so a new book shows up here as a gap instead of vanishing — write its class beside it.
+                </span>
+              </div>
+            </Card>
+          )}
+
+          {/* ── THE READINGS ───────────────────────────────────────────────── */}
+          <Card>
+            <SectionTitle icon="book">What this page is allowed to claim, and in whose words</SectionTitle>
+            {PERSISTENCE_READINGS.map((r, i) => (
+              <div key={i} className="tfv-note">
+                <Icon name="shield" size={14} />
+                <span>{r.text}</span>
+              </div>
+            ))}
+          </Card>
+
+          {/* ── THE BOUNDARIES ─────────────────────────────────────────────── */}
+          <Card>
+            <SectionTitle icon="x">The boundary of this inventory</SectionTitle>
+            <div className="tfv-grid">
+              {PERSISTENCE_BOUNDARIES.map((b, i) => (
+                <div key={i} className="tfv-exclude">
+                  <div className="tfv-exclude-title"><Icon name="x" size={13} />Boundary {i + 1}</div>
+                  <p className="tfv-exclude-body">{b}</p>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+      )}
+
       <style>{`
         .tfv-stack { display: flex; flex-direction: column; gap: 14px; }
         .tfv-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 1.1rem; }
@@ -1136,6 +1356,10 @@ function VaultPageInner() {
         .tfv-plan-row { grid-template-columns: 26px minmax(0, 1.3fr) minmax(0, 1fr) 92px minmax(0, 1.1fr); }
         .tfv-hist { grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) 92px 72px 78px; }
         .tfv-inv { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.6fr) 52px 66px minmax(0, 1.1fr) minmax(0, 1.1fr) minmax(0, 1.25fr); }
+        /* R3-13 server-plan tables: the seal cross-check (4 columns) and the class-grouped inventory (6). */
+        .tfv-per-seal { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1fr); }
+        .tfv-per { grid-template-columns: minmax(0, 1fr) minmax(0, 2.1fr) 84px minmax(0, 1fr) minmax(0, 1.7fr) 104px; }
+        .table-row.tfv-row.is-warn { background: var(--amber-soft); }
         .table-row.tfv-row { border-bottom: 1px solid var(--line-soft); color: var(--ink-2); }
         .table-row.tfv-row:hover { background: var(--surface-2); }
         .table-row.tfv-row.is-empty { opacity: 0.65; }
