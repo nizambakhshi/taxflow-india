@@ -309,6 +309,10 @@ function ExportsPageInner() {
       }
       setBooks(exportRows as unknown as ExportBookInvoice[])
 
+      // ?tab= opens the register, the LUT list, the watch, the refund track, or the rules — so a
+      // ⌘K row that found a shipping bill can land the shop on the track rather than the register.
+      const t = searchParams.get('tab')
+      if (t === 'register' || t === 'lut' || t === 'watch' || t === 'track' || t === 'rule') setTab(t)
       // ?new=1 opens a blank file, ?lut=1 the undertaking editor, ?file=<invoice> seeds from a book row.
       if (searchParams.get('new') === '1') setEditor({ file: newFile(), isNew: true })
       if (searchParams.get('lut') === '1') setLutEditor({ lut: newLut(), isNew: true })

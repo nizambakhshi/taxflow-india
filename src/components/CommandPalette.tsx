@@ -7,7 +7,7 @@ import Icon from '@/components/Icons'
 import {
   ENTITY_SPECS, RECORDS_PER_GROUP, SUPABASE_RECORD_ORDER,
   buildActionCommands, buildPageCommands, clampIndex, flattenVisible, groupBySection,
-  isActiveHref, loadRecents, nextIndex, normalizeQuery, orFilter, orderRecordCommands,
+  isActiveHref, loadRecents, nextIndex, normalizeQuery, orFilter, orderRecordCommands, registerRecordCommands,
   pushRecent, rankCommands, toCommand,
   type Command, type EntityKind, type EntityRow,
 } from '@/lib/commands'
@@ -152,7 +152,8 @@ export default function CommandPalette({ orgId, pathname, open, setOpen }: Props
   // Order-flow documents (challans, sales/purchase orders) live in localStorage,
   // so they match synchronously — no debounce, no spinner, same ranker as the rest.
   const localRecords = useMemo(
-    () => (open && normalizeQuery(query).length >= MIN_QUERY ? orderRecordCommands(orgId, query) : []),
+    () => (open && normalizeQuery(query).length >= MIN_QUERY
+      ? [...orderRecordCommands(orgId, query), ...registerRecordCommands(orgId, query)] : []),
     [open, query, orgId]
   )
 

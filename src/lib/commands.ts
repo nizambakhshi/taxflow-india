@@ -17,6 +17,14 @@ import { validateGSTIN } from '@/lib/constants'
 import { formatCompactINR, formatDateIN } from '@/lib/format'
 import { NAV_ITEMS } from '@/lib/nav'
 import { docValue, loadStore } from '@/lib/orderflow'
+// The two Round-3 registers whose rows ⌘K can now find. Both live in localStorage under ADR-013, so —
+// like the order-flow documents above — their live search is synchronous: read the store, build a row
+// per record, let the same ranker filter. These are *read-only* imports; nothing here writes a filing,
+// a claim or a consignment.
+import {
+  AMENDMENT_META, AMENDMENT_STATUS_META, FORM_META, STATUS_META, loadFilings, periodLabel,
+} from '@/lib/filings'
+import { ROUTE_META, loadExp } from '@/lib/exports'
 
 export type CommandKind = 'recent' | 'action' | 'page' | 'record'
 
@@ -34,7 +42,10 @@ export type RecordEntity =
 /** Order-flow documents live in localStorage (ADR-013) — searched synchronously. */
 export type OrderEntity = 'challan' | 'sales_order' | 'purchase_order'
 
-export type EntityKind = RecordEntity | OrderEntity
+/** Round-3 device registers, also localStorage — searched synchronously, read-only. */
+export type RegisterEntity = 'filing' | 'amendment' | 'export_file'
+
+export type EntityKind = RecordEntity | OrderEntity | RegisterEntity
 
 export interface Command {
   id: string
@@ -87,8 +98,11 @@ export const SUPABASE_RECORD_ORDER: RecordEntity[] = [
 
 export const ORDER_ENTITIES: OrderEntity[] = ['challan', 'sales_order', 'purchase_order']
 
-/** Display order for record groups — local order documents sit after the rest. */
-export const RECORD_ORDER: EntityKind[] = [...SUPABASE_RECORD_ORDER, ...ORDER_ENTITIES]
+/** Device registers added to the same synchronous pass (Round 3's filings + export books). */
+export const REGISTER_ENTITIES: RegisterEntity[] = ['filing', 'amendment', 'export_file']
+
+/** Display order for record groups — local order documents sit after the rest, registers last. */
+export const RECORD_ORDER: EntityKind[] = [...SUPABASE_RECORD_ORDER, ...ORDER_ENTITIES, ...REGISTER_ENTITIES]
 
 interface EntitySpec {
   table: string
@@ -200,6 +214,9 @@ export const ENTITY_META: Record<EntityKind, { group: string; badge: string; ico
   challan: { group: 'Challans', badge: 'Challan', icon: 'truck', home: '/challans' },
   sales_order: { group: 'Sales orders', badge: 'Sales order', icon: 'bag', home: '/sales-orders' },
   purchase_order: { group: 'Purchase orders', badge: 'Purchase order', icon: 'clipboard-check', home: '/purchase-orders' },
+  filing: { group: 'Filing periods', badge: 'Filing', icon: 'filing', home: '/gst/filings' },
+  amendment: { group: 'Open amendments', badge: 'Amendment', icon: 'filing', home: '/gst/filings?tab=amendments' },
+  export_file: { group: 'Export files', badge: 'Export', icon: 'ship', home: '/gst/exports' },
 }
 
 export const ENTITY_GROUPS = RECORD_ORDER.map(e => ENTITY_META[e].group)
@@ -462,6 +479,16 @@ export function buildActionCommands(): Command[] {
       icon: 'ship',
       badge: 'Action',
       keywords: 'create add export overseas foreign buyer shipping bill lut letter of undertaking rfd-11 rfd-1 zero rated igst refund realisation firc e-brc fema proceeds window advance grace period',
+    },
+    {
+      id: 'action:export-refund-track',
+      kind: 'action',
+      label: 'IGST refund track',
+      sublabel: 'Each shipping bill against the returns',
+      href: '/gst/exports?tab=track',
+      icon: 'ship',
+      badge: 'Action',
+      keywords: 'export igst refund track shipping bill realisation status claim zero rated rfd-1 window',
     },
     {
       id: 'action:new-cost-centre',
@@ -824,6 +851,93 @@ export function orderRecordCommands(orgId: string, query: string): Command[] {
       })
     }
   }
+  return out
+}
+
+/**
+ * The two Round-3 device registers — filings & amendments (R3-4) and export consignment files
+ * (R3-10) — live in localStorage (ADR-013) and were reachable only by clicking their sidebar item.
+ * This gives ⌘K the same synchronous live search the order-flow documents already have, so a period,
+ * an open amendment, or a shipping bill is findable by typing its number.
+ *
+ * The rows print the engine's own reading and nothing more: a FORM_META / AMENDMENT_META /
+ * ROUTE_META label, the period this register names, a status straight from its meta map. No due date
+ * is recomputed here and no rupee is re-read from the books — the IGST figure stays on the track tab,
+ * which is where the books and FX are joined. A hit lands on a tab and ?q= the page already honours.
+ * An empty register yields no rows; it never claims "no filings".
+ */
+export function registerRecordCommands(orgId: string, query: string): Command[] {
+  const q = normalizeQuery(query)
+  if (!q || !orgId || typeof window === 'undefined') return []
+  const out: Command[] = []
+
+  const filings = loadFilings(orgId)
+
+  for (const f of filings.filings) {
+    const meta = ENTITY_META.filing
+    const form = FORM_META[f.form]?.label ?? f.form
+    const period = periodLabel(f.period)
+    const status = STATUS_META[f.status]?.label ?? f.status
+    out.push({
+      id: `record:filing:${f.id}`,
+      kind: 'record',
+      entity: 'filing',
+      label: `${form} · ${period}`,
+      sublabel: [status, f.filed_on && `filed ${formatDateIN(f.filed_on)}`, f.reference].filter(Boolean).join(' · '),
+      href: `/gst/filings?q=${encodeURIComponent(period)}`,
+      icon: meta.icon,
+      badge: meta.badge,
+      keywords: [f.form, form, period, f.status, status, f.reference, f.due, f.notes, f.actor]
+        .filter(Boolean).join(' ').toLowerCase(),
+    })
+  }
+
+  for (const a of filings.amendments) {
+    const meta = ENTITY_META.amendment
+    const period = periodLabel(a.period)
+    const kind = AMENDMENT_META[a.kind]?.label ?? a.kind
+    const status = AMENDMENT_STATUS_META[a.status]?.label ?? a.status
+    out.push({
+      id: `record:amendment:${a.id}`,
+      kind: 'record',
+      entity: 'amendment',
+      label: `${kind} · ${period}`,
+      sublabel: [status, a.doc_ref, a.party].filter(Boolean).join(' · '),
+      href: `/gst/filings?tab=amendments&q=${encodeURIComponent(period)}`,
+      icon: meta.icon,
+      badge: meta.badge,
+      keywords: [a.kind, kind, period, a.status, status, a.doc_ref, a.party, a.carried_in, a.notes, a.actor]
+        .filter(Boolean).join(' ').toLowerCase(),
+    })
+  }
+
+  for (const file of loadExp(orgId).files) {
+    const meta = ENTITY_META.export_file
+    const bill = String(file.shipping_bill_number || '').trim()
+    const isGoods = file.kind === 'goods'
+    const route = ROUTE_META[file.route]?.short ?? ''
+    // A goods consignment that already carries a shipping bill belongs on the refund track; a service
+    // export has no bill, and a goods file without one is still only on the register.
+    const label = isGoods && bill ? `SB ${bill}` : file.invoice_number
+    const href = isGoods && bill
+      ? `/gst/exports?tab=track&q=${encodeURIComponent(bill)}`
+      : `/gst/exports?q=${encodeURIComponent(bill || file.invoice_number)}`
+    out.push({
+      id: `record:export_file:${file.id}`,
+      kind: 'record',
+      entity: 'export_file',
+      label,
+      sublabel: [file.invoice_number !== label ? file.invoice_number : '', file.destination, route]
+        .filter(Boolean).join(' · '),
+      href,
+      icon: meta.icon,
+      badge: meta.badge,
+      keywords: [file.invoice_number, bill, file.destination, file.port_code, file.port_name,
+        file.kind, route, file.lut_id, file.notes]
+        .filter(Boolean).join(' ').toLowerCase(),
+    })
+  }
+
   return out
 }
 
