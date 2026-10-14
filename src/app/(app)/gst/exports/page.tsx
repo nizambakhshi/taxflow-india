@@ -15,8 +15,10 @@
 // what a trader actually needs before an audit, so it is drawn on the face of every card.
 //
 // Nothing here files anything. An RFD-11 or RFD-1 reference is transcribed from the portal, never
-// sent to it; the balances are receipted on /payments; and the realisation window is a cited band
-// table, printed with the instrument behind each figure and the one day the sources disagree about.
+// sent to it; the balances are receipted on /payments; the realisation window is a cited band table,
+// printed with the instrument behind each figure and the one day the sources disagree about; and the
+// IGST refund track reads the shipping bill as the application it already is — it names which return
+// that bill has to ride on is missing or short, and it never raises a claim of its own.
 
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
@@ -27,22 +29,25 @@ import { toCsv } from '@/lib/registers'
 import { download } from '@/lib/party-ledger'
 import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
 import { loadFx, emptyFx, type FxStore } from '@/lib/fx'
+import { loadFilings, type FilingsStore } from '@/lib/filings'
 import { addMonthsISO, daysBetween } from '@/lib/recurring'
 import {
   ADVANCE_BANDS, CLAIM_META, CLAIM_ORDER, EXPORT_DESTINATIONS, EXPORT_REGISTER_CSV_HEADERS,
-  INDIAN_PORTS, KIND_META, KIND_ORDER, LUT_CSV_HEADERS, MODE_LABEL, REALISATION_BANDS,
-  REALISATION_CSV_HEADERS, REFUND_CLOSING_DAYS, REFUND_LABEL, REFUND_TONE, REFUND_WINDOW_MONTHS,
-  ROUTE_META, ROUTE_ORDER, SHIPPING_BILL_CSV_HEADERS, SORTS, TIME_LABEL, TIME_TONE, TRANSPORT_MODES,
-  WATCH_CSV_HEADERS,
+  IGST_TRACK_CSV_HEADERS, INDIAN_PORTS, KIND_META, KIND_ORDER, LUT_CSV_HEADERS, MODE_LABEL,
+  REALISATION_BANDS, REALISATION_CSV_HEADERS, REFUND_CLOSING_DAYS, REFUND_LABEL, REFUND_TONE,
+  REFUND_TRACK_BOUNDARIES, REFUND_TRACK_CITATIONS, REFUND_WINDOW_MONTHS, ROUTE_META, ROUTE_ORDER,
+  SCREENED_EXPORT_CSV_HEADERS, SCREEN_META, SHIPPING_BILL_CSV_HEADERS, SORTS, TIME_LABEL, TIME_TONE,
+  TRACK_META, TRACK_ORDER, TRANSPORT_MODES, WATCH_CSV_HEADERS,
   addRealisation, advanceWindow, archiveLut, deleteFile, deleteLut, emptyExp, exportDateOf,
-  exportViews, fileFromInvoice, fyOf, isExportDoc, loadExp, lutCsvRows, lutRenewalDeadline, newFile,
-  newLut, newRealisation, nextLutWindow, realisationCsvRows, realisationWindow, recordFile,
-  registerCsvRows, removeRealisation, shippingBillCsvRows, summarise, sortViews, todayISO,
-  unregisteredExports, upsertLut, validateFile, validateLut, watchCsvRows, watchRows, setHomeGstin,
-  setRefund,
+  exportViews, fileFromInvoice, fyOf, igstTrackCsvRows, isExportDoc, loadExp, lutCsvRows,
+  lutRenewalDeadline, newFile, newLut, newRealisation, nextLutWindow, realisationCsvRows,
+  realisationWindow, recordFile, refundTrack, registerCsvRows, removeRealisation, screenedCsvRows,
+  shippingBillCsvRows, summarise, sortViews, todayISO, unregisteredExports, upsertLut, validateFile,
+  validateLut, watchCsvRows, watchRows, setHomeGstin, setRefund,
   type ConsignKind, type ExportBookInvoice, type ExportFile, type ExportSort, type ExpStore,
-  type ExportView, type FxDealLite, type LutRecord, type Realisation, type RefundClaim, type WatchRow,
-  type WindowInfo, type ZeroRatingRoute,
+  type ExportView, type FxDealLite, type LutRecord, type Realisation, type RefundClaim,
+  type ReturnReading, type ScreenedRow, type TrackState, type WatchRow, type WindowInfo,
+  type ZeroRatingRoute,
 } from '@/lib/exports'
 import {
   Badge, Button, Card, EmptyState, PageHeader, ProgressBar, SearchInput, SectionTitle, Segmented,
@@ -50,12 +55,13 @@ import {
 } from '@/components/ui'
 import Icon from '@/components/Icons'
 
-type Tab = 'register' | 'lut' | 'watch' | 'rule'
+type Tab = 'register' | 'lut' | 'watch' | 'track' | 'rule'
 
 const TABS: { value: Tab; label: string }[] = [
   { value: 'register', label: 'Export register' },
   { value: 'lut', label: 'Letters of undertaking' },
   { value: 'watch', label: 'Watch list' },
+  { value: 'track', label: 'IGST refund track' },
   { value: 'rule', label: 'The rule' },
 ]
 
@@ -148,6 +154,78 @@ interface BookRow {
   kind_hint?: 'goods' | 'service' | null
 }
 
+/** One return, read for one bill: the period, what the register holds for it, and whether it is short. */
+function ReadingLine({ r }: { r: ReturnReading }) {
+  const name = r.form === 'gstr1' ? 'GSTR-1' : 'GSTR-3B'
+  if (!r.has_register) {
+    return (
+      <span className="ex-track-ret">
+        <b>{name}</b>
+        <span className="ex-sub is-dim">no returns recorded on this device</span>
+      </span>
+    )
+  }
+  if (!r.lines.length) {
+    return (
+      <span className="ex-track-ret">
+        <b>{name}</b>
+        <span className="ex-sub is-dim">no date on the bill, so no period to read</span>
+      </span>
+    )
+  }
+  return (
+    <span className="ex-track-ret">
+      <b>{name}</b>
+      {r.lines.map(l => (
+        <span key={l.period} className={`ex-track-ret-line ${l.short || l.status !== 'filed' ? 'is-bad' : ''}`}>
+          {l.label} — {l.status === 'filed'
+            ? `filed${l.filed_on ? ` ${formatDateIN(l.filed_on)}` : ''}, states ${money(Number(l.igst_stated) || 0)} IGST${l.short ? ' — less than this bill paid' : ''}`
+            : l.status === 'nil'
+              ? 'a nil return, which cannot carry the export row'
+              : l.status === 'not_filed'
+                ? 'recorded here, not filed'
+                : 'nothing recorded for this period'}
+        </span>
+      ))}
+    </span>
+  )
+}
+
+/** The supplies the mechanism does not cover, each with the reason and the clock that runs instead. */
+function ScreenedList({ rows, onCsv }: { rows: ScreenedRow[]; onCsv: () => void }) {
+  const by = (s: ScreenedRow) => SCREEN_META[s.screen].label
+  return (
+    <Card pad={false}>
+      <div className="ex-section-head" style={{ padding: '14px 16px 0' }}>
+        <h2><Icon name="globe" size={15} />Outside the mechanism — and what runs instead</h2>
+        <span className="ex-section-sub">
+          A service export has no shipping bill and a LUT shipment paid no tax, so neither has a claim for a bill to
+          carry. The section 54(1) clock on the register tab is the one that reads them.
+        </span>
+      </div>
+      <div className="ex-head ex-head-screen">
+        <span>Invoice</span><span>Why not on the track</span><span>What runs instead</span>
+      </div>
+      {[...rows].sort((a, b) => by(a).localeCompare(by(b)) || a.invoice_number.localeCompare(b.invoice_number)).map(r => (
+        <div key={r.file_id} className="ex-row ex-row-screen">
+          <span className="ex-name">
+            {r.invoice_number || <span className="ex-blank">no number</span>}
+            <span className="ex-sub">{r.party || '—'}{r.igst > 0 ? ` · ${money(r.igst)} IGST on the invoice` : ' · no IGST on the invoice'}</span>
+          </span>
+          <span className="ex-track-why">
+            <b>{r.label}</b>
+            <span className="ex-sub">{r.why}</span>
+          </span>
+        </div>
+      ))}
+      <div className="ex-foot">
+        <span>{rows.length} file{rows.length === 1 ? '' : 's'} outside the mechanism.</span>
+        <span className="ex-foot-links"><Button size="sm" variant="ghost" icon="download" onClick={onCsv}>List CSV</Button></span>
+      </div>
+    </Card>
+  )
+}
+
 function ExportsPageInner() {
   const supabase = createClient()
   const router = useRouter()
@@ -160,6 +238,8 @@ function ExportsPageInner() {
   const [store, setStore] = useState<ExpStore>(emptyExp())
   const [books, setBooks] = useState<ExportBookInvoice[]>([])
   const [fx, setFx] = useState<FxStore>(emptyFx())
+  /** Read-only: the returns this tab compares the bill against. Nothing here writes a filing row. */
+  const [filings, setFilings] = useState<FilingsStore | null>(null)
   const [homeInput, setHomeInput] = useState('')
 
   const [search, setSearch] = useSearchDeepLink()
@@ -194,6 +274,7 @@ function ExportsPageInner() {
       setStore(stored)
       setHomeInput(stored.settings.home_gstin)
       setFx(loadFx(oid))
+      setFilings(loadFilings(oid))
 
       // The rupee half of every row comes from the books, never from this register.
       const { data } = await supabase
@@ -255,6 +336,8 @@ function ExportsPageInner() {
   const watch = useMemo(() => watchRows(store, books, deals, today), [store, books, deals, today])
   const unpapered = useMemo(() => unregisteredExports(books, store.files), [books, store.files])
   const totals = useMemo(() => summarise(views, unpapered.length), [views, unpapered.length])
+  /** Per shipping bill: what this app can see about the claim the bill itself carries. */
+  const track = useMemo(() => refundTrack(views, filings), [views, filings])
 
   const filtered = useMemo(() => views.filter(v =>
     matchesFilter(v, filter) &&
@@ -414,6 +497,12 @@ function ExportsPageInner() {
   function exportWatch() {
     download(`taxflow-export-watch-${today}.csv`, toCsv(WATCH_CSV_HEADERS, watchCsvRows(watch)))
   }
+  function exportTrack() {
+    download(`taxflow-igst-refund-track-${today}.csv`, toCsv(IGST_TRACK_CSV_HEADERS, igstTrackCsvRows(track.groups)))
+  }
+  function exportScreened() {
+    download(`taxflow-export-not-on-track-${today}.csv`, toCsv(SCREENED_EXPORT_CSV_HEADERS, screenedCsvRows(track.screened)))
+  }
   function exportLuts() {
     download(`taxflow-lut-${today}.csv`, toCsv(LUT_CSV_HEADERS, lutCsvRows(store.luts)))
   }
@@ -428,11 +517,15 @@ function ExportsPageInner() {
       <PageHeader
         eyebrow={`${(orgName || 'GST').toUpperCase()} · ZERO-RATED SUPPLY`}
         title="Exports"
-        subtitle="Every consignment that left India, the paper that made it zero-rated, the day the proceeds have to be in, and the refund still on the table. Two clocks run here: FEMA on the money, section 54(1) on the tax."
+        subtitle="Every consignment that left India, the paper that made it zero-rated, the day the proceeds have to be in, and the refund still on the table. Two clocks run here: FEMA on the money, and the refund — which goods claim through the shipping bill they sailed on, while services file a claim of their own under section 54(1)."
         actions={
           <>
-            <Button variant="ghost" size="sm" icon="download" onClick={tab === 'lut' ? exportLuts : tab === 'watch' ? exportWatch : exportRegister}
-              disabled={tab === 'lut' ? store.luts.length === 0 : tab === 'watch' ? watch.length === 0 : visible.length === 0}>
+            <Button variant="ghost" size="sm" icon="download"
+              onClick={tab === 'lut' ? exportLuts : tab === 'watch' ? exportWatch : tab === 'track' ? exportTrack : exportRegister}
+              disabled={tab === 'lut' ? store.luts.length === 0
+                : tab === 'watch' ? watch.length === 0
+                : tab === 'track' ? track.groups.length === 0
+                : visible.length === 0}>
               CSV
             </Button>
             <Button variant="ghost" size="sm" icon="doc-check" onClick={() => openLut(newLut(), true)}>LUT</Button>
@@ -676,6 +769,130 @@ function ExportsPageInner() {
             </>
           )}
         </Card>
+      )}
+
+      {tab === 'track' && (
+        <>
+          <Card>
+            <SectionTitle icon="ship">On the goods route, the shipping bill is the application</SectionTitle>
+            <p className="ex-sub" style={{ marginTop: 0 }}>
+              So this tab does not ask whether an RFD-1 was raised. It asks the question that decides whether the
+              money moves: <b>what still blocks this bill</b>, read from the invoices in the books and the returns
+              recorded on <Link href="/gst/filings">/gst/filings</Link>. One row per bill, however many invoices
+              travelled on it — which is how the claim itself travels.
+            </p>
+            <div className="ex-quotes">
+              {REFUND_TRACK_CITATIONS.map(c => (
+                <div key={c.text} className={`ex-quote ${c.read === 'own' ? 'is-own' : ''}`}>
+                  <p>{c.text}</p>
+                  <a href={c.url} target="_blank" rel="noreferrer" className="ex-sub">
+                    {c.read === 'own' ? 'own reading — ' : ''}{c.source}
+                  </a>
+                </div>
+              ))}
+            </div>
+            <div className="ex-track-counts">
+              <span><b>{track.at_risk}</b> provably blocked</span>
+              <span><b>{track.waiting}</b> waiting on a return</span>
+              <span><b>{track.clear}</b> nothing here blocks them</span>
+              <span><b>{track.transcribed}</b> grant written on the file</span>
+              <span><b>{track.unread}</b> no return to read yet</span>
+              <span><b>{track.screened.length}</b> outside the mechanism</span>
+            </div>
+          </Card>
+
+          <Card pad={false}>
+            <div className="ex-section-head" style={{ padding: '14px 16px 0' }}>
+              <h2><Icon name="wallet" size={15} />Per shipping bill, in the order the claim travels</h2>
+              <span className="ex-section-sub">
+                {track.has_filings
+                  ? 'The returns below are what this device recorded on /gst/filings. A pass means nothing here blocks it — it does not mean the refund is due.'
+                  : 'The filings register holds nothing on this device, so neither condition can be read yet. These rows are unknown, not unpaid.'}
+              </span>
+            </div>
+
+            {track.groups.length === 0 ? (
+              <div style={{ padding: 8 }}>
+                <EmptyState icon="wallet" title="No bill to track yet"
+                  message="The track reads goods files made zero-rated by paying IGST. Record a consignment with its shipping bill number, or see the list below for the supplies that fall outside the mechanism and what runs instead." />
+              </div>
+            ) : (
+              <>
+                <div className="ex-head ex-head-track">
+                  <span>Shipping bill</span><span>Invoices on it</span><span>IGST at stake</span>
+                  <span>Returns for the period</span><span>State, and what it says</span>
+                </div>
+                {track.groups.map(g => (
+                  <div key={g.key} className="ex-row ex-row-track">
+                    <span className="ex-track-bill">
+                      <span className="ex-mono">{g.bill_number || <span className="ex-blank">no number</span>}</span>
+                      <span className="ex-sub">
+                        {g.bill_date ? `bill dated ${formatDateIN(g.bill_date)}` : 'no bill date'}
+                        {' · '}{g.periods.length ? g.periods.join(', ') : 'no period named'}
+                      </span>
+                    </span>
+                    <span className="ex-track-inv">
+                      {g.members.map(m => (
+                        <span key={m.file_id} className="ex-track-member">
+                          <b>{m.invoice_number}</b>
+                          <span className="ex-sub">
+                            {m.in_books ? money(m.igst) : 'not in the books'}
+                            {m.date ? ` · left ${formatDateIN(m.date)}` : ' · no date'}
+                            {m.outstanding > 0 ? ` · ${money(m.outstanding)} still out` : ''}
+                          </span>
+                        </span>
+                      ))}
+                    </span>
+                    <span className="ex-num">
+                      {money(g.igst_stated)}
+                      {g.igst_unknown > 0 && <span className="ex-sub"> floor — {g.igst_unknown} unread</span>}
+                      {g.claim === 'mixed' && <span className="ex-sub"> · files disagree</span>}
+                    </span>
+                    <span className="ex-track-returns">
+                      <ReadingLine r={g.gstr1} />
+                      <ReadingLine r={g.gstr3b} />
+                    </span>
+                    <span className={`ex-track-state is-${TRACK_META[g.state].tone}`}>
+                      <Badge tone={TRACK_META[g.state].tone} dot={false}>{TRACK_META[g.state].label}</Badge>
+                      <span className="ex-sub">{g.blocker}</span>
+                      <span className="ex-track-next">{g.next}</span>
+                      {g.warnings.map(w => (
+                        <span key={w.code} className="ex-track-warn"><b>{w.label}</b> — {w.detail}</span>
+                      ))}
+                    </span>
+                  </div>
+                ))}
+                <div className="ex-foot">
+                  <span>{track.groups.length} bill{track.groups.length === 1 ? '' : 's'} · {track.groups.reduce((s, g) => s + g.members.length, 0)} file{track.groups.length === 1 ? '' : 's'}.</span>
+                  <span className="ex-foot-links">
+                    <Button size="sm" variant="ghost" icon="download" onClick={exportTrack}>Refund track CSV</Button>
+                    <Link href="/gst/filings">The returns register</Link>
+                  </span>
+                </div>
+              </>
+            )}
+          </Card>
+
+          {track.screened.length > 0 && <ScreenedList rows={track.screened} onCsv={exportScreened} />}
+
+          <Card>
+            <SectionTitle icon="shield">What the track states, and what it cannot</SectionTitle>
+            <div className="ex-refund-states">
+              {TRACK_ORDER.map((s: TrackState) => (
+                <span key={s} className={`ex-rstate is-${TRACK_META[s].tone}`}>{TRACK_META[s].label}</span>
+              ))}
+            </div>
+            <ul className="ex-boundaries">
+              {REFUND_TRACK_BOUNDARIES.map(b => <li key={b}>{b}</li>)}
+            </ul>
+            <p className="ex-sub">
+              The comparison this tab makes is weaker than the portal&rsquo;s in one direction, deliberately: the
+              filings register keeps a return&rsquo;s <b>total</b> stated IGST, and tables 6A/6B and 3.1(b) are parts
+              of that total. So a bill bigger than the total is <b>provably short</b>; a bill that fits inside it
+              proves nothing, and is printed as a pass, not a promise.
+            </p>
+          </Card>
+        </>
       )}
 
       {tab === 'rule' && (
@@ -1144,6 +1361,10 @@ function ExportsPageInner() {
       {claim && (() => {
         const v = viewOf(claim.fileId)
         if (!v) return null
+        // On the goods route with IGST paid there is no refund form to raise: the shipping bill the
+        // customs side already holds IS the application (see the "IGST refund track" tab). The wording
+        // below follows the file, so a goods consignment is never asked for a form it does not need.
+        const onGoodsBill = v.kind === 'goods' && v.route === 'igst_paid'
         return (
           <div className="ex-scrim" role="dialog" aria-modal="true" aria-label="Record the refund claim"
             onClick={e => { if (e.target === e.currentTarget) setClaim(null) }}>
@@ -1152,8 +1373,9 @@ function ExportsPageInner() {
                 <div>
                   <h2>Refund claim — {v.file.invoice_number}</h2>
                   <p>
-                    IGST paid on a zero-rated supply is recoverable, but only inside two years of the relevant date.
-                    This register transcribes the ARN the portal returns; it never files anything.
+                    {onGoodsBill
+                      ? 'On a goods export made with IGST paid the shipping bill itself is the refund application — there is no separate form to file. The money moves once the return side is complete; this register transcribes what the portal or ICEGATE says about it and never files anything.'
+                      : 'IGST paid on a zero-rated supply is recoverable, but only inside two years of the relevant date. This register transcribes the ARN the portal returns; it never files anything.'}
                   </p>
                 </div>
                 <button type="button" className="ex-close" onClick={() => setClaim(null)} aria-label="Close"><Icon name="x" size={16} /></button>
@@ -1165,9 +1387,10 @@ function ExportsPageInner() {
 
               <div className="ex-grid2">
                 <label className="ex-field">
-                  <span>RFD-1 ARN</span>
+                  <span>{onGoodsBill ? 'Refund reference (ARN / ICEGATE)' : 'RFD-1 ARN'}</span>
                   <input className="tf-input" value={claim.draft.claim_ref} onChange={e => patchClaim({ claim_ref: e.target.value })}
-                    placeholder="AA1234567890123" disabled={claim.draft.status === 'none'} />
+                    placeholder={onGoodsBill ? `${v.file.shipping_bill_number || 'Shipping bill no.'} · sanction ref` : 'AA1234567890123'}
+                    disabled={claim.draft.status === 'none'} />
                 </label>
                 <label className="ex-field">
                   <span>Claim date</span>
@@ -1179,12 +1402,13 @@ function ExportsPageInner() {
                 <label className="ex-field">
                   <span>Grant / rejection order</span>
                   <input className="tf-input" value={claim.draft.order_ref} onChange={e => patchClaim({ order_ref: e.target.value })}
-                    placeholder="RFD-12 reference" disabled={claim.draft.status !== 'granted' && claim.draft.status !== 'rejected'} />
+                    placeholder={onGoodsBill ? 'Refund order / ICEGATE sanction ref' : 'RFD-12 reference'}
+                    disabled={claim.draft.status !== 'granted' && claim.draft.status !== 'rejected'} />
                 </label>
                 <label className="ex-field">
                   <span>Note</span>
                   <input className="tf-input" value={claim.draft.notes} onChange={e => patchClaim({ notes: e.target.value })}
-                    placeholder="Provisional 90% under section 54(6), …" />
+                    placeholder={onGoodsBill ? 'Customs objection, EGM, part sanction, …' : 'Provisional 90% under section 54(6), …'} />
                 </label>
               </div>
 
@@ -1350,6 +1574,42 @@ function ExportsPageInner() {
         .ex-rstate.is-blue { background: var(--brand-soft); color: var(--brand); }
         .ex-rstate.is-violet { background: var(--violet-soft); color: var(--violet); }
 
+        /* The IGST refund track: one row per shipping bill, and the reading that decides the state stays legible. */
+        .ex-quotes { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 9px; margin-top: 12px; }
+        .ex-quote { background: var(--surface-2); border: 1px solid var(--line-soft); border-left: 3px solid var(--brand);
+          border-radius: 10px; padding: 9px 11px; display: flex; flex-direction: column; gap: 5px; }
+        .ex-quote p { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--ink); }
+        .ex-quote.is-own { border-left-color: var(--amber); }
+        .ex-quote.is-own p { color: var(--muted); font-style: italic; }
+        .ex-quote a { color: var(--faint); text-decoration: underline; text-underline-offset: 2px; }
+        .ex-track-counts { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 12px; font-size: 12px; color: var(--muted); }
+        .ex-track-counts b { color: var(--ink); font-size: 13px; }
+        .ex-head-track, .ex-row-track { display: grid; gap: 10px;
+          grid-template-columns: 170px minmax(0, 1.4fr) 130px minmax(0, 1.5fr) minmax(0, 1.8fr); }
+        .ex-head-screen, .ex-row-screen { display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr) minmax(0, 2.2fr); }
+        .ex-row-track, .ex-row-screen { padding: 12px 16px; border-bottom: 1px solid var(--line-soft); align-items: start; }
+        .ex-track-bill, .ex-track-inv, .ex-track-returns, .ex-track-state, .ex-track-why, .ex-track-member {
+          display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+        .ex-track-member b { font-size: 12.5px; color: var(--ink); font-weight: 650; }
+        .ex-track-ret { display: flex; flex-direction: column; gap: 3px; }
+        .ex-track-ret > b { font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--faint); }
+        .ex-track-ret-line { font-size: 11.5px; color: var(--muted); line-height: 1.45; }
+        .ex-track-ret-line.is-bad { color: var(--amber); font-weight: 600; }
+        .ex-sub.is-dim { color: var(--faint); font-style: italic; }
+        .ex-track-state > span:not(.ex-rstate) { font-size: 11.5px; line-height: 1.45; }
+        .ex-track-next { color: var(--ink); font-weight: 600; }
+        .ex-track-warn { background: var(--amber-soft); color: var(--amber); border-radius: 8px; padding: 5px 8px; }
+        .ex-track-why b { font-size: 12.5px; color: var(--ink); font-weight: 650; }
+        /* The state cell carries the same tone rule the register cards' FEMA clock does, so a long
+           bill list scans by colour and the is-… class on that cell is a style, not a label. */
+        .ex-track-state { border-left: 2px solid var(--line); padding-left: 10px; }
+        .ex-track-state.is-red { border-left-color: var(--red); }
+        .ex-track-state.is-amber { border-left-color: var(--amber); }
+        .ex-track-state.is-green { border-left-color: var(--green); }
+        .ex-track-state.is-blue { border-left-color: var(--brand); }
+        .ex-boundaries { margin: 10px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 5px;
+          font-size: 12px; color: var(--muted); line-height: 1.5; }
+
         .ex-renew { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--line-soft); flex-wrap: wrap; }
         .ex-renew > div { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
         .ex-renew-label { display: flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--faint); }
@@ -1413,8 +1673,11 @@ function ExportsPageInner() {
           .ex-stats { grid-template-columns: 1fr 1fr; }
           .ex-grid { grid-template-columns: 1fr; }
           .ex-grid2, .ex-grid3, .ex-split { grid-template-columns: 1fr; }
-          .ex-row, .ex-row-lut, .ex-row-watch, .ex-row-band { grid-template-columns: 1fr; gap: 6px; }
-          .ex-head, .ex-head-lut, .ex-head-watch, .ex-head-band { display: none; }
+          .ex-row, .ex-row-lut, .ex-row-watch, .ex-row-band, .ex-row-track, .ex-row-screen { grid-template-columns: 1fr; gap: 6px; }
+          .ex-head, .ex-head-lut, .ex-head-watch, .ex-head-band, .ex-head-track, .ex-head-screen { display: none; }
+          .ex-quotes { grid-template-columns: 1fr; }
+          .ex-track-counts { gap: 5px 14px; font-size: 11.5px; }
+          .ex-track-state { border-left: none; padding-left: 0; border-top: 1px dashed var(--line); padding-top: 8px; }
           .ex-actions { justify-content: flex-start; }
           .ex-scrim { align-items: flex-end; padding: 0; }
           .ex-scrim .ex-modal { max-width: none !important; border-radius: 16px 16px 0 0; max-height: 94vh; padding: 1.1rem 1.15rem; }

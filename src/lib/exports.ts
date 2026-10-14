@@ -40,17 +40,24 @@
 //    SEZ invoices that have no file here — the same "unplaced is not nowhere" rule the godown
 //    register runs on — and `paper_missing` names, per consignment, which document is not recorded.
 //    A register that only lists what you typed would tell you nothing you did not already know.
+//  * **On the goods route there is no refund form to wait for.** The shipping bill *is* the refund
+//    application, so `refundTrack()` stops asking "have you filed RFD-1" and asks the question that
+//    decides whether money moves: which condition this bill still fails, read from the returns on
+//    `/gst/filings` and the IGST the invoices state. The section 54(1) clock above it stays — for
+//    services and SEZ supplies, where the claim really is the exporter's own application.
 //
 // What v1 deliberately does NOT claim: it does not file anything, and it does not compute a refund
-// amount — the IGST figure is the invoice's own, and the claim is a reference to an RFD-1 raised on
-// the portal. It has no customs-side validation: a shipping bill number is checked for shape, not
-// against ICEGATE. Credit notes that reduce an export invoice are not netted here (the workpapers in
-// /gst/gstr9 do that), and a shipping bill carrying several invoices is modelled as one file per
-// invoice with the same number, which is exactly how the refund claim is filed.
+// amount — the IGST figure is the invoice's own, and a "claim" here is a reference transcribed from
+// a portal the register never sees. It has no customs-side validation: a shipping bill number is
+// checked for shape, not against ICEGATE, and bill acceptance, the e-laden manifest and the bank
+// credit are all outside what this app can read. Credit notes that reduce an export invoice are not
+// netted here (the workpapers in /gst/gstr9 do that), and a shipping bill carrying several invoices
+// is modelled as one file per invoice with the same number — which is exactly how the claim travels.
 
 import { addMonthsISO, daysBetween, parseISO } from '@/lib/recurring'
 import { newId, todayISO } from '@/lib/batches'
 import { round2 } from '@/lib/fx'
+import { periodLabel, periodRange, type FilingsStore } from '@/lib/filings'
 
 export { todayISO, round2 }
 
@@ -1330,10 +1337,17 @@ export function paperGaps(file: ExportFile, view: {
     })
   }
   if (file.route === 'igst_paid' && file.refund.status === 'none') {
-    gaps.push({
+    gaps.push(file.kind === 'goods' ? {
+      label: 'The returns the bill has to ride on',
+      document: "This period's GSTR-1 (table 6A) and GSTR-3B (table 3.1(b)) — there is no RFD-1 to raise on goods",
+      why: 'On the goods route the shipping bill itself is the refund application, and the taxpayer files no separate claim. '
+        + 'What is missing is therefore not an application but the return rows that let the bill reach ICEGATE; the '
+        + '"IGST refund track" tab names which one, per bill.',
+    } : {
       label: 'Refund claim',
-      document: 'Form GST RFD-1 with the shipping bill and realisation evidence',
-      why: 'Tax paid on a zero-rated supply is recoverable, but only inside the section 54(1) two-year window.',
+      document: 'Form GST RFD-1 with the invoice and the realisation evidence',
+      why: 'A service export has no shipping bill, so the claim is the exporter\'s own application under section 54(1), '
+        + 'inside the two-year window from the relevant date.',
     })
   }
   if (!view.hasRealisation && !view.hasFx) {
@@ -1745,6 +1759,631 @@ export function watchRows(
   return rows.sort((a, b) => a.date.localeCompare(b.date))
 }
 
+// ── The IGST refund track: on the goods route the shipping bill IS the claim ───
+//
+// Everything above this line treats a refund as a document the exporter raises — Form GST RFD-1 with
+// a two-year clock behind it (`refundView()`, `RefundClaim`, the `refund` rows in the watch list). For
+// a service export, and for a supply to a SEZ, that is right: there is no customs document, so the
+// claim is the exporter's own application under section 54.
+//
+// For **goods exported on payment of IGST it is not**. There the shipping bill is the application, and
+// the exporter files nothing: the GST portal's own guide for this exact refund says so, in these
+// words — "Shipping Bill itself shall be treated as refund application", "The taxpayer is not required
+// to file separate refund application in this case". What decides whether the money moves is not a
+// form but a **set of conditions the two returns have to satisfy**, and the guide states them:
+// "IGST and Cess amount reported in table 3.1(b) [of GSTR-3B] ... equal to, or greater than ... total
+// IGST ... from invoices filed under table 6A, and table 6B [of GSTR-1]", "Customs System validates the
+// Form GSTR 01 data with their Shipping Bill and EGM data", and "If the above conditions are not met,
+// the data will not be sent to ICEGATE". The credit lands in "the Bank account mentioned by you with
+// the ICEGATE/ Customs" — not one this register names.
+//
+// So the useful question this register can answer, per shipping bill, is not "have you filed RFD-1"
+// (there is nothing to file) but **"what would stop this bill's refund, on what this app can see"**.
+// The answer is built from three sources the shop has already filled in: the export files here, the
+// invoices in the books (the IGST at stake, re-read and never stored), and the returns recorded on
+// `/gst/filings` (`taxflow:filings:`) for the period the goods left in. It is read-only across that
+// register: the track never writes a filing row, and never claims to have checked one.
+//
+// Two honesty limits are load-bearing, and both are printed rather than hidden:
+//  * **The comparison is weaker than the portal's test, in one direction only.** The filings register
+//    keeps a return's *total* stated IGST; it has no table 6A, no table 6B and no table 3.1(b). Those
+//    tables are components of the total, so a bill whose IGST is bigger than the whole return's stated
+//    IGST is **provably short** — the portal's condition cannot hold. A bill that fits inside the total
+//    proves nothing: the IGST may sit anywhere in the return. A pass is therefore printed as "nothing
+//    here blocks it", never as "the refund is due".
+//  * **The customs side is unread.** Whether the bill was accepted, whether the e-laden manifest
+//    (EGM) arrived, whether ICEGATE pushed the claim, and whether the bank credited it — ICEGATE and
+//    Customs hold all of that and this app has no feed to either (the same wall as gap #1/GSP, see
+//    [[project-ewb-gsp-constraint]]). The track stops at the last rung it can see and says so.
+//
+// What could not be read from a primary text: the numbered sub-rules of rule 96 of the CGST Rules, 2017.
+// The CBIC statute page (taxinformation.cbic.gov.in) refused three fetches and the GST Council refund
+// flyer came back as unreadable binary, so this file quotes rule 96 only at the level its heading is
+// confirmed — "Refund of integrated tax paid on goods [or services] exported out of India", sub-rule
+// (1) opening with "The shipping bill filed by an exporter of goods shall be ..." — plus the confirmed
+// heading of rule 96B, "Recovery of refund of unutilised input tax credit or integrated tax paid on
+// export of goods where export proceeds not realised". Every other sentence below is quoted from the
+// portal guide with its URL. Anything the register asserts beyond that is labelled as its own reading.
+
+export interface TrackCitation {
+  /** Verbatim, quotation marks included, or the app's own words prefixed `Reading:`. */
+  text: string
+  source: string
+  url: string
+  /** `primary` — read off the cited page; `own` — this register's inference, labelled as such. */
+  read: 'primary' | 'own'
+}
+
+export const REFUND_TRACK_CITATIONS: TrackCitation[] = [
+  {
+    text: '"Shipping Bill itself shall be treated as refund application."',
+    source: 'GST Portal — Refund on account of Export of Goods (With Payment of Tax)',
+    url: 'https://tutorial.gst.gov.in/userguide/refund/Refund_on_Account_of_Export_of_Goods_(With_Payment_of_Tax).htm',
+    read: 'primary',
+  },
+  {
+    text: '"The taxpayer is not required to file separate refund application in this case."',
+    source: 'GST Portal — Refund on account of Export of Goods (With Payment of Tax)',
+    url: 'https://tutorial.gst.gov.in/userguide/refund/Refund_on_Account_of_Export_of_Goods_(With_Payment_of_Tax).htm',
+    read: 'primary',
+  },
+  {
+    text: '"IGST and Cess amount reported in table 3.1(b) ... equal to, or greater than ... total IGST ... from invoices filed under table 6A, and table 6B"',
+    source: 'GST Portal — Refund on account of Export of Goods (With Payment of Tax)',
+    url: 'https://tutorial.gst.gov.in/userguide/refund/Refund_on_Account_of_Export_of_Goods_(With_Payment_of_Tax).htm',
+    read: 'primary',
+  },
+  {
+    text: '"Customs System validates the Form GSTR 01 data with their Shipping Bill and EGM data."',
+    source: 'GST Portal — Refund on account of Export of Goods (With Payment of Tax)',
+    url: 'https://tutorial.gst.gov.in/userguide/refund/Refund_on_Account_of_Export_of_Goods_(With_Payment_of_Tax).htm',
+    read: 'primary',
+  },
+  {
+    text: '"If the above conditions are not met, the data will not be sent to ICEGATE."',
+    source: 'GST Portal — Refund on account of Export of Goods (With Payment of Tax)',
+    url: 'https://tutorial.gst.gov.in/userguide/refund/Refund_on_Account_of_Export_of_Goods_(With_Payment_of_Tax).htm',
+    read: 'primary',
+  },
+  {
+    text: '"The refund will be credited in the Bank account mentioned by you with the ICEGATE/ Customs."',
+    source: 'GST Portal — Refund on account of Export of Goods (With Payment of Tax)',
+    url: 'https://tutorial.gst.gov.in/userguide/refund/Refund_on_Account_of_Export_of_Goods_(With_Payment_of_Tax).htm',
+    read: 'primary',
+  },
+  {
+    text: 'Rule 96 CGST Rules 2017 — "Refund of integrated tax paid on goods [or services] exported out of India.- (1) The shipping bill filed by an exporter of goods shall be ..."',
+    source: 'CBIC tax information system, rule 96 (heading and sub-rule (1) opening only — the page could not be fetched; the numbered sub-rules are NOT quoted here)',
+    url: 'https://taxinformation.cbic.gov.in/content/html/tax_repository/gst/rules/cgst_rules/active/chapter10/rule96_v1.00.html',
+    read: 'primary',
+  },
+  {
+    text: 'Rule 96B — "Recovery of refund of unutilised input tax credit or integrated tax paid on export of goods where export proceeds not realised."',
+    source: 'Handbook on Refunds under GST (CBIC), rule 96B heading',
+    url: 'https://d23z1tp9il9etb.cloudfront.net/download/pdf21/Handbook-on-Refunds-under-GST-31-08-21.pdf',
+    read: 'primary',
+  },
+  {
+    text: 'Reading: because tables 6A/6B of GSTR-1 and 3.1(b) of GSTR-3B are parts of the IGST a return states in total, an export bill whose IGST is larger than the whole return\'s stated IGST cannot satisfy the portal\'s test. A bill that fits inside the total is not proved anything — so this register prints a pass as "nothing here blocks it", never as "refund due".',
+    source: "This register's own inference from the quoted condition, stated as an inference",
+    url: 'https://tutorial.gst.gov.in/userguide/refund/Refund_on_Account_of_Export_of_Goods_(With_Payment_of_Tax).htm',
+    read: 'own',
+  },
+]
+
+/** The sentences the tab prints about what it does not do. */
+export const REFUND_TRACK_BOUNDARIES: string[] = [
+  'Nothing here is filed. There is no refund application to raise on the goods route — the shipping bill travels on its own once the returns line up.',
+  'Nothing here is verified against ICEGATE, Customs or the portal. Bill acceptance, the e-laden manifest, whether the claim was pushed to Customs, and the bank credit are all outside this app.',
+  'The rupee at stake is the invoice\'s own IGST, re-read from the books every time the tab opens. This register never computes what ought to have been paid.',
+  'A return row read here is what the shop wrote on /gst/filings. The track reads it; it does not check it against the portal, an ARN, or a GSTR-1 pdf.',
+  'The refund is credited to the bank account the exporter holds with ICEGATE/Customs. A credit shows up in the bank, and /payments is where a receipt belongs — not here.',
+]
+
+// ── The states, and what each one costs the shop to read ───────────────────────
+
+export type TrackState =
+  | 'no_bill'
+  | 'granted'
+  | 'rejected'
+  | 'no_period'
+  | 'igst_unknown'
+  | 'unread'
+  | 'no_gstr1'
+  | 'gstr1_short'
+  | 'no_gstr3b'
+  | 'gstr3b_short'
+  | 'clear'
+
+export const TRACK_META: Record<TrackState, {
+  label: string
+  tone: 'green' | 'grey' | 'blue' | 'amber' | 'red'
+  /** What the register is actually claiming, in one line. */
+  says: string
+  /** The step the shop can take, or the reason there is none. */
+  next: string
+}> = {
+  no_bill: {
+    label: 'No shipping bill — no claim',
+    tone: 'red',
+    says: 'On the goods route the bill is the application, so a consignment with tax paid and no bill number has nothing travelling to ICEGATE.',
+    next: 'Record the shipping bill number from the paper, or move the file to the route that actually applies.',
+  },
+  granted: {
+    label: 'Refund granted (as transcribed)',
+    tone: 'green',
+    says: 'Someone wrote a grant or rejection reference on this file. The register transcribes it; it has not seen the order.',
+    next: 'The credit is a bank event — receipt it on /payments, where the invoice balance lives.',
+  },
+  rejected: {
+    label: 'Refund rejected (as transcribed)',
+    tone: 'red',
+    says: 'A rejection reference is on the file. The two-year section 54(1) clock on the register tab does not restart.',
+    next: 'Read the rejection against the conditions above: an unanswered bill is usually a return that did not carry the row.',
+  },
+  no_period: {
+    label: 'No date of export — no return period',
+    tone: 'grey',
+    says: 'Nothing on this bill carries a date, so the register cannot name the period whose GSTR-1 and GSTR-3B have to be read.',
+    next: 'Fill the date of export or the shipping bill date on the file; the two clocks and this track all start from it.',
+  },
+  igst_unknown: {
+    label: 'An invoice is not in the books',
+    tone: 'grey',
+    says: 'One member of this bill has no invoice row, so the IGST at stake cannot be read and the comparison cannot be made honestly.',
+    next: 'Put the invoice in the books or correct the number on the file — the register will not run a test on a guess.',
+  },
+  unread: {
+    label: 'No returns recorded — nothing read yet',
+    tone: 'grey',
+    says: 'The filings register holds nothing on this device, so neither condition the guide states can be checked against anything. This is ignorance, not a breach: the returns may well be filed.',
+    next: 'Record the period\'s GSTR-1 and GSTR-3B on /gst/filings — nothing on the file changes, the track simply starts being able to read.',
+  },
+  no_gstr1: {
+    label: 'The period\'s GSTR-1 is not filed here',
+    tone: 'amber',
+    says: 'Customs validates the GSTR-1 data against the shipping bill and the EGM. This register has no GSTR-1 recorded as filed for the period the goods left in, so there is nothing for Customs to match.',
+    next: 'File the period\'s GSTR-1 (a nil return cannot carry the export row either), then record it on /gst/filings.',
+  },
+  gstr1_short: {
+    label: 'GSTR-1 states less IGST than these invoices',
+    tone: 'red',
+    says: 'The filed GSTR-1 for the period states a total IGST below the IGST these invoices say was paid on this bill — so the export row is missing from it, or the figures disagree.',
+    next: 'Carry the invoice into GSTR-1 (GSTR-1A inside the window, otherwise Table 9A of GSTR-9) and correct the row on /gst/filings.',
+  },
+  no_gstr3b: {
+    label: 'The period\'s GSTR-3B is not filed here',
+    tone: 'amber',
+    says: 'The condition is on table 3.1(b) of GSTR-3B. With no 3B recorded as filed for the period, there is no 3.1(b) figure to compare, and the guide says the data is not sent to ICEGATE.',
+    next: 'File the period\'s GSTR-3B and record it on /gst/filings — the track re-reads it the moment the row exists.',
+  },
+  gstr3b_short: {
+    label: 'GSTR-3B states less IGST than these invoices',
+    tone: 'red',
+    says: 'The filed GSTR-3B states a total IGST below the IGST these invoices paid on this bill. Since 3.1(b) is a part of that total, the portal\'s condition cannot hold.',
+    next: 'Pay the IGST on the export through 3.1(b) — or check whether the invoice and the return disagree about what was paid.',
+  },
+  clear: {
+    label: 'Nothing here blocks it',
+    tone: 'blue',
+    says: 'Every condition this register can see is met: the bill has a number, the invoices are in the books, and the period\'s GSTR-1 and GSTR-3B are recorded as filed with enough IGST stated. What happens next is Customs\' and ICEGATE\'s, and this app cannot read it.',
+    next: 'Watch the bank account held with ICEGATE for the credit. Nothing is filed from here and nothing is due until Customs sanctions it.',
+  },
+}
+
+export const TRACK_ORDER: TrackState[] = [
+  'no_bill', 'no_period', 'igst_unknown', 'unread', 'no_gstr1', 'gstr1_short', 'no_gstr3b',
+  'gstr3b_short', 'clear', 'granted', 'rejected',
+]
+
+/** The supplies the bill-as-application mechanism does not cover, and what runs instead. */
+export type ScreenKind =
+  | 'service'
+  | 'sez'
+  | 'lut_no_tax'
+  | 'lut_but_paid'
+  | 'unknown_route'
+  | 'paid_route_no_igst'
+
+export const SCREEN_META: Record<ScreenKind, { label: string; why: string }> = {
+  service: {
+    label: 'Service export — no bill exists',
+    why: 'A service crosses no frontier, so there is no shipping bill to travel as an application. The section 54(1) two-year clock on the register tab is the one that runs, with the invoice date as the relevant date.',
+  },
+  sez: {
+    label: 'Supply to a SEZ — not a customs export',
+    why: 'Tax paid on a SEZ supply is claimed back through the exporter\'s own refund application with the zone documents; there is no shipping bill and no ICEGATE leg. This register reads the mechanism but has not read the SEZ rules, so the route is named rather than tracked.',
+  },
+  lut_no_tax: {
+    label: 'Under a LUT — no tax paid, nothing to refund',
+    why: 'The whole point of the undertaking is that IGST is not paid first. With no tax paid there is no refund for the bill to carry, so this tab has nothing to say about it.',
+  },
+  lut_but_paid: {
+    label: 'The route says LUT, the invoice says IGST paid',
+    why: 'The two papers disagree. If IGST was actually paid on a LUT shipment, the refund question is real and it travels on the shipping bill — so the file is worth re-recording against the route that matches the invoice.',
+  },
+  unknown_route: {
+    label: 'Route not recorded',
+    why: 'Whether tax was paid decides both whether there is a refund and whether the shipping bill carries it. Until the file says which route the supply went out on, this tab would only be guessing.',
+  },
+  paid_route_no_igst: {
+    label: 'The route says IGST paid, the invoice states none',
+    why: 'Nothing was paid, so nothing can be refunded against this bill. Either the invoice figure is wrong, or the file belongs under the LUT route.',
+  },
+}
+
+// ── The reading of one return, for one bill ─────────────────────────────────────
+
+export type FilingTrackForm = 'gstr1' | 'gstr3b'
+
+export interface PeriodLine {
+  period: string
+  /** What the filings register calls the period ('January 2026', 'Q3 FY 2026-27'). */
+  label: string
+  /** `no_record` — this register has never been told about the period, which is not the same as a breach. */
+  status: 'filed' | 'not_filed' | 'nil' | 'no_record'
+  filed_on: string
+  /** The total IGST the return states; null when there is no return to read. */
+  igst_stated: number | null
+  /** The IGST this bill's invoices paid into that period. */
+  bill_igst: number
+  /** True only when the bill's IGST exceeds the whole return's stated IGST — a provable failure. */
+  short: boolean
+}
+
+export interface ReturnReading {
+  form: FilingTrackForm
+  /** False when there is no filings register at all: the reading is then ignorance, not a breach. */
+  has_register: boolean
+  lines: PeriodLine[]
+  /** Sum of the stated IGST over the periods this bill touches that have a return recorded. */
+  igst_stated: number
+  /** Period labels where no filed return exists (missing, recorded-not-filed, or nil). */
+  blocking: string[]
+  /** Period labels where the filed return is provably below the bill's IGST. */
+  shorts: string[]
+}
+
+interface TrackMember {
+  file_id: string
+  invoice_number: string
+  party: string
+  /** The date the track uses — the date of export the view already resolved. */
+  date: string
+  /** Where that date came from, so the tab can say the bill's clock rests on a shipping bill date. */
+  date_from: ExportView['date_from']
+  igst: number
+  /** False when no invoice row carries this number: the rupee is then unknown, not zero. */
+  in_books: boolean
+  value: number
+  realised: number
+  outstanding: number
+  claim: RefundClaimStatus
+}
+
+export interface TrackWarning {
+  code: 'unrealised' | 'mixed_claim' | 'no_filings' | 'late_realisation' | 'no_invoice'
+  label: string
+  detail: string
+}
+
+export interface ShippingBillGroup {
+  /** The trimmed shipping bill number, or `no-bill:<file id>` when the file carries none. */
+  key: string
+  bill_number: string
+  /** The earliest recorded bill date among the members; blank when none carries one. */
+  bill_date: string
+  /** One file per invoice, several invoices per bill — which is how the claim itself travels. */
+  members: TrackMember[]
+  igst_stated: number
+  /** How many members have no invoice behind them, so `igst_stated` is a floor, not the figure. */
+  igst_unknown: number
+  value_stated: number
+  /** Distinct period labels the members' dates fall in (the filings register's own names). */
+  periods: string[]
+  gstr1: ReturnReading
+  gstr3b: ReturnReading
+  realised: number
+  outstanding: number
+  /** The shop's own transcription, when every member agrees; 'mixed' when they do not. */
+  claim: RefundClaimStatus | 'mixed'
+  state: TrackState
+  /** Why this state, in the register's own words, with the condition it rests on. */
+  blocker: string
+  next: string
+  warnings: TrackWarning[]
+}
+
+/** The supplies that fall outside the mechanism, listed with the reason so the tab answers "why not mine". */
+export interface ScreenedRow {
+  file_id: string
+  invoice_number: string
+  party: string
+  igst: number
+  screen: ScreenKind
+  label: string
+  why: string
+}
+
+export interface TrackResult {
+  groups: ShippingBillGroup[]
+  screened: ScreenedRow[]
+  /** False when the shop has no `/gst/filings` register: the whole track then reads as ignorance. */
+  has_filings: boolean
+  at_risk: number
+  waiting: number
+  clear: number
+  transcribed: number
+  /** Bills whose returns cannot be read at all, because no return has ever been recorded here. */
+  unread: number
+}
+
+function memberPeriod(m: TrackMember): string {
+  return m.date ? m.date.slice(0, 7) : ''
+}
+
+/** The records for one form, narrowed to what the track reads. */
+function filingRecords(filings: FilingsStore | null, form: FilingTrackForm) {
+  if (!filings) return []
+  return filings.filings
+    .filter(f => f.form === form)
+    .map(f => ({
+      period: str(f.period),
+      status: f.status,
+      filed_on: str(f.filed_on),
+      igst: round2(num(f.heads?.igst)),
+    }))
+}
+
+/**
+ * The period that covers one date, chosen from the returns this register holds for that form.
+ * The date is matched against `periodRange()` rather than formatted into a key, because a QRMP shop's
+ * GSTR-1 is a quarter period and its GSTR-3B may be a month period, and a string built here would
+ * be a guess about which cadence the shop files on. When both a month and a quarter cover the date,
+ * the month wins: it is the narrower reading of the same return period.
+ */
+function coveringRecord(recs: { period: string; status: string; filed_on: string; igst: number }[], date: string) {
+  if (!date || !recs.length) return null
+  const hits = recs.filter(r => {
+    const rg = periodRange(r.period)
+    return !!rg && date >= rg.from && date <= rg.to
+  })
+  if (!hits.length) return null
+  const monthly = hits.filter(h => /^\d{4}-\d{2}$/.test(h.period))
+  return (monthly.length ? monthly : hits)[0]
+}
+
+function readForm(
+  form: FilingTrackForm,
+  recs: { period: string; status: string; filed_on: string; igst: number }[],
+  members: TrackMember[],
+  hasRegister: boolean,
+): ReturnReading {
+  const byPeriod = new Map<string, { label: string; bill_igst: number }>()
+  for (const m of members) {
+    const p = memberPeriod(m)
+    if (!p) continue
+    const e = byPeriod.get(p) || { label: periodLabel(p), bill_igst: 0 }
+    e.bill_igst = round2(e.bill_igst + (m.in_books ? m.igst : 0))
+    byPeriod.set(p, e)
+  }
+
+  const lines: PeriodLine[] = []
+  const blocking: string[] = []
+  const shorts: string[] = []
+  let igstStated = 0
+
+  for (const [period, e] of [...byPeriod.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const rec = recs.find(r => r.period === period) || coveringRecord(recs, `${period}-01`)
+    if (!rec) {
+      lines.push({ period, label: e.label, status: 'no_record', filed_on: '', igst_stated: null, bill_igst: e.bill_igst, short: false })
+      blocking.push(e.label)
+      continue
+    }
+    if (rec.status !== 'filed') {
+      lines.push({
+        period, label: e.label, status: rec.status === 'nil' ? 'nil' : 'not_filed',
+        filed_on: rec.filed_on, igst_stated: null, bill_igst: e.bill_igst, short: false,
+      })
+      blocking.push(`${e.label}${rec.status === 'nil' ? ' (a nil return)' : ' (recorded, not filed)'}`)
+      continue
+    }
+    const short = e.bill_igst > 0 && rec.igst < e.bill_igst - 0.5
+    igstStated = round2(igstStated + rec.igst)
+    lines.push({ period, label: e.label, status: 'filed', filed_on: rec.filed_on, igst_stated: rec.igst, bill_igst: e.bill_igst, short })
+    if (short) shorts.push(e.label)
+  }
+
+  return { form, has_register: hasRegister, lines, igst_stated: igstStated, blocking, shorts }
+}
+
+/**
+ * The bill-as-application fold. `views` come from `exportViews()` so the rupees and dates are the same
+ * figures the register tab prints; `filings` is read, never written. A bill whose members straddle two
+ * return periods is one claim with two periods to satisfy, so both are read.
+ */
+export function refundTrack(
+  views: ExportView[],
+  filings: FilingsStore | null,
+): TrackResult {
+  const hasFilings = !!filings && filings.filings.length > 0
+  const gstr1Recs = filingRecords(filings, 'gstr1')
+  const gstr3bRecs = filingRecords(filings, 'gstr3b')
+
+  const groups = new Map<string, TrackMember[]>()
+  const screened: ScreenedRow[] = []
+
+  for (const v of views) {
+    const f = v.file
+    let screen: ScreenKind | null = null
+    if (f.kind !== 'goods') screen = 'service'
+    else if (f.route === 'sez') screen = 'sez'
+    else if (f.route === 'lut') screen = v.igst_paid > 0 ? 'lut_but_paid' : 'lut_no_tax'
+    else if (f.route === 'unknown') screen = 'unknown_route'
+    else if (!v.unmatched && v.igst_paid <= 0) screen = 'paid_route_no_igst'
+    if (screen) {
+      screened.push({
+        file_id: f.id, invoice_number: str(f.invoice_number), party: v.party,
+        igst: v.igst_paid, screen, label: SCREEN_META[screen].label, why: SCREEN_META[screen].why,
+      })
+      continue
+    }
+
+    // Goods, IGST paid: the bill is the claim. A file with no number is its own row — two unnamed
+    // consignments are not one bill.
+    const key = str(f.shipping_bill_number).trim() || `no-bill:${f.id}`
+    const bucket = groups.get(key) || []
+    bucket.push({
+      file_id: f.id,
+      invoice_number: str(f.invoice_number),
+      party: v.party,
+      date: v.export_date,
+      date_from: v.date_from,
+      igst: v.igst_paid,
+      in_books: !v.unmatched,
+      value: v.invoice_value,
+      realised: v.realised,
+      outstanding: v.outstanding,
+      claim: f.refund.status,
+    })
+    groups.set(key, bucket)
+  }
+
+  const out: ShippingBillGroup[] = []
+  for (const [key, members] of groups) {
+    const billNumber = key.startsWith('no-bill:') ? '' : key
+    const billDate = members.reduce((min, m) => {
+      const f = views.find(v => v.file.id === m.file_id)?.file
+      const d = str(f?.shipping_bill_date)
+      return d && (!min || d < min) ? d : min
+    }, '')
+    const dated = members.filter(m => m.date)
+    const igstUnknown = members.filter(m => !m.in_books).length
+    const igst = round2(members.reduce((s, m) => s + (m.in_books ? m.igst : 0), 0))
+    const value = round2(members.reduce((s, m) => s + m.value, 0))
+    const realised = round2(members.reduce((s, m) => s + m.realised, 0))
+    const outstanding = round2(members.reduce((s, m) => s + m.outstanding, 0))
+    const periods = [...new Set(dated.map(m => periodLabel(memberPeriod(m))))].sort()
+    const claims = [...new Set(members.map(m => m.claim))]
+    const claim = claims.length === 1 ? claims[0] : 'mixed'
+
+    const gstr1 = readForm('gstr1', gstr1Recs, members, !!filings)
+    const gstr3b = readForm('gstr3b', gstr3bRecs, members, !!filings)
+
+    const warnings: TrackWarning[] = []
+    if (!hasFilings) {
+      warnings.push({
+        code: 'no_filings',
+        label: 'No returns recorded',
+        detail: 'The filings register holds nothing yet, so neither condition above can be read. This row is unknown, not unpaid.',
+      })
+    }
+    if (claim === 'mixed') {
+      warnings.push({
+        code: 'mixed_claim',
+        label: 'The files on this bill disagree',
+        detail: `Members of ${billNumber || 'this consignment'} carry ${claims.map(c => CLAIM_META[c as RefundClaimStatus].label).join(' / ')} — one bill is one claim, so one of those transcriptions is wrong.`,
+      })
+    }
+    if (igstUnknown > 0) {
+      warnings.push({
+        code: 'no_invoice',
+        label: `${igstUnknown} invoice${igstUnknown === 1 ? '' : 's'} not in the books`,
+        detail: 'The amount at stake is a floor: whatever the missing rows paid is not in this figure.',
+      })
+    }
+    if (outstanding > 0) {
+      const late = members.some(m => {
+        const v = views.find(x => x.file.id === m.file_id)
+        return v ? v.time_state === 'overdue' || v.time_state === 'restricted' : false
+      })
+      warnings.push({
+        code: late ? 'late_realisation' : 'unrealised',
+        label: late ? 'Proceeds late, and the refund is at risk either way' : 'Proceeds still out',
+        detail: late
+          ? `Rule 96B allows recovery of a refund of IGST paid on export where the proceeds have not been realised — and this bill's window has already run out.`
+          : `Rule 96B allows recovery of a refund of IGST paid on export where the proceeds have not been realised. ${inrMoney(outstanding)} of this bill is still out.`,
+      })
+    }
+
+    let state: TrackState
+    let blocker: string
+    if (billNumber === '') {
+      state = 'no_bill'
+      blocker = 'The register has no shipping bill number for this consignment. On the goods route the bill is the application, so there is nothing to send.'
+    } else if (claim === 'granted' || claim === 'rejected') {
+      state = claim === 'granted' ? 'granted' : 'rejected'
+      blocker = claim === 'granted'
+        ? 'A grant reference is transcribed on the file. The register has not seen the sanction order.'
+        : 'A rejection reference is transcribed on the file. The register has not seen the order.'
+    } else if (!dated.length) {
+      state = 'no_period'
+      blocker = 'No file on this bill carries a date of export, so no return period can be named and neither condition can be read.'
+    } else if (igstUnknown > 0 && igst === 0) {
+      state = 'igst_unknown'
+      blocker = 'Every invoice on this bill is missing from the books, so the IGST at stake is unknown and the comparison would be a guess.'
+    } else if (!hasFilings) {
+      // Nothing has ever been recorded on /gst/filings, so the two conditions have nothing to be
+      // checked against. Saying "GSTR-1 is not filed" here would be a claim about the portal this
+      // register has no way to make; the honest state is that the row cannot be read at all yet.
+      state = 'unread'
+      blocker = 'The filings register holds nothing on this device, so neither the GSTR-1 validation nor the 3.1(b) comparison has anything to be read against. Nothing here says the returns are missing — it says this row has not been read.'
+    } else if (gstr1.blocking.length) {
+      state = 'no_gstr1'
+      blocker = `No filed GSTR-1 for ${gstr1.blocking.join(', ')} — Customs validates the GSTR-1 data against the shipping bill and the EGM, and the guide says that without the conditions being met the data is not sent to ICEGATE.`
+    } else if (gstr1.shorts.length) {
+      state = 'gstr1_short'
+      blocker = `The filed GSTR-1 for ${gstr1.shorts.join(', ')} states less IGST in total than these invoices paid on this bill, so table 6A/6B cannot be carrying the row.`
+    } else if (gstr3b.blocking.length) {
+      state = 'no_gstr3b'
+      blocker = `No filed GSTR-3B for ${gstr3b.blocking.join(', ')} — the condition sits on table 3.1(b) of that return, so with no return there is no figure to compare.`
+    } else if (gstr3b.shorts.length) {
+      state = 'gstr3b_short'
+      blocker = `The filed GSTR-3B for ${gstr3b.shorts.join(', ')} states less IGST in total than these invoices paid on this bill. Table 3.1(b) is part of that total, so it cannot reach the GSTR-1 figure either.`
+    } else if (igstUnknown > 0) {
+      // The returns are in place; one invoice is still unread, so the pass is a floor, not a certainty.
+      state = 'igst_unknown'
+      blocker = 'The recorded returns cover every period this bill touched, but an invoice on it is not in the books, so what is at stake is a floor rather than a figure.'
+    } else {
+      state = 'clear'
+      blocker = 'Everything this register can read is in place: a bill number, invoices in the books, and both returns recorded as filed for every period the goods left in, each stating at least this much IGST. A pass here is not the portal\'s test — 3.1(b) is a part of the total, not the total.'
+    }
+
+    out.push({
+      key, bill_number: billNumber, bill_date: billDate, members,
+      igst_stated: igst, igst_unknown: igstUnknown, value_stated: value, periods,
+      gstr1, gstr3b, realised, outstanding, claim, state, blocker,
+      next: TRACK_META[state].next, warnings,
+    })
+  }
+
+  const rank: Record<TrackState, number> = {
+    no_bill: 0, gstr3b_short: 1, gstr1_short: 2, no_gstr3b: 3, no_gstr1: 4, igst_unknown: 5,
+    unread: 6, no_period: 7, rejected: 8, clear: 9, granted: 10,
+  }
+  out.sort((a, b) => (rank[a.state] - rank[b.state])
+    || (b.igst_stated - a.igst_stated)
+    || a.bill_number.localeCompare(b.bill_number))
+
+  const by = (s: TrackState) => out.filter(g => g.state === s).length
+  screened.sort((a, b) => a.invoice_number.localeCompare(b.invoice_number))
+
+  return {
+    groups: out,
+    screened,
+    has_filings: hasFilings,
+    at_risk: by('no_bill') + by('no_period') + by('igst_unknown') + by('gstr1_short') + by('gstr3b_short') + by('rejected'),
+    waiting: by('no_gstr1') + by('no_gstr3b'),
+    clear: by('clear'),
+    transcribed: by('granted'),
+    unread: by('unread'),
+  }
+}
+
+function inrMoney(n: number): string {
+  return `₹${Math.round(Number(n) || 0).toLocaleString('en-IN')}`
+}
+
 // ── CSV ────────────────────────────────────────────────────────────────────────
 
 export const EXPORT_REGISTER_CSV_HEADERS = [
@@ -1853,4 +2492,51 @@ export function lutCsvRows(luts: LutRecord[]): (string | number)[][] {
     l.financial_year || fyOf(l.from_date), l.gstin, l.from_date, l.to_date, l.reference,
     l.filed_date, l.archived ? 'archived' : 'live', l.notes,
   ])
+}
+
+/**
+ * One row per shipping bill, in the order the claim itself travels: the invoices on the bill, the
+ * periods whose returns have to carry them, what each return states, and the first condition that
+ * fails. A pass is exported as `nothing here blocks it`, never as `refund due`.
+ */
+export const IGST_TRACK_CSV_HEADERS = [
+  'Shipping bill no.', 'Bill date', 'Invoices on the bill', 'Return periods', 'IGST on this bill',
+  'GSTR-1', 'GSTR-3B', 'State', 'What blocks it', 'Next step', 'Proceeds still out',
+  'Claim as transcribed', 'Warnings',
+]
+
+function formColumn(r: ReturnReading): string {
+  if (!r.has_register) return 'no filings register recorded'
+  if (!r.lines.length) return 'no period to read'
+  return r.lines.map(l => {
+    if (l.status === 'filed') return `${l.label}: filed ${l.filed_on}, IGST stated ${Math.round(l.igst_stated ?? 0)}${l.short ? ' — below this bill' : ''}`
+    if (l.status === 'nil') return `${l.label}: nil return recorded`
+    if (l.status === 'not_filed') return `${l.label}: recorded, not filed`
+    return `${l.label}: nothing recorded here`
+  }).join(' | ')
+}
+
+export function igstTrackCsvRows(groups: ShippingBillGroup[]): (string | number)[][] {
+  return groups.map(g => [
+    g.bill_number || '(no bill number)',
+    g.bill_date,
+    g.members.map(m => m.invoice_number).join(' '),
+    g.periods.join(' '),
+    g.igst_stated,
+    formColumn(g.gstr1),
+    formColumn(g.gstr3b),
+    TRACK_META[g.state].label,
+    g.blocker,
+    g.next,
+    g.outstanding,
+    g.claim === 'mixed' ? 'the files disagree' : CLAIM_META[g.claim as RefundClaimStatus].label,
+    g.warnings.map(w => w.label).join('; '),
+  ])
+}
+
+/** The supplies outside the mechanism, with the reason each one is outside it. */
+export const SCREENED_EXPORT_CSV_HEADERS = ['Invoice', 'Party', 'IGST on the invoice', 'Why not on the refund track', 'What runs instead']
+
+export function screenedCsvRows(rows: ScreenedRow[]): (string | number)[][] {
+  return rows.map(r => [r.invoice_number, r.party, r.igst, r.label, r.why])
 }
