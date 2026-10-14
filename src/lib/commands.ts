@@ -611,7 +611,7 @@ export function buildActionCommands(): Command[] {
       href: '/tally',
       icon: 'tally',
       badge: 'Action',
-      keywords: 'tally tallyprime tally.erp import xml data file migrate migration ledger voucher sundry debtors creditors stock item company books another software erp bring in log history already imported',
+      keywords: 'tally tallyprime tally.erp import xml data file migrate migration ledger voucher sundry debtors creditors stock item company books another software erp bring in log history already imported journal challan draft',
     },
     {
       id: 'action:tally-export',

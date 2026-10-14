@@ -32,12 +32,18 @@
 //    that is not a counterparty is skipped with the reason, never silently
 //    converted into a customer.
 //
-// What v1 deliberately does NOT claim: receipts, payments, journals and delivery
-// challans in the file are listed as skipped, because their write paths live on
-// other pages — credit and debit notes, whose pages write through their own
-// creators, are planned and written like any other document. A service voucher
-// with only ledger entries and no line at all blocks rather than inventing a
-// line; and the file's Tally company state is not read — the organisation's own
+// What this bridge still does NOT import: receipts and payments — money has one
+// writer, /payments, and an import does not make one; a Tally *order* stays on the
+// order registers until it is billed; and an object whose kind is none of these is
+// skipped with the reason. Journals and delivery challans changed side at R3-8: a
+// journal voucher plans legs only onto heads that already stand on the journal
+// register, and lands as a *draft* there through the register's own `writeEntry` —
+// which asks the period seal and burns no number, because the JR number is taken at
+// posting. A challan voucher lands as a challan *draft* raised through orderflow's
+// own `appendDraft`, so the number comes from that series' high-water mark in the
+// shop's own shape. Neither is a posting until a human confirms it. A service
+// voucher with only ledger entries and no line at all blocks rather than inventing
+// a line; and the file's Tally company state is not read — the organisation's own
 // primary GSTIN supplies it.
 // =============================================
 
@@ -972,7 +978,7 @@ function readVoucher(node: XmlNode, sourceIndex: number, ledgerIndex: Map<string
   if (!party) problems.push({ key: 'no-party', text: 'No party ledger on the voucher — whose invoice is it?' })
   if (!date) problems.push({ key: 'no-date', text: 'No readable date — the financial year it books into cannot be determined' })
   if (kind === 'other') {
-    problems.push({ key: 'other-kind', text: `A “${voucherType || 'unnamed'}” voucher is not a sale or a purchase; v1 imports those two and this one stays in Tally` })
+    problems.push({ key: 'other-kind', text: `A “${voucherType || 'unnamed'}” voucher is neither a sale nor a purchase; the plan's row for it says what the bridge does with it` })
   }
   if (otherLedgers.length) {
     problems.push({
@@ -1149,6 +1155,7 @@ export type PlanTarget =
   | 'customer' | 'vendor' | 'product'
   | 'invoice' | 'purchase_bill'
   | 'credit_note' | 'debit_note'
+  | 'journal_draft' | 'challan_draft'
   | 'other'
 export type PlanStatus = 'ready' | 'blocked' | 'skipped' | 'already'
 
@@ -1160,6 +1167,8 @@ export const TARGET_LABEL: Record<PlanTarget, string> = {
   purchase_bill: 'Purchase bill',
   credit_note: 'Credit note',
   debit_note: 'Debit note',
+  journal_draft: 'Journal draft',
+  challan_draft: 'Challan draft',
   other: 'Not imported',
 }
 
@@ -1226,6 +1235,13 @@ export interface ExistingDocument {
   grand_total?: number | null
 }
 
+/** A head the journal register already knows: the bridge may name one, never invent one. */
+export interface ExistingJournalHead {
+  id: string
+  name: string
+  active: boolean
+}
+
 export interface Existing {
   customers?: ExistingParty[]
   vendors?: ExistingParty[]
@@ -1234,6 +1250,12 @@ export interface Existing {
   bills?: ExistingDocument[]
   creditNotes?: ExistingDocument[]
   debitNotes?: ExistingDocument[]
+  /** The journal register's chart — a journal voucher's ledgers are matched against these names. */
+  journalHeads?: ExistingJournalHead[]
+  /** Posted and draft entries alike; `notes` carries narration + reference so a re-import is seen. */
+  journalEntries?: ExistingDocument[]
+  /** Challan drafts already raised; `notes` carries the Tally reference the same way. */
+  challans?: ExistingDocument[]
 }
 
 export interface OrgIdentity {
@@ -2127,15 +2149,13 @@ function noteItem(
   }
 }
 
-/** A voucher that is not a sale, a purchase or a note is shown, named, and left alone. */
+/** A voucher that is not a sale, a purchase, a note, a journal or a challan is shown, named, and left alone. */
 function skippedDocumentItem(v: TallyVoucher): PlanItem {
   const type = v.voucherType || 'unnamed'
   const amount = v.statedTotal !== null ? Math.abs(v.statedTotal) : round2(v.entries.reduce((s, e) => s + (e.kind === 'party' || e.kind === 'money' ? 0 : e.absolute), 0))
-  let reason = `A “${type}” voucher is not a sale or a purchase. v1 imports those two documents; this one stays in Tally.`
+  let reason = `A “${type}” voucher is not a document this app imports. Sales, purchases, credit and debit notes, journals and delivery challans are; this one stays in Tally.`
   if (/receipt|payment/i.test(type)) reason = `A “${type}” voucher is money ${/receipt/i.test(type) ? 'in' : 'out'} of ₹${amount.toLocaleString('en-IN')}. Payments are the only writer of money here, and an import does not make one — record it on /payments.`
-  else if (/journal/i.test(type)) reason = `A “${type}” voucher moves amounts between ledgers, not goods or services to a party — there is no invoice underneath it.`
-  else if (/delivery|challan/i.test(type)) reason = `A “${type}” voucher moves stock without a sale. Delivery challans are raised on /challans.`
-  else if (/sales order|purchase order/i.test(type)) reason = `A “${type}” voucher is an order, not a document. Orders live on the order registers until they are billed.`
+  else if (/sales order|purchase order|delivery order/i.test(type)) reason = `A “${type}” voucher is an order, not a document. Orders live on the order registers until they are billed.`
   return {
     key: planKey('other', `voucher|${v.sourceIndex}`),
     target: 'other',
@@ -2151,6 +2171,244 @@ function skippedDocumentItem(v: TallyVoucher): PlanItem {
     matchedId: '',
     tallyRef: `${type} ${v.number}`.trim(),
     rupees: amount,
+    sourceIndex: v.sourceIndex,
+  }
+}
+
+/**
+ * One journal voucher → a draft in the journal register.
+ *
+ * The bridge has no right to write the shop's chart of accounts: a ledger name in the file
+ * becomes a leg only when that name already stands as a head on the journal register. A name
+ * that does not match blocks the voucher — it does not create a head — and a cash or bank
+ * ledger blocks it too, because money has one writer here (ADR-029). What is written is a
+ * draft: the register takes its number at posting, and posting asks a balance — so an
+ * unbalanced voucher is refused rather than flagged, since drafting it would invent the leg
+ * the file does not write. `writeEntry` asks the period seal even for drafts (R3-5), so an
+ * imported draft inherits that door with nothing new wired.
+ */
+function journalItem(v: TallyVoucher, existing: Existing): PlanItem {
+  const reasons: string[] = []
+  const derived: string[] = []
+  const flags: string[] = []
+  const tallyRef = [v.voucherType, v.number && `#${v.number}`].filter(Boolean).join(' ')
+
+  const headByName = new Map<string, ExistingJournalHead>()
+  for (const h of existing.journalHeads || []) {
+    const k = normTagName(h.name)
+    if (k && !headByName.has(k)) headByName.set(k, h)
+  }
+
+  const legs: Record<string, unknown>[] = []
+  const missingHeads: string[] = []
+  let zeroDropped = 0
+  let debit = 0
+  let credit = 0
+  for (const e of v.entries) {
+    if (e.kind === 'money') continue
+    if (!(e.absolute > 0)) { zeroDropped++; continue }
+    const head = headByName.get(normTagName(e.ledger))
+    if (!head) { missingHeads.push(e.ledger); continue }
+    const side = e.deemedPositive ? 'debit' : 'credit'
+    const amount = round2(e.absolute)
+    legs.push({ head_id: head.id, side, amount, note: e.ledger })
+    if (side === 'debit') debit = round2(debit + amount)
+    else credit = round2(credit + amount)
+    if (!head.active) flags.push(`“${head.name}” is closed on the register — a draft may keep it, but posting will refuse the entry until it is reopened`)
+  }
+
+  if (v.moneyLedgers.length) {
+    const moved = round2(v.moneyLedgers.reduce((s, m) => s + Math.abs(m.amount), 0))
+    reasons.push(`₹${moved.toLocaleString('en-IN')} moves through ${v.moneyLedgers.map(m => `“${m.ledger}”`).join(' and ')} — cash or bank. Money has one writer here: /payments, and an import does not make one. A voucher that pays out cash stays in Tally; re-export the entry with the cash leg split off and the rest can be drafted.`)
+  }
+  if (missingHeads.length) {
+    const shown = missingHeads.slice(0, 3).map(n => `“${n}”`).join(', ')
+    const more = missingHeads.length > 3 ? ` and ${missingHeads.length - 3} more` : ''
+    reasons.push(`${shown}${more} ${missingHeads.length === 1 ? 'names' : 'name'} no head on the journal register — add the head${missingHeads.length === 1 ? '' : 's'} on /journal and read the file again, or leave this voucher in Tally. The bridge does not invent a chart of accounts.`)
+  }
+  if (!missingHeads.length && !v.moneyLedgers.length && legs.length < 2) {
+    reasons.push(legs.length
+      ? `Only one leg survives the check against the register — a journal is a double entry; the file gives ${v.entries.length} ledger line${v.entries.length === 1 ? '' : 's'} and this app can draft one named leg.`
+      : 'The voucher holds no ledger entry this register could name — there is nothing to draft.')
+  }
+  if (!missingHeads.length && !v.moneyLedgers.length && legs.length >= 2 && Math.abs(debit - credit) > 0.005) {
+    reasons.push(`The legs it can make do not balance — debit ₹${debit.toLocaleString('en-IN')}, credit ₹${credit.toLocaleString('en-IN')}. The register gives its number only to a balanced posting, and drafting the difference would invent a leg the file does not write.`)
+  }
+  for (const problem of v.problems) {
+    if (problem.key === 'no-date') reasons.push(problem.text)
+  }
+  if (zeroDropped) flags.push(`${zeroDropped} ledger line${zeroDropped === 1 ? '' : 's'} of ₹0 in the file left the draft — the register refuses a zero leg, and a zero is a claim, not an absence`)
+
+  const already = (existing.journalEntries || []).find(d => (d.notes || '').toLowerCase().includes(tallyRef.toLowerCase()))
+  if (already) reasons.push(`An entry carrying this Tally reference is already on the journal register (${already.number || 'an unnumbered draft'}) — importing again would raise a second one`)
+  const lookalike = !already && (existing.journalEntries || []).find(d =>
+    d.date === v.date && d.date && Math.abs((d.grand_total ?? -1) - debit) < 0.01)
+  if (lookalike) flags.push(`The register already holds ${lookalike.number || lookalike.id} on the same day for the same debit — importing adds a second entry, not a correction`)
+
+  derived.push(`Every leg is the file's own ledger line: side read from the entry's deemed-positive flag, amount as the voucher writes it. Debits ₹${debit.toLocaleString('en-IN')} · credits ₹${credit.toLocaleString('en-IN')}`)
+  if (v.date) derived.push(`Date read from ${v.dateFrom || 'the voucher'} — the entry books into the ${v.date.slice(0, 4)}–${Number(v.date.slice(0, 4)) + 1} financial year`)
+  derived.push('This is a draft: the journal register takes its number when it is posted, and the period seal is asked at both moments')
+
+  return {
+    key: planKey('journal_draft', `${v.number || 'no number'}|${v.date}|${v.sourceIndex}`),
+    target: 'journal_draft',
+    status: already ? 'already' : reasons.length ? 'blocked' : 'ready',
+    title: `${v.number ? `Journal #${v.number}` : 'Journal voucher'} · ${Math.max(debit, credit).toLocaleString('en-IN')}`,
+    subtitle: `${v.voucherType || 'Journal'}${v.reference ? ` · ref ${v.reference}` : ''} · ${v.date || 'no date'} · ${legs.length} leg${legs.length === 1 ? '' : 's'}`,
+    fields: {
+      date: v.date,
+      narration: `Imported from Tally — ${tallyRef}`,
+      reference: v.reference,
+    },
+    lines: legs,
+    reasons,
+    derived,
+    flags,
+    requires: [],
+    matchedId: already?.id || '',
+    tallyRef,
+    rupees: debit,
+    sourceIndex: v.sourceIndex,
+  }
+}
+
+/**
+ * One delivery-challan voucher → a draft raised through the challan register's own
+ * numbering.
+ *
+ * A challan is the one voucher outside sales and purchases that moves goods, and its
+ * register lives in this browser — so the draft goes in through `appendDraft` and takes its
+ * number from the challan series at draft time, exactly as the materials board's purchase
+ * orders have done since R2-30: same series, same editor, same confirm path as a challan
+ * typed on /challans. The import raises no tax: a challan states the value of goods, not a
+ * consideration. A voucher that also charged tax says so in a flag — that document belongs
+ * on an invoice, and the bridge does not decide which one the shop meant.
+ */
+function challanItem(
+  v: TallyVoucher,
+  org: OrgIdentity,
+  parties: Map<string, PlanItem>,
+  products: Map<string, PlanItem>,
+  existing: Existing,
+): PlanItem {
+  const reasons: string[] = []
+  const derived: string[] = []
+  const flags: string[] = []
+  const requires: PlanRequirement[] = []
+  const tallyRef = [v.voucherType, v.number && `#${v.number}`].filter(Boolean).join(' ')
+
+  // ── the recipient ──
+  let party: PlanItem | null = null
+  let matched: ExistingParty | null = null
+  if (v.party) {
+    // Out to a customer or in from a vendor: the file's group says which, the name says nothing.
+    party = parties.get(planKey('customer', v.party)) || parties.get(planKey('vendor', v.party)) || null
+    matched = findParty(
+      [...(existing.customers || []), ...(existing.vendors || [])],
+      v.party,
+      (party?.fields.gstin as string) || '',
+    )
+    if (party) requires.push({ key: party.key, what: `${party.title} as a ${party.target === 'vendor' ? 'vendor' : 'customer'}` })
+    if (!party && !matched) {
+      reasons.push(`“${v.party}” is neither a master this file introduces nor a customer or vendor on the register — a challan moves goods toward someone, and this one names nobody the books know`)
+    }
+  } else {
+    reasons.push(`The voucher names no party ledger, and none of its ${v.entries.length} entries is flagged as one — to whom were these goods delivered?`)
+  }
+
+  const gstinOfParty = matched?.gstin || (party?.fields.gstin as string) || ''
+  const stateOfParty = matched?.state_code || (party?.fields.state_code as string) || ''
+  let placeOfSupply = ''
+  if (gstinOfParty && gstinOfParty.length === 15) placeOfSupply = gstinOfParty.slice(0, 2)
+  else if (stateOfParty) placeOfSupply = stateOfParty
+  else if (org.stateCode) {
+    placeOfSupply = org.stateCode
+    flags.push(`No state on the party in the file, so the delivery is placed in this business’s own state (${org.stateCode}) — right for a party served from the same place, wrong for one that is not`)
+  } else {
+    reasons.push('Neither the party’s GSTIN nor its state gives a place of supply, and this organisation has no primary GSTIN state to fall back on — set it in Settings')
+  }
+
+  // ── the goods ──
+  const missingItems: string[] = []
+  const lines: Record<string, unknown>[] = []
+  let value = 0
+  for (const line of v.lines) {
+    const product = products.get(planKey('product', line.item))
+    const existingProduct = findProduct(existing.products || [], line.item, line.hsn || '', '')
+    if (!product && !existingProduct) missingItems.push(line.item)
+    else if (product) requires.push({ key: product.key, what: `${product.title} as a product` })
+    if (line.qty > 0) value = round2(value + Math.abs(line.taxable))
+    lines.push({
+      product_id: existingProduct?.id || null,
+      item_name: line.item,
+      hsn_sac: line.hsn || '',
+      quantity: line.qty,
+      unit: line.unit || '',
+      rate: line.rate,
+      discount_percent: line.discountPercent,
+      gst_rate: 0,
+      cess_rate: 0,
+    })
+  }
+  if (missingItems.length) {
+    const shown = missingItems.slice(0, 3).map(n => `“${n}”`).join(', ')
+    reasons.push(`${missingItems.length === 1 ? `${shown} is` : `${shown}${missingItems.length > 3 ? ` and ${missingItems.length - 3} more` : ' are'}`} neither a stock item in this file nor a product on the register — a challan line has to name something`)
+  }
+  if (!v.lines.length) {
+    reasons.push(`The voucher carries ${v.entries.length} ledger entr${v.entries.length === 1 ? 'y' : 'ies'} and no stock or service line — a challan moves goods; this shows only rupees`)
+  }
+  for (const problem of v.problems) {
+    if (problem.key === 'no-date' || problem.key === 'negative-qty') reasons.push(problem.text)
+  }
+
+  const taxTotal = round2(v.tax.cgst + v.tax.sgst + v.tax.igst + v.tax.cess)
+  if (taxTotal > 0) {
+    flags.push(`₹${taxTotal.toLocaleString('en-IN')} of tax sits in this voucher’s ledgers. A challan on this register states the value of goods, not a consideration — the lines land untaxed. If this delivery was billed, the sale belongs on the invoice rows of this same import, not here.`)
+  }
+  if (v.moneyLedgers.length) {
+    const moved = round2(v.moneyLedgers.reduce((s, m) => s + Math.abs(m.amount), 0))
+    flags.push(`₹${moved.toLocaleString('en-IN')} moved through ${v.moneyLedgers.map(m => `“${m.ledger}”`).join(', ')} on this voucher in Tally. Money is recorded on /payments, and an import does not write it — the challan lands without it.`)
+  }
+  if (v.statedTotal !== null && Math.abs(Math.abs(v.statedTotal) - value) > 1) {
+    flags.push(`The voucher prints a total of ₹${Math.abs(v.statedTotal).toLocaleString('en-IN')}; these lines come to ₹${value.toLocaleString('en-IN')}. The lines win — a printed total is a summary of them, not a price of its own.`)
+  }
+
+  const already = (existing.challans || []).find(d => (d.notes || '').toLowerCase().includes(tallyRef.toLowerCase()))
+  if (already) reasons.push(`A challan with this Tally reference is already drafted (${already.number || already.id}) — importing again would raise a second one`)
+  flags.push('The register’s own confirm asks a movement reason; the file states none, so the draft lands as “other” with the voucher’s reference in its notes — set it on /challans before confirming')
+
+  derived.push(`Value read from the file’s own lines (quantity × rate less discount): ₹${value.toLocaleString('en-IN')} — the value of goods moving, not a claim`)
+  if (v.date) derived.push(`Date read from ${v.dateFrom || 'the voucher'} — the challan numbers into the ${v.date.slice(0, 4)}–${Number(v.date.slice(0, 4)) + 1} financial year`)
+  derived.push('The number is the challan series’ own, taken through appendDraft at draft time — same high-water mark as a challan typed on /challans')
+  if (placeOfSupply) derived.push(`Place of supply ${placeOfSupply}${stateNameFromCode(placeOfSupply) ? ` (${stateNameFromCode(placeOfSupply)})` : ''}`)
+
+  const fields: Record<string, unknown> = {
+    doc_date: v.date,
+    party_id: matched?.id || null,
+    party_name: v.party,
+    party_gstin: gstinOfParty,
+    party_state: stateNameFromCode(stateOfParty) || stateOfParty,
+    place_of_supply: placeOfSupply,
+    supply_type: gstinOfParty && gstinOfParty.length === 15 ? 'b2b' : 'b2c',
+    reason: 'other',
+    notes: `Tally ${tallyRef}${v.reference ? ` · ref ${v.reference}` : ''} — imported draft; check the movement reason before confirming`,
+  }
+
+  return {
+    key: planKey('challan_draft', `${v.party || 'no party'}|${v.date}|${v.number || 'no number'}|${v.sourceIndex}`),
+    target: 'challan_draft',
+    status: already ? 'already' : reasons.length ? 'blocked' : 'ready',
+    title: `${v.party || 'Unnamed party'} · ${value.toLocaleString('en-IN')}`,
+    subtitle: `${v.voucherType || 'Delivery Challan'}${v.number ? ` #${v.number}` : ''} · ${v.date || 'no date'} · ${v.lines.length} line${v.lines.length === 1 ? '' : 's'}`,
+    fields,
+    lines,
+    reasons,
+    derived,
+    flags,
+    requires,
+    matchedId: already?.id || '',
+    tallyRef,
+    rupees: value,
     sourceIndex: v.sourceIndex,
   }
 }
@@ -2211,7 +2469,9 @@ const TARGET_ORDER: Record<PlanTarget, number> = {
   purchase_bill: 4,
   credit_note: 5,
   debit_note: 6,
-  other: 7,
+  journal_draft: 7,
+  challan_draft: 8,
+  other: 9,
 }
 
 /**
@@ -2258,6 +2518,11 @@ export function buildPlan(dump: TallyDump, existing: Existing = {}, org: OrgIden
     const foldedType = normTagName(v.voucherType)
     if (/creditnote/.test(foldedType)) { noteVouchers.push({ v, noteKind: 'credit' }); continue }
     if (/debitnote/.test(foldedType)) { noteVouchers.push({ v, noteKind: 'debit' }); continue }
+    // A journal and a delivery challan are the two skipped kinds whose registers now live in
+    // this app (R3-2b, R2-14): they plan as drafts, never as postings. A delivery *order* is
+    // still an order, and stays skipped.
+    if (/journal/.test(foldedType)) { items.push(journalItem(v, existing)); continue }
+    if (/delivery|challan/.test(foldedType) && !/order/.test(foldedType)) { items.push(challanItem(v, org, parties, products, existing)); continue }
     if (v.kind === 'other') {
       items.push(skippedDocumentItem(v))
       continue
@@ -2277,10 +2542,12 @@ export function buildPlan(dump: TallyDump, existing: Existing = {}, org: OrgIden
   const dated = items.filter(i => (i.target === 'invoice' || i.target === 'purchase_bill') && typeof i.fields.invoice_date === 'string' && i.fields.invoice_date)
   const billDated = items.filter(i => i.target === 'purchase_bill' && typeof i.fields.bill_date === 'string' && i.fields.bill_date)
   const noteDated = items.filter(i => (i.target === 'credit_note' || i.target === 'debit_note') && typeof i.fields[`${i.target === 'credit_note' ? 'credit' : 'debit'}_note_date`] === 'string' && i.fields[`${i.target === 'credit_note' ? 'credit' : 'debit'}_note_date`])
+  const draftDated = items.filter(i => (i.target === 'journal_draft' && typeof i.fields.date === 'string' && i.fields.date) || (i.target === 'challan_draft' && typeof i.fields.doc_date === 'string' && i.fields.doc_date))
   const dates = [
     ...dated.map(i => i.fields.invoice_date as string),
     ...billDated.map(i => i.fields.bill_date as string),
     ...noteDated.map(i => i.fields[`${i.target === 'credit_note' ? 'credit' : 'debit'}_note_date`] as string),
+    ...draftDated.map(i => (i.target === 'journal_draft' ? i.fields.date : i.fields.doc_date) as string),
   ].sort()
 
   const byTarget = {} as Record<PlanTarget, { count: number; rupees: number }>
@@ -2899,11 +3166,12 @@ export function tallyExportFileName(kind: 'invoices' | 'bills' | 'masters' | 'al
 //
 // Not a fixture for tests (those have their own, sharper ones) but what the page
 // offers when someone wants to see what a plan looks like before their own export
-// is in hand. It is a real-shaped TallyPrime *Export Data* envelope with six objects
-// and five vouchers, chosen so that one page visit shows all four row states:
-// a ready sale, a ready inter-state bill, an invoice blocked on a stock item the
-// file never describes, a ledger and a payment voucher that are correctly skipped,
-// and a sale whose ₹5,000 receipt import must not write.
+// is in hand. It is a real-shaped TallyPrime *Export Data* envelope with one company, five
+// masters and seven vouchers, chosen so that one page visit shows every row state a bridge
+// can give: a ready sale, a ready inter-state bill, an invoice blocked on a stock item the
+// file never describes, a ready delivery challan draft, a journal draft blocked because its
+// ledgers are not on the shop's chart of accounts, a ledger and a payment voucher that are
+// correctly skipped, and a sale whose ₹5,000 receipt import must not write.
 
 export const SAMPLE_TALLY_DUMP = `<?xml version="1.0" encoding="UTF-8"?>
 <ENVELOPE>
@@ -3088,6 +3356,33 @@ export const SAMPLE_TALLY_DUMP = `<?xml version="1.0" encoding="UTF-8"?>
      <AMOUNT>-2832.00</AMOUNT>
     </ALLLEDGERENTRIES.LIST>
    </VOUCHER>
+   <VOUCHER VCHTYPE="Delivery Challan" ACTION="Create">
+    <DATE>20250506</DATE>
+    <VOUCHERTYPENAME>Delivery Challan</VOUCHERTYPENAME>
+    <VOUCHERNUMBER>DC-77</VOUCHERNUMBER>
+    <PARTYLEDGERNAME>Alpha Traders</PARTYLEDGERNAME>
+    <TOTAL>6000.00</TOTAL>
+    <ALLINVENTORYENTRIES.LIST>
+     <STOCKITEMNAME>Steel Flange 50mm</STOCKITEMNAME>
+     <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+     <ACTUALQTY>5.00</ACTUALQTY><BILLEDQTY>5.00</BILLEDQTY>
+     <RATE>1200.00</RATE><AMOUNT>6000.00</AMOUNT>
+     <HSN_CODEunderGSTN_UG>73079900</HSN_CODEunderGSTN_UG>
+    </ALLINVENTORYENTRIES.LIST>
+   </VOUCHER>
+   <VOUCHER VCHTYPE="Journal" ACTION="Create">
+    <DATE>20250430</DATE>
+    <VOUCHERTYPENAME>Journal</VOUCHERTYPENAME>
+    <VOUCHERNUMBER>J-51</VOUCHERNUMBER>
+    <ALLLEDGERENTRIES.LIST>
+     <LEDGERNAME>Rent &amp; Rates</LEDGERNAME>
+     <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE><AMOUNT>5000.00</AMOUNT>
+    </ALLLEDGERENTRIES.LIST>
+    <ALLLEDGERENTRIES.LIST>
+     <LEDGERNAME>Staff Welfare Payable</LEDGERNAME>
+     <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE><AMOUNT>-5000.00</AMOUNT>
+    </ALLLEDGERENTRIES.LIST>
+   </VOUCHER>
    <VOUCHER VCHTYPE="Payment" ACTION="Create">
     <DATE>20250422</DATE>
     <VOUCHERTYPENAME>Payment</VOUCHERTYPENAME>
@@ -3126,6 +3421,8 @@ export interface TallyImportRecord {
   bills: number
   credit_notes: number
   debit_notes: number
+  journal_drafts: number
+  challan_drafts: number
   skipped: number
   note: string
 }
@@ -3161,6 +3458,8 @@ function parseLog(raw: string | null): TallyImportRecord[] {
           bills: countOf(o.bills),
           credit_notes: countOf(o.credit_notes),
           debit_notes: countOf(o.debit_notes),
+          journal_drafts: countOf(o.journal_drafts),
+          challan_drafts: countOf(o.challan_drafts),
           skipped: countOf(o.skipped),
           note: str(o.note),
         }
@@ -3196,6 +3495,8 @@ export function recordTallyImport(
     bills: entry.bills,
     credit_notes: entry.credit_notes,
     debit_notes: entry.debit_notes,
+    journal_drafts: entry.journal_drafts,
+    challan_drafts: entry.challan_drafts,
     skipped: entry.skipped,
     note: entry.note,
   }

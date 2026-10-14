@@ -20,6 +20,11 @@
  *  * **Money is not imported.** A receipt inside a voucher is reported and left for
  *    /payments, the only writer of money here.
  *
+ * A journal or challan voucher (R3-8) lands as a *draft*, which keeps all three rules at
+ * once: the draft burns no number here (the journal register takes its number at posting,
+ * the challan series at raising), the seal is asked before it is written, and a human
+ * posts or confirms it.
+ *
  * The parsing, the plan and the XML writer all live in src/lib/tally.ts; this file is
  * only the desk the accountant works at. */
 
@@ -34,6 +39,9 @@ import { getFinancialYear } from '@/lib/gst-engine'
 import { createInvoice } from '@/lib/create-invoice'
 import { createPurchaseBill } from '@/lib/create-bill'
 import { createCreditNote, createDebitNote } from '@/lib/creditnote'
+import { loadJournal, newEntry, newLeg, writeEntry, type JournalLeg, type LegSide } from '@/lib/journal'
+import { appendDraft, loadStore, newDoc, saveStore, type FlowDoc, type FlowLine } from '@/lib/orderflow'
+import { loadSetup, resolveSeries } from '@/lib/setup'
 import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
 import {
   PLAN_CSV_HEADERS, SAMPLE_TALLY_DUMP, STATUS_LABEL, TARGET_LABEL,
@@ -54,10 +62,11 @@ const money = (n: number) => `₹${inr.format(Number(n) || 0)}`
 
 type View = 'plan' | 'export' | 'log'
 
-const GROUPS: PlanTarget[] = ['product', 'customer', 'vendor', 'invoice', 'purchase_bill', 'credit_note', 'debit_note', 'other']
+const GROUPS: PlanTarget[] = ['product', 'customer', 'vendor', 'invoice', 'purchase_bill', 'credit_note', 'debit_note', 'journal_draft', 'challan_draft', 'other']
 const GROUP_ICON: Record<PlanTarget, string> = {
   product: 'box', customer: 'users', vendor: 'factory', invoice: 'invoice',
-  purchase_bill: 'cart', credit_note: 'credit-note', debit_note: 'debit-note', other: 'x',
+  purchase_bill: 'cart', credit_note: 'credit-note', debit_note: 'debit-note',
+  journal_draft: 'journal', challan_draft: 'truck', other: 'x',
 }
 const STATUS_TONE: Record<PlanStatus, 'green' | 'red' | 'blue' | 'grey'> = {
   ready: 'green', blocked: 'red', already: 'blue', skipped: 'grey',
@@ -251,6 +260,25 @@ function TallyPageInner() {
         id: r.id, number: r.debit_note_number, date: r.debit_note_date, party_name: r.vendor_name,
         grand_total: Number(r.grand_total) || 0, notes: r.notes,
       }))),
+      // The two device-side registers a draft row is matched against: the bridge plans a
+      // journal leg only onto a head that already stands, and a challan only against the
+      // challans this browser already holds. Both reads are localStorage, not Supabase.
+      ...(() => {
+        const j = loadJournal(oid)
+        const ch = loadStore('challan', oid)
+        return {
+          journalHeads: j.heads.map(h => ({ id: h.id, name: h.name, active: h.active })),
+          journalEntries: j.entries.map(e => ({
+            id: e.id, number: e.number || null, date: e.date, party_name: null,
+            notes: [e.narration, e.reference].filter(Boolean).join(' · '),
+            grand_total: e.legs.reduce((s, l) => s + (l.side === 'debit' ? l.amount : 0), 0),
+          })),
+          challans: ch.docs.map(d => ({
+            id: d.id, number: d.number || null, date: d.doc_date, party_name: d.party_name,
+            grand_total: null, notes: d.notes,
+          })),
+        }
+      })(),
     }
   }, [supabase])
 
@@ -331,7 +359,10 @@ function TallyPageInner() {
     [plan, picked],
   )
   const writeDocs = useMemo(() => writeSet.filter(i => i.target === 'invoice' || i.target === 'purchase_bill' || i.target === 'credit_note' || i.target === 'debit_note'), [writeSet])
-  const writeMasters = writeSet.length - writeDocs.length
+  // A draft is neither a document nor a master: it books no rupee and adds no name to a
+  // master register — it is a proposal on a register the shop already keeps.
+  const writeDrafts = useMemo(() => writeSet.filter(i => i.target === 'journal_draft' || i.target === 'challan_draft'), [writeSet])
+  const writeMasters = writeSet.length - writeDocs.length - writeDrafts.length
   const writeRupees = useMemo(() => writeDocs.reduce((s, i) => s + i.rupees, 0), [writeDocs])
 
   const counts = useMemo(() => {
@@ -417,7 +448,7 @@ function TallyPageInner() {
     const made = new Map<string, string>()
     const broken = new Map<string, string>()
     const out: WriteResult[] = []
-    const tally = { customer: 0, vendor: 0, product: 0, invoice: 0, purchase_bill: 0, credit_note: 0, debit_note: 0 }
+    const tally = { customer: 0, vendor: 0, product: 0, invoice: 0, purchase_bill: 0, credit_note: 0, debit_note: 0, journal_draft: 0, challan_draft: 0 }
 
     for (const item of writeSet) {
       const waitingOn = item.requires.find(r => broken.has(r.key))
@@ -513,6 +544,58 @@ function TallyPageInner() {
             detail: `Raised as ${noteNumber}`,
             href: `/${isCredit ? 'credit' : 'debit'}-notes?q=${encodeURIComponent(noteNumber)}`,
           })
+        } else if (item.target === 'journal_draft') {
+          // The journal register's own door: writeEntry asks the period seal even for a
+          // draft, and a draft burns no number — the number is taken at posting. A sealed
+          // month therefore refuses here exactly as it refuses a typed entry.
+          const legs: JournalLeg[] = item.lines.map(l => ({
+            ...newLeg(String(l.head_id || ''), (l.side === 'credit' ? 'credit' : 'debit') as LegSide),
+            amount: Number(l.amount) || 0,
+            note: String(l.note || ''),
+          }))
+          const entry = {
+            ...newEntry(String(item.fields.date || '')),
+            date: String(item.fields.date || ''),
+            narration: String(item.fields.narration || ''),
+            reference: String(item.fields.reference || ''),
+            legs,
+            status: 'draft' as const,
+          }
+          const res = writeEntry(orgId, entry, org.name || '')
+          if (!res.ok) throw new Error(res.problems.join(' · '))
+          made.set(item.key, res.entry.id)
+          tally.journal_draft++
+          out.push({
+            key: item.key, target: 'journal_draft', title: item.title, ok: true,
+            detail: `Drafted on the journal register — post it there to give it a number`,
+            href: `/journal?q=${encodeURIComponent(entry.narration)}`,
+          })
+        } else if (item.target === 'challan_draft') {
+          // R2-30's pattern: the draft lands through the register's own appendDraft, so its
+          // number comes from the challan series' high-water mark, in the shop's own shape.
+          const fields: Record<string, unknown> = { ...item.fields }
+          if (!fields.party_id) {
+            const req = item.requires.find(r => r.key.startsWith('customer:') || r.key.startsWith('vendor:'))
+            const id = req ? made.get(req.key) : ''
+            if (id) fields.party_id = id
+          }
+          const lines = item.lines.map(line => {
+            if (line.product_id) return line
+            const id = made.get(planKey('product', String(line.item_name || '')))
+            return id ? { ...line, product_id: id } : line
+          })
+          const docDate = String(fields.doc_date || '')
+          const doc = { ...newDoc('challan', '', docDate), ...fields, lines: lines as unknown as FlowLine[] } as FlowDoc
+          const fmt = resolveSeries(loadSetup(orgId), 'challan')
+          const raised = appendDraft('challan', loadStore('challan', orgId), getFinancialYear(new Date(`${docDate}T00:00:00`)), doc, fmt)
+          saveStore('challan', orgId, raised.store)
+          made.set(item.key, raised.doc.id)
+          tally.challan_draft++
+          out.push({
+            key: item.key, target: 'challan_draft', title: item.title, ok: true,
+            detail: `Drafted as ${raised.doc.number} — set its movement reason and confirm on /challans`,
+            href: `/challans?q=${encodeURIComponent(raised.doc.number)}`,
+          })
         }
       } catch (e) {
         broken.set(item.key, (e as Error).message)
@@ -521,7 +604,7 @@ function TallyPageInner() {
     }
 
     const failed = out.filter(r => !r.ok).length
-    const flagged = writeDocs.filter(d => d.flags.length).length
+    const flagged = [...writeDocs, ...writeDrafts].filter(d => d.flags.length).length
     setResults(out)
     setPicked(new Set())
 
@@ -537,15 +620,18 @@ function TallyPageInner() {
       bills: tally.purchase_bill,
       credit_notes: tally.credit_note,
       debit_notes: tally.debit_note,
+      journal_drafts: tally.journal_draft,
+      challan_drafts: tally.challan_draft,
       skipped: plan.summary.skipped,
       note: `${tally.invoice + tally.purchase_bill + tally.credit_note + tally.debit_note} document(s), ${tally.customer + tally.vendor + tally.product} master(s)`
+        + (tally.journal_draft + tally.challan_draft ? `, ${tally.journal_draft + tally.challan_draft} draft(s) awaiting a human` : '')
         + (flagged ? ` · ${flagged} carried a look-at-this` : '')
         + (failed ? ` · ${failed} failed` : ''),
     })
     setLog(stamped)
     setFlash(failed
       ? `${out.length - failed} row(s) written, ${failed} failed — the file is still here, so the rest can go after a fix.`
-      : `${tally.invoice + tally.purchase_bill + tally.credit_note + tally.debit_note} document(s) and ${tally.customer + tally.vendor + tally.product} master(s) written from this file.`)
+      : `${tally.invoice + tally.purchase_bill + tally.credit_note + tally.debit_note} document(s) and ${tally.customer + tally.vendor + tally.product} master(s) written from this file${tally.journal_draft + tally.challan_draft ? `, ${tally.journal_draft + tally.challan_draft} draft(s) raised for a human to post or confirm` : ''}.`)
     setImporting(false)
   }
 
@@ -957,6 +1043,12 @@ function TallyPageInner() {
                     {writeDocs.length} document(s) worth <strong className="tb-num">{money(writeRupees)}</strong>
                     <span className="tb-dot">·</span>
                     {writeMasters} master(s) first
+                    {!!writeDrafts.length && (
+                      <>
+                        <span className="tb-dot">·</span>
+                        {writeDrafts.length} draft(s) — posted or confirmed by a human, not by this import
+                      </>
+                    )}
                     {picked.size > writeSet.length && (
                       <em className="tb-faint"> — {picked.size - writeSet.length} picked row(s) are not ready, so they stay put</em>
                     )}
@@ -1218,6 +1310,8 @@ function TallyPageInner() {
                       {!!r.bills && <span className="tb-chip-2">{r.bills} bill(s)</span>}
                       {!!r.credit_notes && <span className="tb-chip-2">{r.credit_notes} credit note(s)</span>}
                       {!!r.debit_notes && <span className="tb-chip-2">{r.debit_notes} debit note(s)</span>}
+                      {!!r.journal_drafts && <span className="tb-chip-2">{r.journal_drafts} journal draft(s)</span>}
+                      {!!r.challan_drafts && <span className="tb-chip-2">{r.challan_drafts} challan draft(s)</span>}
                       {!!r.customers && <span className="tb-chip-2">{r.customers} customer(s)</span>}
                       {!!r.vendors && <span className="tb-chip-2">{r.vendors} vendor(s)</span>}
                       {!!r.products && <span className="tb-chip-2">{r.products} product(s)</span>}
@@ -1326,6 +1420,7 @@ function TallyPageInner() {
           padding: 7px 10px; font-size: 11.5px; }
         .tb-lines-head { background: var(--slate-soft); color: var(--faint); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; }
         .tb-lines-row { border-top: 1px solid var(--line-soft); color: var(--ink-2); }
+        .tb-lines-draft .tb-lines-head, .tb-lines-draft .tb-lines-row { grid-template-columns: minmax(0, 1.6fr) 130px 92px; }
         .tb-fields { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
         .tb-field-chip { font-size: 10.5px; color: var(--muted); background: var(--surface); border: 1px solid var(--line);
           border-radius: 99px; padding: 2px 9px; }
@@ -1401,6 +1496,8 @@ function TallyPageInner() {
           .tb-lines-head, .tb-lines-row { grid-template-columns: minmax(0, 1.4fr) 60px 70px 78px; }
           .tb-lines-head span:nth-child(3), .tb-lines-row span:nth-child(3),
           .tb-lines-head span:nth-child(4), .tb-lines-row span:nth-child(4) { display: none; }
+          .tb-lines-draft .tb-lines-head, .tb-lines-draft .tb-lines-row { grid-template-columns: minmax(0, 1.4fr) 78px 92px; }
+          .tb-lines-draft .tb-lines-head span:nth-child(3), .tb-lines-draft .tb-lines-row span:nth-child(3) { display: inline; }
           .tb-xrow { grid-template-columns: 30px minmax(0, 1fr) 96px; }
           .tb-xrow .tb-xparty-cell, .tb-xrow .tb-xlines-cell { display: none; }
           .tb-filer { margin-left: 0; }
@@ -1489,7 +1586,7 @@ function PlanRow({
                 <div className="tb-label">Already on the register</div>
                 <Link className="tb-need" href={isDoc
                   ? (item.target === 'invoice' ? `/invoices/${item.matchedId}` : `/bills?q=${encodeURIComponent(String(fields.bill_number || ''))}`)
-                  : `/${item.target}?q=${encodeURIComponent(String(fields.name || ''))}`}>
+                  : `/${item.target === 'journal_draft' ? 'journal' : item.target === 'challan_draft' ? 'challans' : item.target}?q=${encodeURIComponent(String(fields.name || fields.narration || fields.party_name || ''))}`}>
                   <Icon name="arrow-right" size={12} /> Open the row this file matches
                 </Link>
               </div>
@@ -1533,6 +1630,42 @@ function PlanRow({
                 {!!fields.is_reverse_charge && <span className="tb-field-chip"><strong>reverse</strong> charge</span>}
                 {item.target === 'purchase_bill' && !!fields.itc_eligible && <span className="tb-field-chip"><strong>ITC</strong> eligible</span>}
                 <span className="tb-field-chip">unpaid — <strong>/payments</strong> writes money</span>
+              </div>
+            </div>
+          ) : item.target === 'journal_draft' || item.target === 'challan_draft' ? (
+            <div className="tb-money">
+              {!!item.lines.length && (
+                <div className="tb-lines tb-lines-draft">
+                  <div className="tb-lines-head">
+                    <span>{item.target === 'journal_draft' ? 'Head' : 'Line'}</span>
+                    <span className="tb-right">{item.target === 'journal_draft' ? 'Side' : 'Qty × Rate'}</span>
+                    <span className="tb-right">{item.target === 'journal_draft' ? 'Rupees' : 'Value'}</span>
+                  </div>
+                  {item.lines.map((line, i) => (
+                    <div key={`l${i}`} className="tb-lines-row">
+                      <span>{String(line.note || line.item_name || '')}</span>
+                      <span className="tb-right tb-faint">{item.target === 'journal_draft'
+                        ? String(line.side || '')
+                        : `${inr.format(Number(line.quantity) || 0)} × ${inr.format(Number(line.rate) || 0)}`}</span>
+                      <span className="tb-right">{inr.format(item.target === 'journal_draft'
+                        ? Number(line.amount) || 0
+                        : (Number(line.quantity) || 0) * (Number(line.rate) || 0))}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="tb-fields">
+                {Object.entries(item.fields)
+                  .filter(([, v]) => v !== '' && v !== null && v !== undefined)
+                  .slice(0, 6)
+                  .map(([k, v]) => (
+                    <span key={k} className="tb-field-chip"><strong>{k.replace(/_/g, ' ')}:</strong> {String(v)}</span>
+                  ))}
+              </div>
+              <div className="tb-fields">
+                <span className="tb-field-chip">{item.target === 'journal_draft'
+                  ? <>a <strong>draft</strong> — posting takes its number and asks the seal</>
+                  : <>a <strong>draft</strong> — the challan series numbers it now; confirming stays the shop’s move</>}</span>
               </div>
             </div>
           ) : item.target !== 'other' ? (
