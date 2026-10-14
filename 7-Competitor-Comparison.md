@@ -171,3 +171,44 @@ Everything below is "what the vendor advertises", which is exactly the thing Tax
 - GST Council 56th meeting press release — https://gstcouncil.gov.in/sites/default/files/2025-09/press_release_press_information_bureau_0.pdf
 - FY 2026-27 compliance checklist (composition limits, ISD, HSN, e-invoice thresholds) — https://taxguru.in/goods-and-service-tax/gst-fy-2026-27-compliance-checklist-10-key-actions-businesses.html
 - E-invoicing in 2026, threshold and 30-day rule — https://ledgester.com/guides/gst-e-invoicing-2026/
+
+## 11. What is still open — the consolidated ledger
+
+**Added 2026-10-14.** Everything above states these facts one row at a time; this section gathers them in one place, because the honest summary of the gap table is that **every ranked competitor gap is closed except the ones that are blocked, and Round 3 stopped climbing this table for exactly that reason.** Nothing here is a new claim — each line cites the row that already carries it — and nothing here re-fetches a vendor page.
+
+**Ranked gaps (§8) not closed — all blocked, none merely un-started:**
+
+| Gap | State | What blocks it |
+| --- | --- | --- |
+| #1 Actual return filing / GSP submission | Blocked | Needs a contracted GSP (**ADR-016**). `/gst/filings` (R3-4) and its cost-of-waiting reading (R3-12) sit deliberately on the workpaper side; nothing transmits to the portal. |
+| #4 Customer portal — authenticated half | v1 shipped, remainder open | Share-link statements ship (R2-16, the whole statement rides in the URL fragment); **auth'd customer logins** need the Phase 14 security window. |
+| #5 Multi-user roles / permissions | Open | Auth + schema; belongs with the same Phase 14 window. Nothing in the app models roles. |
+| #7 E-commerce integrations (Amazon/Flipkart/Shopify) | Open | A per-channel integration decision, not a browser register — each marketplace needs credentials and a feed the schema rule keeps off the device. |
+| #11 Native mobile app | Open | The PWA covers install; a native shell is a **distribution** decision, not a feature. |
+| #12 Attachments on documents | Open | Supabase Storage + a viewer; **needs RLS work first**, which is the schema/security window again. |
+
+The pattern is the finding: the five un-started items (#4-auth, #5, #7, #11, #12) are all gated on the **hand-managed Supabase schema / security window** or an **integration-or-distribution** decision — the same wall that blocks **R3-3**. That is why Round 3's rounds (R3-1…R3-12) deepen shipped registers and move boundaries by one word rather than adding rows here.
+
+**Cells that stay `~` / `·` by design (structural, not backlog) — §5:**
+
+- **E-invoice (IRN)** — `~`: JSON build + download, **no submission** (the GSP decision, #1).
+- **E-way bill** — `~`: JSON + e-way log, **no submission** (same).
+- **Direct filing / GSP submission** — `·`: workpapers only, by design.
+
+**Cells not built — §6:** mobile app `~` (PWA only), multi-user roles `·`, API access `·`, document attachments `·`, e-commerce integrations `·`. Customer portal is `~` (v1 only).
+
+**"What remains" clauses inside rows the table marks Closed:**
+
+- **#10 Manufacturing / BOM** (row closed) still lacks **WIP accounting** (needs a posting engine, not a reading — and a posting engine is `/journal`, a different register), a **cost layer** behind `purchase_price` (needs the schema), and any **automatic buying** (MOQ / lead time / a real price list would need a supply master this app does not have; v1 routes one vendor per part from the last bill and stops at a draft).
+- **#16 Export paperwork** (row closed) still waits on **#1**: a shipping bill pulled from ICEGATE, the EGM, the push to Customs and the bank credit stay outside the app — R3-10 reads the two returns the bill rides on, it does not fetch the bill.
+- **#6 Payroll** (closed as a register, not a payment system) deliberately keeps out: **no old-regime computation, no NPS/LTA/perquisites, no overtime, no gratuity provision, no biometric/device feed, no per-day wage ledger, no payslip issued** (nothing emailed or acknowledged), **no Form 16 Part A / challan numbers** — which is why `/tds` cannot see salary TDS.
+- **The manual journal (R3-2b)** prints its own standing boundary: **no chart of accounts, no account codes, no trial balance**, and **no return reads a row from here**. (R3-13 is surveying exactly this line — a read-only trial-balance schedule over the journal would *amend* ADR-037's boundary, not silently cross it.)
+
+**Named open cleanup (carried in project memory, not a round):**
+
+- **65 monospace spellings across 38 files.**
+- **Client trail ≠ government record** — `/audit`'s trail and the period seals are this app's evidence, not a statutory register.
+- **#217** — the live signed-in browser drive owed for **R3-4 → R3-12**: every one of those rounds was verified by `/tmp` suites, `tsc`, eslint-vs-HEAD and `npm run build`, but the session has stayed signed out, so no shipped card has yet been driven through the UI.
+- **R3-3** (P0 backend) — **BLOCKED** on the user's hand-managed Supabase schema; not started.
+
+**Read of the whole table:** §1–§4 are fully ✔ on the TaxFlow side; §5 is ✔ except the three submission cells that are `~`/`·` by design; §6 and §7 are where the app leads rather than where it lags. What is genuinely open divides into two kinds, and neither is "build the next competitor feature": **portal/submission integration** (#1 and its dependents, ADR-016) and **server/schema-bound scope** (#4-auth, #5, #7, #12, R3-3 — one security window). #11 is a distribution choice; #8's remaining depth and #10's three clauses are schema-bound; and the journal's trial-balance line is the deepening option that is fully in this app's own hands.
