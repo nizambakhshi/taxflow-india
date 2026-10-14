@@ -46,7 +46,7 @@ import { loadAudit, saveAudit } from '@/lib/audit'
 import { loadBatches, loadMoves, saveBatches, saveMoves } from '@/lib/batches'
 import { loadBank, saveBank } from '@/lib/bank-statement'
 import { loadBom, saveBom } from '@/lib/bom'
-import { loadStatuses, saveStatuses } from '@/lib/compliance'
+import { isCashTaxKey, loadStatuses, saveStatuses } from '@/lib/compliance'
 import { loadCC, saveCC } from '@/lib/costcentres'
 import { loadExp, saveExp } from '@/lib/exports'
 import { loadFilings, saveFilings } from '@/lib/filings'
@@ -583,15 +583,20 @@ export const REGISTERS: RegisterSpec[] = [
     id: 'compliance',
     prefix: 'taxflow:compliance:',
     label: 'Compliance calendar ticks',
-    what: 'Which return was filed on which day, with the reference number typed for it',
-    unit: 'filing',
+    what: 'Which return was filed on which day, the reference number typed for it, and — for a QRMP quarter — the cash tax stated against it, which the deposit card on the calendar reads',
+    unit: 'kept row',
     group: 'workpapers',
     module: 'src/lib/compliance.ts',
     pageLabel: 'Compliance calendar',
     pageHref: '/gst/calendar',
     encoding: 'json',
     count: (v) => keyCount(v),
-    detail: (v) => `${keyCount(v)} returns marked filed`,
+    detail: (v) => {
+      const keys = Object.keys(rec(v))
+      const cash = keys.filter(isCashTaxKey).length
+      return `${plural(keys.length - cash, 'return')} marked filed`
+        + (cash ? ` · ${plural(cash, 'quarter')} with a stated cash tax` : '')
+    },
     write: (orgId, v) => saveStatuses(orgId, v as Parameters<typeof saveStatuses>[1]),
     verify: (orgId) => Object.keys(loadStatuses(orgId)).length,
   },

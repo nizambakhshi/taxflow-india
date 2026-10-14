@@ -355,7 +355,35 @@ export function estimateLateCharge(
 // ── Filing status (localStorage — no schema change) ──────
 const KEY_PREFIX = 'taxflow:compliance:'
 
-export type StatusMap = Record<string, { doneOn: string; reference?: string }>
+export type StatusMap = Record<string, { doneOn: string; reference?: string; cashTax?: number }>
+
+/**
+ * The cash tax a shop says actually left the electronic cash ledger in a quarter, kept against the
+ * quarter (not the month's deposit) on the same `taxflow:compliance:` envelope as the ticks. Rule 61(3)
+ * takes PMT-06 at thirty-five per cent of that *cash* figure, which no register here holds — the filings
+ * rows keep what a return *stated* in total, and the credit leg it was settled from is not one of them —
+ * so the shop states it once per quarter and both of that quarter's deposits read it.
+ */
+const CASH_KEY = 'cash:'
+export function cashTaxKey(period: string): string { return CASH_KEY + period }
+/** Whether a key on the calendar's own envelope is a stated cash tax rather than a filed tick. */
+export function isCashTaxKey(key: string): boolean { return key.startsWith(CASH_KEY) }
+export function enteredCashTax(statuses: StatusMap, period: string): number {
+  const v = statuses[cashTaxKey(period)]?.cashTax
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : 0
+}
+export function withEnteredCashTax(statuses: StatusMap, period: string, value: number): StatusMap {
+  const key = cashTaxKey(period)
+  const entry = statuses[key]
+  const next = { ...statuses }
+  if (value > 0) next[key] = { doneOn: entry?.doneOn ?? '', reference: entry?.reference, cashTax: value }
+  else if (entry) {
+    /** A new entry object, never a delete on the one passed in — the caller's map is React state. */
+    if (entry.doneOn || entry.reference) next[key] = { doneOn: entry.doneOn, reference: entry.reference }
+    else delete next[key]
+  }
+  return next
+}
 
 export function loadStatuses(orgId: string): StatusMap {
   if (typeof window === 'undefined' || !orgId) return {}

@@ -66,7 +66,7 @@
 // the 25th under rule 61(3) are named in `NOT_TRACKED` with their rule, not quietly left out.
 
 import {
-  DEFAULT_PROFILE, generateEvents, loadStatuses, qrmpCategory,
+  DEFAULT_PROFILE, enteredCashTax, generateEvents, loadStatuses, qrmpCategory,
   type ComplianceEvent, type Profile, type QrmpCategory, type StatusMap,
 } from '@/lib/compliance'
 import { RECON_TOLERANCE, emptyHeads, headsOf, round2, type Heads } from '@/lib/gstr9'
@@ -156,7 +156,8 @@ export const UNTRACKED_CALENDAR_FORMS: Record<string, string> = {
     + 'last GSTR-3B of the preceding quarter, prescribed by Notification No. 85/2020-Central Tax dated 10.11.2020 '
     + 'under section 148 read with the proviso to section 39(7) and explained in para 6.1(a) of Circular No. '
     + '143/13/2020-GST of the same date — or a self-assessed figure for the month. This register keeps returns and their history, so it keeps no '
-    + 'PMT-06 row; the calendar has carried the day since R3-6, and the money itself belongs to the cash ledger.',
+    + 'PMT-06 row; the calendar has carried the day since R3-6, and since R3-7 its card folds the amount — read the quarter\'s own '
+    + 'GSTR-3B row for a ceiling, or state that quarter\'s cash tax for the challan itself.',
   'CMP-02': 'The composition opt-in under section 10(2) is an election, not a filing. This register '
     + 'keeps returns and statements; the opt-in date stays on /gst/calendar.',
 }
@@ -1539,6 +1540,74 @@ export function profileFor(settings: FilingsSettings): Profile {
   }
 }
 
+/* ── the QRMP deposit: a starting figure and the shop's own ──────────────────── */
+
+/**
+ * A FORM GST PMT-06 deposit for one month of a quarter, read against what the shop actually knows.
+ *
+ * Rule 61(3) fixes the day and leaves the sum to section 39(7)'s notification; the notified fixed sum
+ * (Notification No. 85/2020-Central Tax dated 10.11.2020, explained in para 6.1(a) of Circular No.
+ * 143/13/2020-GST) is thirty-five per cent of the tax paid **in cash** in the return for the
+ * immediately preceding quarter. Two things follow for the fold:
+ *
+ *  * The register keeps what a return *stated* in total (`heads`), not how much of it left the
+ *    electronic cash ledger versus the credit ledger. Thirty-five per cent of the stated total is
+ *    therefore a **ceiling** — it is only exact when none of the quarter's tax was met from input
+ *    credit. The register prints it as a ceiling and says so, never as the challan (Rule 43: a sum on
+ *    this screen is read from a primary text or labelled as the shop's own; a stated total relabelled
+ *    as a cash leg would be neither).
+ *  * The figure that is the shop's own — the quarter's actual cash tax — is entered once and stored on
+ *    the calendar's own `taxflow:compliance:` envelope (no new key, so Rule 31 stays untriggered).
+ *    Enter it and the deposit becomes thirty-five per cent of that, a `ready` challan the rule's own
+ *    arithmetic produced from the shop's own number.
+ *
+ * A deposit sits in a quarter's first two months, so its base quarter is the one before that:
+ * `prevPeriod` of the quarter the supply month falls in.
+ */
+export interface DepositFigures {
+  /** The quarter whose 3B is the base for this deposit (the one before the deposit's own quarter). */
+  baseQuarter: string
+  baseQuarterLabel: string
+  /** What that quarter's filed 3B row states in total tax, or null when the register has no filed row. */
+  statedTax: number | null
+  /** Thirty-five per cent of `statedTax` — a ceiling, labelled as such. Null with no filed row. */
+  ceiling: number | null
+  /** The quarter's cash tax the shop entered, or 0 when they have not. */
+  enteredCash: number
+  /** Thirty-five per cent of the entered cash tax when present, otherwise of the ceiling. Null with neither. */
+  amount: number | null
+  /** Which figure won: `ready` from the shop's own cash tax, `ceiling` from a filed row, or `none`. */
+  source: 'ready' | 'ceiling' | 'none'
+}
+
+/** The deposit figure for one PMT-06 calendar row — its own day is certain, its amount is folded here. */
+export function depositFor(
+  store: FilingsStore, statuses: StatusMap, supplyMonth: string,
+): DepositFigures | null {
+  const p = parsePeriod(supplyMonth)
+  if (p?.kind !== 'month') return null
+  const { q, fy } = quarterOfMonth(p.y, p.m ?? 1)
+  const baseQuarter = prevPeriod(`${fy}-Q${q}`)
+  if (!baseQuarter) return null
+  const rec = store.filings.find(f => f.form === 'gstr3b' && f.period === baseQuarter)
+  const statedTax = rec && rec.status !== 'not_filed' ? round2(rec.heads.tax) : null
+  const ceiling = statedTax === null ? null : round2(statedTax * DEPOSIT_PCT / 100)
+  const enteredCash = enteredCashTax(statuses, baseQuarter)
+  if (enteredCash > 0) {
+    return { baseQuarter, baseQuarterLabel: periodLabel(baseQuarter), statedTax, ceiling,
+      enteredCash, amount: round2(enteredCash * DEPOSIT_PCT / 100), source: 'ready' }
+  }
+  if (ceiling !== null) {
+    return { baseQuarter, baseQuarterLabel: periodLabel(baseQuarter), statedTax, ceiling,
+      enteredCash, amount: ceiling, source: 'ceiling' }
+  }
+  return { baseQuarter, baseQuarterLabel: periodLabel(baseQuarter), statedTax: null, ceiling: null,
+    enteredCash: 0, amount: null, source: 'none' }
+}
+
+/** The notified fixed sum as a share of the preceding quarter's cash tax — Notification No. 85/2020. */
+export const DEPOSIT_PCT = 35
+
 export interface ExpectedRow {
   form: FilingForm
   period: string
@@ -1686,15 +1755,16 @@ export function calendarObjections(
       severity: 'info',
     })
     out.push({
-      title: 'The deposit the calendar now prints states a day it is sure of and an amount it does not have',
+      title: 'The deposit the calendar now prints states a day it is sure of, and its amount is a ceiling until the cash tax is named',
       why: 'Rule 61(3) asks for "the tax due under proviso to sub-section (7) of section 39" and stops there — '
         + 'the sum is left to be notified, and the two shapes the notified sum takes both need a figure this '
-        + 'register has not been read for: the fixed sum is thirty-five per cent of the tax paid in *cash* in the '
+        + 'register keeps only one of: the fixed sum is thirty-five per cent of the tax paid in *cash* in the '
         + 'last return of the immediately preceding quarter, and the alternative is this month\'s own liability on '
-        + 'self-assessment. The twenty-fifth is therefore printed with confidence while the rupee amount beside it '
-        + 'stays the shop\'s to state. What the cash tax actually was is held in this register\'s own filed rows '
-        + 'and in the cash ledger; folding the two together into a pre-computed challan is the next round\'s work, '
-        + 'not a number this one should guess.',
+        + 'self-assessment. The rows here say what a return *stated* in total, not how much of it left the '
+        + 'electronic cash ledger, so the calendar\'s card multiplies the base quarter\'s stated total by thirty-five '
+        + 'per cent and prints it as a ceiling — \"up to\" a figure, exact only if none of that quarter\'s tax was met '
+        + 'from input credit. State the quarter\'s cash tax on that card and the same arithmetic gives the challan '
+        + 'itself, from your own figure rather than this register\'s reading of one.',
       citation: 'rule 61(3) with the proviso to section 39(7) — the fixed sum notified by Notification No. 85/2020-Central Tax dated 10.11.2020, explained in para 6.1(a) of Circular No. 143/13/2020-GST of the same date',
       severity: 'info',
     })

@@ -6,8 +6,10 @@ import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import {
   DEFAULT_PROFILE, estimateLateCharge, generateEvents, googleCalendarUrl, loadStatuses,
-  qrmpCategory, saveStatuses, toIcs, type ComplianceEvent, type Profile, type StatusMap,
+  qrmpCategory, saveStatuses, toIcs, withEnteredCashTax,
+  type ComplianceEvent, type Profile, type StatusMap,
 } from '@/lib/compliance'
+import { depositFor, loadFilings, type DepositFigures, type FilingsStore } from '@/lib/filings'
 import { INDIAN_STATES } from '@/lib/constants'
 import { download } from '@/lib/party-ledger'
 import { itc04Cadence, itc04Periods, loadJob } from '@/lib/jobwork'
@@ -160,6 +162,8 @@ export default function ComplianceCalendarPage() {
   const [expBooks, setExpBooks] = useState<ExportBookInvoice[]>([])
   /** The principal place of business as the registration states it — offered as a prefill, never forced. */
   const [shopState, setShopState] = useState('')
+  /** The filings register, so a PMT-06 deposit can be folded against the shop's own filed quarterly 3B. */
+  const [filings, setFilings] = useState<FilingsStore | null>(null)
 
   useEffect(() => {
     async function load() {
@@ -174,6 +178,8 @@ export default function ComplianceCalendarPage() {
       setOrgId(oid)
       setOrgName((membership.organizations as { name?: string } | null)?.name || '')
       setStatuses(loadStatuses(oid))
+      // The filed quarterly returns the deposit fold reads — a read-only transcript, never written here.
+      setFilings(loadFilings(oid))
       try {
         const saved = localStorage.getItem(PROFILE_KEY + oid)
         if (saved) setProfile({ ...DEFAULT_PROFILE, ...JSON.parse(saved) })
@@ -252,6 +258,30 @@ export default function ComplianceCalendarPage() {
     // away on purpose: it is neither overdue nor due soon, because nothing here knows when it is.
     daysLeft: Math.ceil((new Date(e.due).getTime() - today.getTime()) / DAY),
   }))
+
+  /**
+   * Fold each PMT-06 deposit against the register's filed quarterly 3B. The deposit's own supply month
+   * is the `pmt06-<YYYY-MM>` tail of its event id; the fold reads the quarter *before* that month for
+   * the notified fixed sum. Nothing is invented when the register has no filed row — the day stays
+   * printed and the rupee is left as the shop's own to state (Rule 43).
+   */
+  const depositByEvent = useMemo(() => {
+    const map: Record<string, DepositFigures | null> = {}
+    if (!filings) return map
+    for (const e of events) {
+      if (e.form !== 'PMT-06') continue
+      const m = e.id.match(/pmt06-(\d{4}-\d{2})$/)
+      map[e.id] = m ? depositFor(filings, statuses, m[1]) : null
+    }
+    return map
+  }, [events, filings, statuses])
+
+  function saveCashTax(period: string, value: number) {
+    if (!orgId) return
+    const next = withEnteredCashTax(statuses, period, value)
+    setStatuses(next)
+    saveStatuses(orgId, next)
+  }
 
   const overdue = withStatus.filter(e => !e.filed && e.daysLeft < 0)
   const dueSoon = withStatus.filter(e => !e.filed && e.daysLeft >= 0 && e.daysLeft <= 7)
@@ -458,6 +488,7 @@ export default function ComplianceCalendarPage() {
           const meta = CATEGORY_META[e.category]
           const lateDays = e.daysLeft < 0 ? Math.abs(e.daysLeft) : 0
           const charge = lateDays ? estimateLateCharge(e, lateDays, 0) : null
+          const deposit = depositByEvent[e.id] ?? null
           return (
             <Card key={e.id} style={{ padding: '1rem 1.15rem' }} className="tf-rise">
               <div className="tf-row-between tf-wrap" style={{ gap: 14 }}>
@@ -481,9 +512,41 @@ export default function ComplianceCalendarPage() {
                     <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
                       {e.period} · {e.due ? `due ${formatDateIN(e.due)}` : 'due on the state’s own date'} — {e.description}
                     </div>
-                    {e.amountHint && (
+                    {e.amountHint && !deposit && (
                       <div className="tf-num" style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 650, marginTop: 3 }}>
                         {e.amountHint}
+                      </div>
+                    )}
+                    {deposit && (
+                      <div className="dep-fold">
+                        {deposit.source === 'ready' && (
+                          <div className="dep-line">
+                            <span className="dep-fig">₹{formatINR(deposit.amount ?? 0)}</span>
+                            <span className="dep-cap">to deposit — 35% of ₹{formatINR(deposit.enteredCash)}, the cash tax you stated for {deposit.baseQuarterLabel}</span>
+                          </div>
+                        )}
+                        {deposit.source === 'ceiling' && (
+                          <div className="dep-line">
+                            <span className="dep-fig dep-fig-ceiling">up to ₹{formatINR(deposit.amount ?? 0)}</span>
+                            <span className="dep-cap">a ceiling — 35% of ₹{formatINR(deposit.statedTax ?? 0)}, the tax {deposit.baseQuarterLabel}&apos;s filed 3B stated in total; the notified sum is 35% of the <em>cash</em> leg only, so state it below</span>
+                          </div>
+                        )}
+                        {deposit.source === 'none' && (
+                          <div className="dep-cap dep-none">
+                            Rule 61(3) fixes this day; the notified fixed sum (Notification No. 85/2020-Central Tax) is 35% of the cash tax in {deposit.baseQuarterLabel}&apos;s GSTR-3B, which this calendar does not hold — state that quarter&apos;s cash tax and the amount appears.
+                          </div>
+                        )}
+                        <label className="dep-input">
+                          <span>Cash tax paid in {deposit.baseQuarterLabel}&apos;s GSTR-3B</span>
+                          <div className="dep-input-row">
+                            <input className="dep-input-field" type="number" min={0} step="0.01" inputMode="decimal"
+                              placeholder={deposit.statedTax !== null ? `stated total ₹${formatINR(deposit.statedTax)}` : '0'}
+                              defaultValue={deposit.enteredCash || ''}
+                              onBlur={ev => saveCashTax(deposit.baseQuarter, Math.max(0, Number(ev.target.value) || 0))} />
+                            <button className="dep-clear" type="button"
+                              onClick={() => saveCashTax(deposit.baseQuarter, 0)}>clear</button>
+                          </div>
+                        </label>
                       </div>
                     )}
                   </div>
@@ -562,6 +625,25 @@ export default function ComplianceCalendarPage() {
           padding: 7px 11px; border-radius: 9px; border: 1px solid var(--brand-line); background: var(--brand-soft);
         }
         .cal-state-note { flex: 1 1 420px; min-width: 0; font-size: 11.5px; color: var(--faint); line-height: 1.55; margin: 0; }
+        .dep-fold { margin-top: 8px; padding-top: 9px; border-top: 1px solid var(--brand-line); }
+        .dep-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
+        .dep-fig { font-family: var(--mono); font-size: 15px; font-weight: 750; color: var(--ink); }
+        .dep-fig-ceiling { color: var(--amber); }
+        .dep-cap { font-size: 11.5px; color: var(--muted); line-height: 1.5; max-width: 620px; }
+        .dep-cap em { font-style: italic; color: var(--ink-2); }
+        .dep-none { color: var(--faint); }
+        .dep-input { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+        .dep-input > span { font-size: 11px; font-weight: 650; color: var(--muted); }
+        .dep-input-row { display: flex; align-items: center; gap: 8px; }
+        .dep-input-field {
+          font-family: var(--mono); font-size: 12.5px; color: var(--ink);
+          padding: 6px 9px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface);
+          width: 180px; max-width: 55vw;
+        }
+        .dep-clear {
+          font-family: inherit; font-size: 11px; font-weight: 600; color: var(--muted); cursor: pointer;
+          border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 9px;
+        }
         @media (prefers-reduced-motion: reduce) { .tf-rise { animation: none !important; } }
       `}</style>
     </div>
