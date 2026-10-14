@@ -1527,6 +1527,195 @@ export function openAmendmentsFor(store: FilingsStore, period: string): Amendmen
   return store.amendments.filter(a => a.period === period && a.status === 'open')
 }
 
+/* ── what waiting costs: rule 88B(2), read off the CBIC handbook ───────────── */
+
+/**
+ * The register has always answered *can this still be corrected, and until when*. This answers the
+ * other half of the same question — what the shop is paying for the privilege of leaving it open.
+ *
+ * The authority is asymmetric, and the asymmetry is the whole round. Rule 88B(1) takes the late-filed
+ * RETURN and charges interest on the portion paid from the electronic cash ledger only. Rule 88B(2)
+ * takes "all other cases" — which is exactly a document the return missed and a later period picks up
+ * — and charges it on the amount of tax that remains unpaid, gross. The CBIC handbook spells the
+ * example out itself: an invoice left out of a July GSTR-1 that surfaces in September draws interest
+ * on the whole ₹18,000 from July's due date. So this fold does not reach for the net-cash relief the
+ * register cannot see — it prints the gross figure, prints the rule that makes it gross, and prints
+ * what it would take to answer the other way.
+ */
+export type CostState =
+  | 'running'
+  | 'carried_undated'
+  | 'no_tax_to_run_on'
+  | 'reduce_takes_tax_out'
+  | 'not_due_yet'
+  | 'cannot_tell'
+
+export const COST_STATE_META: Record<CostState, { label: string; tone: 'blue' | 'green' | 'red' | 'amber' | 'grey' }> = {
+  running: { label: 'Running', tone: 'red' },
+  carried_undated: { label: 'Carried, date not on the register', tone: 'amber' },
+  no_tax_to_run_on: { label: 'No tax on this row', tone: 'grey' },
+  reduce_takes_tax_out: { label: 'Takes tax out', tone: 'green' },
+  not_due_yet: { label: 'Not due yet', tone: 'blue' },
+  cannot_tell: { label: 'Cannot tell', tone: 'grey' },
+}
+
+export interface AmendmentCost {
+  id: string
+  period: string
+  kind: AmendmentKind
+  doc_ref: string
+  effect: 'add' | 'reduce'
+  status: AmendmentStatus
+  /** The tax the amendment carries, exactly as the shop wrote it. */
+  tax: number
+  state: CostState
+  /** The date that tax was due to be paid — the corrected period's GSTR-3B date, never a date invented. */
+  dueOn: string
+  /** Whose date that is: the register's own filed row, or rule 61 re-derived for this cadence. */
+  dueBasis: string
+  /** Where the clock is read up to. Carried or open, the register holds no payment date, so this is today. */
+  readTo: string
+  /** Days from the day after the due date to `readTo`; 0 in every state that prints no figure. */
+  days: number
+  /** The gross tax rule 88B(2) charges on. Kept beside `tax` so a future state can disagree with it. */
+  base: number
+  interest: number
+  /** What one more day of waiting adds — the figure that makes "running" mean something. */
+  perDay: number
+  /** How long ago the shop says it found the mistake. Blank `found_on` prints a dash, never zero. */
+  foundDays: number | null
+  why: string
+  citation: string
+}
+
+/**
+ * The date the corrected period's tax was due to be paid, which is the day rule 88B(2) starts from.
+ * Preferred in the order the register can actually stand behind: the GSTR-3B row the shop already
+ * filed for that period (with the due date it carried at the time), then the date rule 61 states for
+ * this shop's cadence and state, then nothing — and "nothing" is a state, not a zero.
+ */
+function dueToBePaid(
+  store: FilingsStore, period: string, settings: FilingsSettings,
+): { date: string; basis: string } {
+  const three = store.filings.find(f => f.form === 'gstr3b' && f.period === period) ?? null
+  if (three && isDate(three.due)) {
+    return {
+      date: three.due,
+      basis: `the due date ${periodLabel(period)}'s GSTR-3B row carries — copied when that return was recorded`,
+    }
+  }
+  if (three && isDate(three.filed_on)) {
+    // A filed 3B with no due date still proves the day the tax was owed had arrived by the time it went in.
+    return {
+      date: three.filed_on,
+      basis: `${periodLabel(period)}'s GSTR-3B row states no due date, so the clock starts on the day it was filed — the earliest date it can`,
+    }
+  }
+  const s = statutoryDue('gstr3b', period, settings)
+  if (s && isDate(s.date)) return { date: s.date, basis: `re-derived from the rule: ${s.citation}` }
+  return {
+    date: '',
+    basis: s && s.cited
+      ? `rule 61(1)(ii) gives the twenty-second or twenty-fourth by the state of the principal place of business, and no state is named under Cadence & slabs`
+      : `the register holds no GSTR-3B for ${periodLabel(period)} and no rule date it can stand behind`,
+  }
+}
+
+/** One amendment against the clock rule 88B(2) puts it on. Reads the register; writes nothing. */
+export function amendmentCost(
+  a: Amendment, store: FilingsStore, today: string,
+): AmendmentCost {
+  const settings = store.settings
+  const p = parsePeriod(a.period)
+  const { date: dueOn, basis: dueBasis } = dueToBePaid(store, a.period, settings)
+  const foundDays = isDate(a.found_on) && isDate(today) ? Math.max(0, daysBetween(a.found_on, today)) : null
+  const cite = 'rule 88B(2) — "the interest shall be calculated on the amount of tax which remains unpaid, '
+    + 'for the period starting from the date on which such tax was due to be paid till the date such tax is paid"'
+
+  const blank = (state: CostState, why: string, extra: Partial<AmendmentCost> = {}): AmendmentCost => ({
+    id: a.id, period: a.period, kind: a.kind, doc_ref: a.doc_ref, effect: a.effect, status: a.status,
+    tax: a.tax, state, dueOn, dueBasis, readTo: state === 'cannot_tell' ? '' : today,
+    days: 0, base: state === 'reduce_takes_tax_out' ? 0 : a.tax, interest: 0, perDay: 0,
+    foundDays, why, citation: cite, ...extra,
+  })
+
+  if (!p) return blank('cannot_tell', 'The period on this row does not parse, so no date can be read against it.')
+  if (a.effect === 'reduce') {
+    return blank('reduce_takes_tax_out',
+      'A reduction pays nothing out — it takes tax off what the period already owed — so no interest runs on it. '
+      + `Read it beside ${periodLabel(a.period)}'s filed figures, not beside a demand.`)
+  }
+  if (a.tax <= 0) {
+    return blank('no_tax_to_run_on',
+      'Nothing to run interest on: this row states no tax. A value-only omission is still an omission, '
+      + 'and the window beside it still closes.')
+  }
+  if (!isDate(dueOn)) {
+    return blank('cannot_tell',
+      `Cannot tell what the wait has cost. ${dueBasis}. No start date is a finding, not a zero.`)
+  }
+  // Interest runs "from the day succeeding the day on which such tax was due" — section 50(2).
+  const clockStart = dueOn
+  const elapsed = daysBetween(clockStart, today)
+  if (elapsed <= 0) {
+    return blank('not_due_yet',
+      `The tax on this row was not due until ${dueOn}, so nothing is late and nothing is running yet. ${dueBasis}.`,
+      { readTo: today })
+  }
+  const days = elapsed
+  const interest = round2(a.tax * (INTEREST_PCT / 100) * (days / 365))
+  const perDay = round2(a.tax * (INTEREST_PCT / 100) / 365)
+  const still = a.status === 'open'
+  const why = still
+    ? `Interest under section 50 on ₹${a.tax.toLocaleString('en-IN')} of tax left unpaid since ${dueOn} — `
+      + `${days} day${days === 1 ? '' : 's'} so far, read to today because nothing has been paid on this row yet. `
+      + `It adds about ₹${perDay.toLocaleString('en-IN')} for every further day it stays open.`
+    : `Recorded as carried${a.carried_in ? ` through ${a.carried_in}` : ''}, but this register holds no date the tax `
+      + `was paid, so the clock cannot be stopped honestly. Read to today (${days} days) as an upper figure — `
+      + `the real one is lower by however long ago it actually went in.`
+  return {
+    id: a.id, period: a.period, kind: a.kind, doc_ref: a.doc_ref, effect: a.effect, status: a.status,
+    tax: a.tax, state: still ? 'running' : 'carried_undated', dueOn, dueBasis, readTo: today,
+    days, base: a.tax, interest, perDay, foundDays, why, citation: cite,
+  }
+}
+
+export function amendmentCosts(store: FilingsStore, today: string): AmendmentCost[] {
+  return store.amendments.map(a => amendmentCost(a, store, today))
+}
+
+export interface CostTotals {
+  /** Only `running` and `carried_undated` add up; the other four states print reasons, not money. */
+  quantified: number
+  running: number
+  upperBound: number
+  perDay: number
+  /** Counted out of the sum on purpose, each named. */
+  unquantified: { state: CostState; n: number }[]
+  oldest: { id: string; doc_ref: string; period: string; days: number } | null
+}
+
+export function amendmentCostTotals(rows: AmendmentCost[]): CostTotals {
+  const money = rows.filter(r => r.state === 'running' || r.state === 'carried_undated')
+  const byState = new Map<CostState, number>()
+  for (const r of rows) {
+    if (r.state === 'running' || r.state === 'carried_undated') continue
+    byState.set(r.state, (byState.get(r.state) ?? 0) + 1)
+  }
+  const aged = rows.filter(r => r.state === 'running' && r.foundDays !== null)
+  const slowest = aged.sort((x, y) => (y.foundDays ?? 0) - (x.foundDays ?? 0))[0] ?? null
+  return {
+    quantified: money.length,
+    running: round2(money.filter(r => r.state === 'running').reduce((s, r) => s + r.interest, 0)),
+    upperBound: round2(money.reduce((s, r) => s + r.interest, 0)),
+    perDay: round2(rows.filter(r => r.state === 'running').reduce((s, r) => s + r.perDay, 0)),
+    unquantified: [...byState.entries()].map(([state, n]) => ({ state, n })),
+    oldest: slowest
+      ? { id: slowest.id, doc_ref: slowest.doc_ref, period: slowest.period, days: slowest.foundDays ?? 0 }
+      : null,
+  }
+}
+
 /* ── the calendar, and whether it still matches the rule ───────────────────── */
 
 export function profileFor(settings: FilingsSettings): Profile {
@@ -2279,6 +2468,14 @@ export const NOT_TRACKED: { title: string; why: string }[] = [
       + 'notice file this app does not keep yet.',
   },
   {
+    title: 'The date a correction tax actually left',
+    why: 'An amendment row records the period, the document and what it carries, and — once carried — which '
+      + 'return it went through. It does not record the day that tax was paid, and rule 88B(2) measures to '
+      + 'that day. So *What waiting costs* reads its clock up to today and prints the figure as an upper '
+      + 'bound with the reason beside it, rather than inventing a payment date to stop it on. The challan '
+      + 'that paid it lives on /gst/calendar.',
+  },
+  {
     title: 'The figures on the statements',
     why: 'Nothing in ledger.ts reads this register. Correcting a filed return does not move the balance sheet; '
       + 'that is what a journal entry at /journal is for, and the two stay deliberately apart.',
@@ -2293,6 +2490,10 @@ export const BOUNDARY: string[] = [
     + 'State or Union territory. The estimate prints its notification.',
   '**An amendment lives inside a window.** The proviso to rule 59(1), Table 9A, and section 16(4) each shut on '
     + 'their own terms; a correction with no window left is printed as lapsed, not as a task.',
+  '**Waiting has a price, and it is the gross one.** Rule 88B(1) charges interest on the cash- ledger portion '
+    + 'for a return filed late; rule 88B(2) covers "all other cases" — a document the return missed — on the '
+    + 'tax that remains unpaid. This register cannot see the electronic ledgers, so it never claims the first '
+    + 'base for the second case: an amendment is costed gross, and the figure is a starting one, not a demand.',
   '**The chain is quoted, not invented.** Rule 59(6)(a)/(b) and 59(6)(d) with 88C(1) are the only bars this '
     + 'register states, because both can be read from the rows on the register.',
   '**A filed row is a transcript.** It can be corrected, and the correction is journalled on /audit — but it is '
@@ -2356,6 +2557,101 @@ export function varianceCsvRows(rows: VarianceRow[]): (string | number)[][] {
     r.diff.taxable, r.diff.tax, VARIANCE_META[r.status].label, r.heads.join(', '),
   ])
 }
+
+export const AMENDMENT_COST_CSV_HEADERS = [
+  'Period corrected', 'Kind', 'Document', 'Effect', 'Status', 'Tax on the row', 'State',
+  'Tax due on', 'Where that date comes from', 'Read to', 'Days', 'Interest so far', 'Per day',
+  'Days since found', 'Why', 'Rule',
+]
+
+export function amendmentCostCsvRows(rows: AmendmentCost[]): (string | number)[][] {
+  return rows.map(r => [
+    r.period, AMENDMENT_META[r.kind].label, r.doc_ref, r.effect, AMENDMENT_STATUS_META[r.status].label,
+    r.tax, COST_STATE_META[r.state].label, r.dueOn, r.dueBasis, r.readTo, r.days, r.interest, r.perDay,
+    r.foundDays ?? '', r.why, r.citation,
+  ])
+}
+
+/**
+ * What rule 88B says, quoted from the CBIC's own Handbook on Interest, Late Fee and Penalties under
+ * GST — the two cases are kept apart because the register's ordinary late-fee arithmetic follows the
+ * first and an amendment follows the second.
+ */
+export interface CostCitation {
+  /** Verbatim, quotation marks included, or the app's own words prefixed `Reading:`. */
+  text: string
+  source: string
+  url: string
+  /** `primary` — read off the cited page; `own` — this register's inference, labelled as such. */
+  read: 'primary' | 'own'
+}
+
+export const COST_CITATIONS: CostCitation[] = [
+  {
+    text: '"(2) In all other cases, where interest is payable in accordance with sub section (1) of '
+      + 'section 50, the interest shall be calculated on the amount of tax which remains unpaid, for the '
+      + 'period starting from the date on which such tax was due to be paid till the date such tax is paid, '
+      + 'at such rate as may be notified under sub-section (1) of section 50."',
+    source: 'Rule 88B(2), CGST Rules, 2017 — quoted in the CBIC Handbook on Interest, Late Fee and '
+      + 'Penalties under GST (p. 5)',
+    url: 'https://d23z1tp9il9etb.cloudfront.net/download/pdf25/Handbook%20on%20Interest,%20Late%20Fee%20&%20Penalties%20under%20GST.pdf',
+    read: 'primary',
+  },
+  {
+    text: '"Any amount is missed out and found out later, interest is on gross amount."',
+    source: 'CBIC Handbook on Interest, Late Fee and Penalties under GST — commentary on rule 88B(2) (p. 5)',
+    url: 'https://d23z1tp9il9etb.cloudfront.net/download/pdf25/Handbook%20on%20Interest,%20Late%20Fee%20&%20Penalties%20under%20GST.pdf',
+    read: 'primary',
+  },
+  {
+    text: '"(1) In case, where the supplies made during a tax period are declared by the registered person '
+      + 'in the return for the said period and the said return is furnished after the due date … the interest '
+      + 'on tax payable in respect of such supplies shall be calculated on the portion of tax which is paid by '
+      + 'debiting the electronic cash ledger, for the period of delay in filing the said return beyond the due '
+      + 'date, at such rate as may be notified under sub-section (1) of section 50."',
+    source: 'Rule 88B(1), CGST Rules, 2017 — quoted in the CBIC Handbook (p. 4). This is the late-filing case, '
+      + 'which the register already costs; an amendment is the other case, and the other base.',
+    url: 'https://d23z1tp9il9etb.cloudfront.net/download/pdf25/Handbook%20on%20Interest,%20Late%20Fee%20&%20Penalties%20under%20GST.pdf',
+    read: 'primary',
+  },
+  {
+    text: '"Accordingly, rule 88B came to be notified with effect from 01 July 2017 on 05 Jul 2022 vide '
+      + 'Notification No. 14/2022-CT."',
+    source: 'CBIC Handbook on Interest, Late Fee and Penalties under GST — background on the insertion of rule 88B (p. 4)',
+    url: 'https://d23z1tp9il9etb.cloudfront.net/download/pdf25/Handbook%20on%20Interest,%20Late%20Fee%20&%20Penalties%20under%20GST.pdf',
+    read: 'primary',
+  },
+  {
+    text: '"18% rate of interest was notified vide Notification No. 13/2017-C.T., dated 28-6-2017, for payment '
+      + 'of interest under section 50(1) of the CGST Act."',
+    source: 'CBIC Handbook on Interest, Late Fee and Penalties under GST (p. 1)',
+    url: 'https://d23z1tp9il9etb.cloudfront.net/download/pdf25/Handbook%20on%20Interest,%20Late%20Fee%20&%20Penalties%20under%20GST.pdf',
+    read: 'primary',
+  },
+  {
+    text: '"(2) The interest under sub-section (1) shall be calculated, in such manner as may be prescribed, '
+      + 'from the day succeeding the day on which such tax was due to be paid."',
+    source: 'Section 50(2), CGST Act, 2017 — quoted in the CBIC Handbook (p. 2)',
+    url: 'https://d23z1tp9il9etb.cloudfront.net/download/pdf25/Handbook%20on%20Interest,%20Late%20Fee%20&%20Penalties%20under%20GST.pdf',
+    read: 'primary',
+  },
+  {
+    text: 'Reading: the handbook works rule 88B on simple interest for the number of days between the date the '
+      + 'tax was due and the date it was paid. This register divides by 365 and does not compound — the same '
+      + 'convention its own late-fee estimate uses, so the two figures on this page are computed alike.',
+    source: 'This register\'s arithmetic, not a quoted text',
+    url: '',
+    read: 'own',
+  },
+  {
+    text: 'Reading: an amendment carried through a later return stops the clock on the date that tax was paid, '
+      + 'and this register does not hold that date — so the page prints the figure to today as an upper bound '
+      + 'and names the reason. It never prints a lower one it cannot support.',
+    source: 'This register\'s arithmetic, not a quoted text',
+    url: '',
+    read: 'own',
+  },
+]
 
 /** One FY's worth of money at risk, for the page's headline strip. */
 export function exposureOf(rows: RegisterRow[]): { fee: number; interest: number; total: number; periods: number } {

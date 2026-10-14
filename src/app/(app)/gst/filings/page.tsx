@@ -47,15 +47,17 @@ import { generateEvents } from '@/lib/compliance'
 import { fyLabel, fyStartYear } from '@/lib/targets'
 import { loadAudit, todayISO } from '@/lib/audit'
 import {
-  AMENDMENT_CSV_HEADERS, AMENDMENT_KINDS, AMENDMENT_META, AMENDMENT_STATUS_META, CADENCES, CADENCE_META,
-  BOUNDARY, DEFAULT_FILINGS_SETTINGS, FILINGS_CSV_HEADERS, FILINGS_VERSION, FORMS, FORM_META,
+  AMENDMENT_COST_CSV_HEADERS, AMENDMENT_CSV_HEADERS, AMENDMENT_KINDS, AMENDMENT_META, AMENDMENT_STATUS_META, CADENCES, CADENCE_META,
+  BOUNDARY, COST_CITATIONS, COST_STATE_META, DEFAULT_FILINGS_SETTINGS, FILINGS_CSV_HEADERS, FILINGS_VERSION, FORMS, FORM_META,
   NOT_TRACKED, STATE_META, URGENCY_META, VARIANCE_CSV_HEADERS, VARIANCE_META,
-  addAmendment, amendmentBoard, amendmentCsvRows, calendarObjections, calendarTicks, consequencesFor,
+  addAmendment, amendmentBoard, amendmentCostCsvRows, amendmentCostTotals, amendmentCosts, amendmentCsvRows,
+  calendarObjections, calendarTicks, consequencesFor,
   crossCheck, daysLate, declaredVsBooks, deleteAmendment, deleteFiling, estimateLateFee, exposureOf,
   filingsCsvRows, loadFilings, openAmendmentsFor, periodFyStart, periodLabel, pickDue, STATUS_META,
   profileFor, qrmpCategory, recordFiling, registerRows, registerStats, saveFilingsSettings,
   sealFilingsPeriod, untrackedRows, varianceCsvRows, windowsFor,
-  type Amendment, type AmendmentDraft, type AmendmentKind, type AmendmentStatus, type BoardRow,
+  type Amendment, type AmendmentCost, type AmendmentDraft, type AmendmentKind, type AmendmentStatus,
+  type BoardRow,
   type Cadence, type FilingDraft, type FilingForm, type FilingStatus, type FilingsSettings,
   type FilingsStore, type RegisterRow, type VarianceRow,
 } from '@/lib/filings'
@@ -315,6 +317,11 @@ function FilingsPageInner() {
     [store, today, docs],
   )
   const stats = useMemo(() => registerStats(rows, board), [rows, board])
+  // R3-12: what each correction on the board is costing while it waits. A read of the register's own
+  // dates — the corrected period's GSTR-3B due date — never a second opinion on the late-fee table.
+  const costs = useMemo(() => amendmentCosts(store, today), [store, today])
+  const costById = useMemo(() => new Map(costs.map(c => [c.id, c])), [costs])
+  const costTotals = useMemo(() => amendmentCostTotals(costs), [costs])
   const exposure = useMemo(() => exposureOf(rows), [rows])
   const untracked = useMemo(() => untrackedRows(fyStart, settings, events), [fyStart, settings, events])
   const objections = useMemo(() => calendarObjections(fyStart, settings, events), [fyStart, settings, events])
@@ -846,6 +853,74 @@ function FilingsPageInner() {
             </Card>
           )}
 
+          {board.length > 0 && (
+            <Card pad={false} className="fg-card">
+              <div className="fg-clock-head">
+                <SectionTitle icon="scale">What waiting costs</SectionTitle>
+                <Button variant="ghost" size="sm" icon="download"
+                  onClick={() => download(`Amendment-cost-${fyLabel(fyStart)}.csv`,
+                    toCsv(AMENDMENT_COST_CSV_HEADERS, amendmentCostCsvRows(costs)))}>
+                  Cost sheet
+                </Button>
+              </div>
+              <div className="fg-side" style={{ padding: 12, gap: 10 }}>
+                <p className="fg-side-note" style={{ margin: 0 }}>
+                  {costTotals.quantified === 0
+                    ? 'Nothing on this board can be costed yet — every row prints its reason below.'
+                    : `${costTotals.quantified} of ${costs.length} correction(s) carry a figure. Interest still accruing on open rows reads ${money(costTotals.running)}, and ${money(costTotals.upperBound)} is the ceiling across every row the register can cost — the difference is rows marked carried whose payment date this register does not hold. Every open row together adds about ${money(costTotals.perDay)} a day.`}
+                </p>
+                {costTotals.oldest && (
+                  <p className="fg-side-note" style={{ margin: 0 }}>
+                    The longest wait is {costTotals.oldest.doc_ref || 'a correction with no document named'}{' '}
+                    ({periodLabel(costTotals.oldest.period)}) — found {costTotals.oldest.days} day(s) ago and still open.
+                  </p>
+                )}
+                {costTotals.unquantified.length > 0 && (
+                  <ul className="fg-kinds">
+                    {costTotals.unquantified.map(u => (
+                      <li key={u.state}>
+                        <strong>{COST_STATE_META[u.state].label} · {u.n}</strong>
+                        <p>{u.state === 'cannot_tell'
+                          ? 'Left out of every sum. The corrected period has no due date the register can stand behind — a missing state under Cadence & slabs, or no GSTR-3B row at all.'
+                          : u.state === 'reduce_takes_tax_out'
+                            ? 'Left out: a reduction pays nothing out, so rule 88B(2) has no unpaid tax to run on.'
+                            : u.state === 'not_due_yet'
+                              ? 'Left out: the corrected period\'s tax is not due yet, so nothing is late and nothing runs.'
+                              : 'Left out: the row states no tax, so there is nothing to run interest on. The omission it records is still real, and its window still closes.'}</p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <p className="fg-side-note" style={{ margin: 0 }}>
+                  Rule 88B(1) costs a late-filed <em>return</em> on the portion paid from the cash ledger;
+                  rule 88B(2) costs <em>every other case</em> — a document the return missed — on the tax that
+                  remains unpaid. This register cannot see the electronic ledgers, so it never borrows the
+                  first base for the second case. The figure is a starting one, not a demand: nothing here is
+                  paid, filed, or reconciled against a challan.
+                </p>
+                <details className="fg-cite-details">
+                  <summary className="fg-cite-summary">
+                    What the cited text says ({COST_CITATIONS.filter(c => c.read === 'primary').length} read
+                    from a primary text, {COST_CITATIONS.filter(c => c.read === 'own').length} this
+                    register&apos;s own)
+                  </summary>
+                  <ul className="fg-cites">
+                    {COST_CITATIONS.map(c => (
+                      <li key={c.text}>
+                        <p>{c.text}</p>
+                        <small>
+                          {c.source}
+                          {c.url ? <a href={c.url} target="_blank" rel="noreferrer"> the text</a> : null}
+                          {' '}· {c.read === 'primary' ? 'read from the page' : 'the app’s own arithmetic, labelled'}
+                        </small>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              </div>
+            </Card>
+          )}
+
           <div className="fg-grid">
             <div className="fg-panel">
               <div className="fg-head fg-amend-head">
@@ -867,6 +942,7 @@ function FilingsPageInner() {
                     <AmendRow
                       key={b.amendment.id}
                       board={b}
+                      cost={costById.get(b.amendment.id) ?? null}
                       open={!!openRows[`a:${b.amendment.id}`]}
                       onToggle={() => setOpenRows(o => ({ ...o, [`a:${b.amendment.id}`]: !o[`a:${b.amendment.id}`] }))}
                       onEdit={() => { setAmend({ ...amendComposerFrom(b.amendment) }); setAmendErrors([]) }}
@@ -1124,6 +1200,15 @@ function FilingsPageInner() {
         .fg-side { display: flex; flex-direction: column; gap: 14px; }
         .fg-side-note { margin: 10px 0 0; font-size: 11.5px; color: var(--muted); line-height: 1.6; }
         .fg-exposure { display: flex; flex-direction: column; gap: 2px; }
+
+        .fg-cite-details { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+        .fg-cite-summary { cursor: pointer; font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+          text-transform: uppercase; color: var(--faint); }
+        .fg-cites { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+        .fg-cites li { background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+        .fg-cites p { margin: 0; font-size: 11.5px; color: var(--ink-2); line-height: 1.55; }
+        .fg-cites small { display: block; margin-top: 4px; font-size: 10.5px; color: var(--faint); font-style: italic; }
+        .fg-cites a { color: var(--brand); font-style: normal; margin-left: 3px; }
 
         .fg-head, .fg-row { display: grid; grid-template-columns: 118px 118px minmax(0, 1.4fr) 132px minmax(0, 1fr) minmax(0, 1fr) 190px;
           gap: 10px; align-items: center; padding: 9px 14px; }
@@ -1551,9 +1636,10 @@ function FilingRow({
 /* ── the amendment board ───────────────────────────────────────────────────── */
 
 function AmendRow({
-  board, open, onToggle, onEdit, onCarry, onLapse, onReopen, onDelete,
+  board, cost, open, onToggle, onEdit, onCarry, onLapse, onReopen, onDelete,
 }: {
   board: BoardRow
+  cost: AmendmentCost | null
   open: boolean
   onToggle: () => void
   onEdit: () => void
@@ -1588,6 +1674,11 @@ function AmendRow({
         <div className="fg-effect">
           {signed(a.effect === 'reduce' ? -a.taxable : a.taxable)}
           <small style={{ display: 'block', color: 'var(--faint)', fontSize: 10.5 }}>tax {money(a.tax)}</small>
+          {cost && (cost.state === 'running' || cost.state === 'carried_undated') && (
+            <small style={{ display: 'block', color: 'var(--faint)', fontSize: 10.5 }}>
+              + {money(cost.interest)} interest so far
+            </small>
+          )}
         </div>
         <div className="fg-window">
           {board.closesOn ? formatDateIN(board.closesOn) : 'no date on this clock'}
@@ -1621,6 +1712,29 @@ function AmendRow({
               </p>
             )}
           </div>
+          {cost && (
+            <div className="fg-detail-block">
+              <div className="fg-detail-title">
+                What waiting costs —{' '}
+                <Badge tone={COST_STATE_META[cost.state].tone}>{COST_STATE_META[cost.state].label}</Badge>
+              </div>
+              <p>{cost.why}</p>
+              {cost.state !== 'reduce_takes_tax_out' && cost.state !== 'no_tax_to_run_on' && (
+                <p>
+                  Measured on {money(cost.base)} of gross tax, from{' '}
+                  {cost.dueOn
+                    ? `the day the tax was due (${formatDateIN(cost.dueOn)})`
+                    : 'no start date the register can stand behind'}{' '}
+                  till {formatDateIN(cost.readTo)} — {cost.dueBasis}.
+                  {cost.state === 'running' && cost.perDay > 0
+                    ? ` One more day adds about ${money(cost.perDay)}.` : ''}
+                  {cost.foundDays !== null
+                    ? ` Found ${cost.foundDays} day(s) ago.` : ' The day it was found is not on this row.'}
+                </p>
+              )}
+              <p className="is-cite">{cost.citation}</p>
+            </div>
+          )}
           {board.windows && (
             <div className="fg-clocks">
               <ClockCard title="GSTR-1A" w={board.windows.gstr1a} note="the proviso to rule 59(1)"
