@@ -41,6 +41,13 @@
 // recents and the calendar's profile. Those are collected so a person can see what the file holds,
 // and marked as evidence. And the vault's own log (`taxflow:vault:`) is not in the vault — a
 // backup that remembers being backed up is a loop, not a record.
+//
+// Since R3-9 the log does one more thing, and it is still not a loop: each recorded backup leaves a
+// *fingerprint* per register (rows and the block's own checksum) on the device, never inside the
+// file. `registerFreshness()` compares what this browser holds now against that memory and answers
+// the question the file itself cannot — *which books moved since the last backup* — in seven states.
+// It is a statement about this browser: a second laptop restoring the same file inherits the books,
+// not the claim. A backup taken before fingerprints existed prints *cannot tell*, never a guess.
 
 import { loadAudit, saveAudit } from '@/lib/audit'
 import { loadBatches, loadMoves, saveBatches, saveMoves } from '@/lib/batches'
@@ -1260,6 +1267,13 @@ export function applyRestore(vault: VaultFile, orgId: string, ids: string[]): Re
 
 // ── the vault's own log ───────────────────────────────────────────────────────
 
+export interface VaultFingerprint {
+  /** Rows counted from the value at the moment that backup ran. */
+  rows: number
+  /** The same FNV-1a the file's block carries — this one stays on the device, in the log. */
+  checksum: string
+}
+
 export interface VaultEvent {
   at: string
   kind: 'backup' | 'restore'
@@ -1267,6 +1281,15 @@ export interface VaultEvent {
   rows: number
   chars: number
   refused?: number
+  /**
+   * Per-register fingerprints taken when this backup ran — added at R3-9 so the vault can answer
+   * *which books moved since your last file*, not just *that a file was taken*. Absent on events
+   * written by earlier builds; the freshness fold calls those backups honestly unrecorded rather
+   * than guessing what they held. It lives in the vault's own log (`taxflow:vault:`), which is
+   * deliberately never inside a vault file — so this is a statement about this browser, and a
+   * second laptop restores the file without inheriting the claim.
+   */
+  fingerprints?: Record<string, VaultFingerprint>
 }
 
 export interface VaultLog {
@@ -1290,7 +1313,20 @@ export function loadVaultLog(orgId: string): VaultLog {
     return {
       version: 1,
       updatedAt: str(parsed.updatedAt),
-      events: Array.isArray(parsed.events) ? parsed.events.filter(e => isObj(e) && typeof e.at === 'string') : [],
+      events: Array.isArray(parsed.events)
+        ? parsed.events
+            .filter(e => isObj(e) && typeof e.at === 'string')
+            // A hand-edited fingerprints map must not become a claim the freshness fold repeats.
+            // Anything that is not a clean {rows, checksum} row per id is dropped whole.
+            .map(e => {
+              if (!isObj(e.fingerprints)) return e
+              const clean: Record<string, VaultFingerprint> = {}
+              for (const [id, f] of Object.entries(rec(e.fingerprints))) {
+                if (isObj(f)) clean[id] = { rows: n(f.rows), checksum: str(f.checksum) }
+              }
+              return { ...e, fingerprints: clean }
+            })
+        : [],
     }
   } catch {
     return emptyVaultLog()
@@ -1308,14 +1344,25 @@ function remember(orgId: string, event: VaultEvent): VaultLog {
  * The one thing this page writes for itself, and it is not in the vault: a backup that recorded
  * its own backups would grow every time it was restored, and the answer to "when did you last take
  * this file" has to come from the browser the file was taken in.
+ *
+ * The event also carries a fingerprint of every register the file holds — the rows and the same
+ * checksum the block itself was packed with — because the file is the backup's copy and this log is
+ * the only place a *later* browser state can be compared against it. The fingerprints never travel
+ * inside the file: they are this device's memory of what it handed out, not part of what was handed.
  */
 export function recordBackup(orgId: string, vault: VaultFile): VaultLog {
+  const fingerprints: Record<string, VaultFingerprint> = {}
+  for (const [id, entry] of Object.entries(vault.registers)) {
+    if (!isObj(entry)) continue
+    fingerprints[id] = { rows: n(entry.rows), checksum: str(entry.checksum) }
+  }
   return remember(orgId, {
     at: new Date().toISOString(),
     kind: 'backup',
     registers: vault.counts.registers,
     rows: vault.counts.rows,
     chars: vault.counts.chars,
+    fingerprints,
   })
 }
 
@@ -1384,7 +1431,124 @@ export function browseRegisters(orgId: string): RegisterBrowse[] {
   })
 }
 
-// ── moving the file ───────────────────────────────────────────────────────────
+// ── what moved since the last backup ──────────────────────────────────────────
+
+/**
+ * A backup answers "what did this browser hand out on that day"; only the device can answer the
+ * question a shop actually asks before a wipe — *is my newest file still the newest copy?* The fold
+ * compares what each key holds right now, checksum for checksum, against the fingerprint the last
+ * recorded backup left in the vault's own log. It never reads a file: the file is elsewhere, in a
+ * drawer or a mail, and this screen cannot know what it became after it left.
+ */
+export type FreshState =
+  | 'fresh'        // the device still holds exactly the copy the last file carries
+  | 'changed'      // both hold content; they are not the same content
+  | 'new-since'    // the device holds rows the last file never carried
+  | 'cleared'      // the last file holds this book; this browser no longer does
+  | 'nothing'      // neither side holds anything — nothing was ever missed
+  | 'unrecorded'   // the last backup predates fingerprints — the honest "cannot tell"
+  | 'never'        // no backup has ever been recorded in this browser
+
+export interface FreshRow {
+  id: string
+  label: string
+  unit: string
+  group: VaultGroup
+  pageLabel: string
+  pageHref: string
+  /** Whether a restore of this book is even possible — the evidence logs are printed with the flag off. */
+  restorable: boolean
+  state: FreshState
+  /** Rows this browser holds right now. */
+  rows: number
+  /** Rows the last recorded backup carried; null when the book was not in it. */
+  fileRows: number | null
+  /** A richer device-side line when the spec has one. */
+  detail: string
+}
+
+export interface FreshnessReport {
+  rows: FreshRow[]
+  counts: Record<FreshState, number>
+  /** The backup the comparison was made against; empty when there is none. */
+  at: string
+  /** Whole days between that backup and now; null when unmeasurable. */
+  days: number | null
+  /** True when the last backup predates fingerprints — every row is `unrecorded`, and the page says so. */
+  unrecorded: boolean
+}
+
+export const FRESHNESS_META: Record<FreshState, {
+  label: string
+  tone: 'green' | 'blue' | 'red' | 'amber' | 'grey'
+  why: string
+}> = {
+  fresh: { label: 'In your file', tone: 'green', why: 'this browser still holds exactly the copy your last backup took' },
+  changed: { label: 'Changed since', tone: 'blue', why: 'both this browser and your last file hold this book, and they no longer agree' },
+  'new-since': { label: 'New since', tone: 'amber', why: 'this browser holds rows your last file never carried' },
+  cleared: { label: 'Only in your file', tone: 'red', why: 'your last backup carries this book; this browser no longer does' },
+  nothing: { label: 'Nothing to back up', tone: 'grey', why: 'neither this browser nor your last file holds anything here' },
+  unrecorded: { label: 'Cannot tell', tone: 'grey', why: 'your last backup was taken before this browser kept per-book fingerprints — take a new backup to start the record' },
+  never: { label: 'In no file yet', tone: 'red', why: 'this browser has never recorded a backup, and this book holds rows' },
+}
+
+const EMPTY_FRESH_COUNTS: Record<FreshState, number> = {
+  fresh: 0, changed: 0, 'new-since': 0, cleared: 0, nothing: 0, unrecorded: 0, never: 0,
+}
+
+/** One register's answer against the last recorded backup, by checksum — never by timestamp. */
+export function registerFreshness(orgId: string, now = new Date()): FreshnessReport {
+  const last = lastEvent(orgId, 'backup')
+  const counts: Record<FreshState, number> = { ...EMPTY_FRESH_COUNTS }
+  const rows: FreshRow[] = []
+  const inventoryById = new Map(browseRegisters(orgId).map(r => [r.id, r]))
+  const fingerprints = last?.fingerprints
+  const recorded = isObj(fingerprints) ? fingerprints : null
+  let days: number | null = null
+  if (last) {
+    const then = new Date(last.at)
+    if (!Number.isNaN(then.getTime())) days = Math.max(0, Math.floor((now.getTime() - then.getTime()) / 86_400_000))
+  }
+
+  for (const spec of REGISTERS) {
+    const inventory = inventoryById.get(spec.id)
+    const deviceRows = inventory ? inventory.rows : 0
+    const base = {
+      id: spec.id, label: spec.label, unit: spec.unit, group: spec.group,
+      pageLabel: spec.pageLabel, pageHref: spec.pageHref, restorable: !!spec.write,
+      rows: deviceRows, detail: inventory ? inventory.detail : '',
+    }
+
+    let state: FreshState
+    let fileRows: number | null = null
+    if (!last) {
+      state = deviceRows > 0 ? 'never' : 'nothing'
+    } else if (!recorded) {
+      state = 'unrecorded'
+    } else {
+      const fp = recorded[spec.id]
+      const raw = rawOf(spec.prefix, orgId)
+      fileRows = fp ? fp.rows : null
+      if (!raw) {
+        state = fp ? 'cleared' : 'nothing'
+      } else if (!fp) {
+        state = deviceRows > 0 ? 'new-since' : 'nothing'
+      } else {
+        state = checksumOf(spec, raw) === fp.checksum ? 'fresh' : 'changed'
+      }
+    }
+    counts[state]++
+    rows.push({ ...base, state, fileRows })
+  }
+
+  return { rows, counts, at: last ? last.at : '', days, unrecorded: !!last && !recorded }
+}
+
+/** The books a person would miss if this browser were wiped *today* — content with no newer file. */
+export function atRiskRows(report: FreshnessReport): FreshRow[] {
+  return report.rows.filter(r =>
+    (r.state === 'changed' || r.state === 'new-since' || r.state === 'never') && r.rows > 0)
+}
 
 /** JSON needs no byte-order mark; a BOM in front of `{}` is the classic unreadable backup. */
 export function downloadVault(filename: string, text: string): void {

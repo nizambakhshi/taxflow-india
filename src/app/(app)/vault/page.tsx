@@ -10,8 +10,8 @@
 // Clear the browser, change the machine, and a year of workpapers is gone — including the ones no
 // return can reconstruct.
 //
-// The engine (src/lib/vault.ts) owns four properties, and this page shows each one rather than
-// lean on it:
+// The engine (src/lib/vault.ts) owns four properties plus one memory, and this page shows each one
+// rather than lean on it:
 //
 //  * The file is built from a **named list** of registers, never from a sweep of localStorage, so a
 //    Supabase session key cannot ride into a backup. The Registers tab prints that list.
@@ -22,6 +22,11 @@
 //    register, not the book. The plan prints "Refused" against that one row.
 //  * The five logs are **shown, never restored** — a restore would replay a pending sync or re-claim
 //    an e-way bill number the portal owns.
+//  * Since R3-9 the vault's own log remembers a **fingerprint per register** at the moment a backup
+//    is taken. The Registers tab reads this browser against those fingerprints and answers the
+//    question a wipe makes urgent — *is my newest file still the newest copy?* — by checksum, never
+//    by timestamp, and never from the file itself (that copy is elsewhere and this screen cannot know
+//    what it became).
 //
 // Nothing here files anything or touches the database. The button downloads a file; the picker reads
 // one; the restore writes the registers and then says what the pages could read back.
@@ -33,10 +38,11 @@ import { createClient } from '@/lib/supabase'
 import { formatDateIN } from '@/lib/format'
 import {
   LARGE_VAULT_CHARS, NOT_IN_THE_VAULT, PLAN_STATE_META, REGISTERS, VAULT_FAULT_COPY,
-  applyRestore, browseRegisters, collectVault, daysSinceBackup, defaultSelection, downloadVault,
-  loadVaultLog, planRestore, readFileText, readVault, recordBackup, serializeVault, vaultFilename,
-  type PlanRow, type RegisterBrowse, type RestorePlan, type RestoreReport, type VaultEvent,
-  type VaultFile, type VaultGroup,
+  applyRestore, atRiskRows, browseRegisters, collectVault, daysSinceBackup, defaultSelection, downloadVault,
+  FRESHNESS_META, loadVaultLog, planRestore, readFileText, readVault, recordBackup, registerFreshness,
+  serializeVault, vaultFilename,
+  type FreshRow, type FreshnessReport, type PlanRow, type RegisterBrowse, type RestorePlan,
+  type RestoreReport, type VaultEvent, type VaultFile, type VaultGroup,
 } from '@/lib/vault'
 import {
   Badge, Button, Card, EmptyState, PageHeader, SectionTitle, Segmented, StatCard, StatRow, SearchInput,
@@ -97,14 +103,37 @@ const stamp = (iso: string) => {
   return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
 }
 
+/**
+ * The table's second line under a state badge. The badge already carries the verdict, so this prints
+ * the two figures the verdict was made from — never a third reading of them. `nothing` and
+ * `unrecorded` print nothing: an empty register and a backup that predates the record are both fully
+ * said by their badge, and a sentence would only repeat it.
+ */
+function freshnessNote(fr: FreshRow): string | null {
+  const here = fr.rows
+  const inFile = fr.fileRows ?? 0
+  switch (fr.state) {
+    case 'fresh': return `${here} here · the file carries the same ${inFile}`
+    case 'changed': return `${here} here · your file carries ${inFile}; they are not the same content`
+    case 'new-since': return `${here} here · your file carried none of this book`
+    case 'cleared': return `your file carries ${inFile} · this browser holds none`
+    case 'never': return `${here} here · in no file you have taken`
+    default: return null
+  }
+}
+
 interface Snapshot {
   preview: VaultFile | null
   inventory: RegisterBrowse[]
   history: VaultEvent[]
   lastBackupDays: number | null
+  /** This browser read against the fingerprints the last recorded backup left; null before the first load. */
+  freshness: FreshnessReport | null
 }
 
-const EMPTY_SNAPSHOT: Snapshot = { preview: null, inventory: [], history: [], lastBackupDays: null }
+const EMPTY_SNAPSHOT: Snapshot = {
+  preview: null, inventory: [], history: [], lastBackupDays: null, freshness: null,
+}
 
 function VaultPageInner() {
   const supabase = createClient()
@@ -153,6 +182,7 @@ function VaultPageInner() {
         inventory: browseRegisters(oid),
         history: loadVaultLog(oid).events,
         lastBackupDays: daysSinceBackup(oid),
+        freshness: registerFreshness(oid),
       })
 
       const inbound = searchParams.get('tab')
@@ -170,6 +200,9 @@ function VaultPageInner() {
       inventory: browseRegisters(oid),
       history: loadVaultLog(oid).events,
       lastBackupDays: daysSinceBackup(oid),
+      // after a backup this re-reads against the fingerprint that backup just left, so the
+      // Registers tab answers about *this* file the moment the download starts
+      freshness: registerFreshness(oid),
     })
   }
 
@@ -280,6 +313,33 @@ function VaultPageInner() {
     [visibleRows],
   )
 
+  /** The freshness answer for each inventory row, joined by register id. */
+  const freshById = useMemo(
+    () => new Map((snap.freshness?.rows ?? []).map(r => [r.id, r] as const)),
+    [snap.freshness],
+  )
+
+  const atRisk = useMemo(() => (snap.freshness ? atRiskRows(snap.freshness) : []), [snap.freshness])
+
+  /** The one sentence the card prints: what the shop would miss if this browser died today. */
+  const freshLine = useMemo(() => {
+    const f = snap.freshness
+    if (!f) return null
+    const c = f.counts
+    const at = f.at ? `${when(f.at)} (${f.days === null ? '—' : f.days === 0 ? 'today' : `${f.days} day${f.days === 1 ? '' : 's'} ago`})` : ''
+    return {
+      at,
+      counts: c,
+      summary: f.rows.length === 0
+        ? 'Nothing to compare yet.'
+        : f.unrecorded
+          ? 'This browser cannot tell — your last backup was taken before it started keeping per-book fingerprints.'
+          : !f.at
+            ? 'No backup has ever been recorded in this browser.'
+            : `${c.fresh} in your file · ${c.changed} changed · ${c['new-since']} new · ${c.cleared} only in your file · ${c.nothing} empty`,
+    }
+  }, [snap.freshness])
+
   if (loading) {
     return (
       <div className="page-container">
@@ -357,9 +417,11 @@ function VaultPageInner() {
           value={snap.lastBackupDays === null ? 'Never' : snap.lastBackupDays === 0 ? 'Today' : `${snap.lastBackupDays} days ago`}
           sub={snap.lastBackupDays === null
             ? 'a browser wipe would take the workpapers with it'
-            : 'counted from this browser, not from the file'}
+            : snap.freshness?.unrecorded
+              ? 'cannot tell yet — that backup predates this browser’s per-book record'
+              : `${atRisk.length} ${atRisk.length === 1 ? 'book holds' : 'books hold'} work your newest file does not · the Registers tab names them`}
           icon="clock"
-          tone={snap.lastBackupDays === null ? 'red' : snap.lastBackupDays > 30 ? 'amber' : 'grey'}
+          tone={snap.lastBackupDays === null ? 'red' : atRisk.length > 0 ? 'amber' : snap.lastBackupDays > 30 ? 'amber' : 'grey'}
           delay={120}
         />
       </div>
@@ -775,6 +837,69 @@ function VaultPageInner() {
             </div>
           </Card>
 
+          {/* ── WHAT MOVED SINCE THE LAST BACKUP ─────────────────────────────── */}
+          {snap.freshness && freshLine && (
+            <Card>
+              <SectionTitle icon="compare">What moved since your last backup</SectionTitle>
+              <div className="tfv-note">
+                <Icon name="clock" size={14} />
+                <span>
+                  {!snap.freshness.at
+                    ? 'No backup has ever been recorded in this browser, so the books below are on this device and in no file you have taken. Nothing here is compared — that is the honest answer, not a clean one.'
+                    : snap.freshness.unrecorded
+                      ? 'Your last backup was taken before this browser kept a fingerprint per book, so there is nothing to compare against. Take one new backup and this table starts answering the question.'
+                      : <>Compared against the backup taken <strong>{freshLine.at}</strong>. The file itself is not read here — it is in a folder or a mail and this screen cannot know what happened to it after it left. The answer comes from what <em>this browser</em> holds, checksum against the fingerprint that backup recorded when it was taken.</>}
+                </span>
+              </div>
+
+              {!snap.freshness.unrecorded && snap.freshness.at && (
+                <div className="tfv-fresh-stats">
+                  {(['fresh', 'changed', 'new-since', 'cleared', 'never'] as const)
+                    .filter(s => freshLine.counts[s] > 0)
+                    .map(s => (
+                      <span key={s} className="tfv-fresh-chip">
+                        <Badge tone={FRESHNESS_META[s].tone} dot={false}>{FRESHNESS_META[s].label}</Badge>
+                        <b>{freshLine.counts[s]}</b>
+                        <span className="tfv-fresh-why">{FRESHNESS_META[s].why}</span>
+                      </span>
+                    ))}
+                  {freshLine.counts.nothing > 0 && (
+                    <span className="tfv-fresh-chip">
+                      <Badge tone="grey" dot={false}>Empty</Badge>
+                      <b>{freshLine.counts.nothing}</b>
+                      <span className="tfv-fresh-why">nothing stored here and nothing in your file</span>
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {atRisk.length > 0 && (
+                <div className="tfv-risk">
+                  <div className="tfv-risk-head">
+                    <Icon name="alert" size={13} />
+                    <span>What a wipe would take with it — {atRisk.length} book{atRisk.length === 1 ? '' : 's'} with content newer than any file you have taken</span>
+                  </div>
+                  {atRisk.map(r => (
+                    <div key={r.id} className="tfv-risk-row">
+                      <span className="tfv-name">{r.label}</span>
+                      <span className="tfv-detail">
+                        {r.rows} {r.rows === 1 ? r.unit : `${r.unit}s`} in this browser
+                        {r.fileRows !== null && r.fileRows !== undefined && r.state === 'changed'
+                          ? ` · your file carries ${r.fileRows}` : ''}
+                        {r.state === 'new-since' ? ' · your file never carried any' : ''}
+                        {r.state === 'never' ? ' · in no file yet' : ''}
+                      </span>
+                      <Link href={r.pageHref} className="tfv-exclude-link">{r.pageLabel}<Icon name="arrow-right" size={12} /></Link>
+                    </div>
+                  ))}
+                  <div className="tfv-risk-foot">
+                    <Button variant="subtle" size="sm" icon="download" onClick={() => changeTab('backup')}>Take a backup now</Button>
+                  </div>
+                </div>
+              )}
+            </Card>
+          )}
+
           {sections.map(section => (
             <div key={section.group} className="tfv-section">
               <div className="tfv-section-head">
@@ -790,6 +915,7 @@ function VaultPageInner() {
                     <span className="tfv-right" data-label="Size">Size</span>
                     <span data-label="Written by">Written by</span>
                     <span data-label="Restorable">Restorable</span>
+                    <span data-label="Since your file">Since your file</span>
                   </div>
                   {section.rows.map(r => (
                     <div key={r.id} className={`table-row tfv-row tfv-inv ${r.present ? '' : 'is-empty'}`}>
@@ -807,6 +933,19 @@ function VaultPageInner() {
                       <span data-label="Restorable">
                         {r.restorable ? <Badge tone="green">Yes</Badge> : <Badge tone="amber">Shown only</Badge>}
                         {r.reason && <span className="tfv-sub">{r.reason}</span>}
+                      </span>
+                      <span data-label="Since your file">
+                        {(() => {
+                          const fr = freshById.get(r.id)
+                          if (!fr) return <span className="tfv-sub">—</span>
+                          const meta = FRESHNESS_META[fr.state]
+                          return (
+                            <>
+                              <Badge tone={meta.tone} dot={false}>{meta.label}</Badge>
+                              {freshnessNote(fr) && <span className="tfv-sub">{freshnessNote(fr)}</span>}
+                            </>
+                          )
+                        })()}
                       </span>
                     </div>
                   ))}
@@ -996,7 +1135,7 @@ function VaultPageInner() {
           text-transform: uppercase; color: var(--faint); }
         .tfv-plan-row { grid-template-columns: 26px minmax(0, 1.3fr) minmax(0, 1fr) 92px minmax(0, 1.1fr); }
         .tfv-hist { grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) 92px 72px 78px; }
-        .tfv-inv { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.7fr) 58px 72px minmax(0, 1.2fr) minmax(0, 1.2fr); }
+        .tfv-inv { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.6fr) 52px 66px minmax(0, 1.1fr) minmax(0, 1.1fr) minmax(0, 1.25fr); }
         .table-row.tfv-row { border-bottom: 1px solid var(--line-soft); color: var(--ink-2); }
         .table-row.tfv-row:hover { background: var(--surface-2); }
         .table-row.tfv-row.is-empty { opacity: 0.65; }
@@ -1013,6 +1152,21 @@ function VaultPageInner() {
         .tfv-section-head h2 { display: flex; align-items: center; gap: 7px; font-size: 13.5px; font-weight: 650; color: var(--ink); margin: 0; }
         .tfv-section-head h2 svg { color: var(--brand); }
         .tfv-section-sub { font-size: 11.5px; color: var(--faint); }
+
+        .tfv-fresh-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; margin-top: 12px; }
+        .tfv-fresh-chip { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; padding: 9px 11px;
+          border-radius: 11px; background: var(--surface-2); border: 1px solid var(--line-soft); }
+        .tfv-fresh-chip b { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink); }
+        .tfv-fresh-why { flex: 1 1 100%; font-size: 10.5px; color: var(--faint); line-height: 1.45; }
+
+        .tfv-risk { margin-top: 13px; padding-top: 12px; border-top: 1px solid var(--line-soft); }
+        .tfv-risk-head { display: flex; align-items: flex-start; gap: 7px; font-size: 12.5px; font-weight: 650;
+          color: var(--ink); margin-bottom: 8px; }
+        .tfv-risk-head svg { flex-shrink: 0; margin-top: 2px; color: var(--red); }
+        .tfv-risk-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) auto; gap: 10px;
+          align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--line-soft); }
+        .tfv-risk-row:last-of-type { border-bottom: none; }
+        .tfv-risk-foot { display: flex; justify-content: flex-end; margin-top: 9px; }
 
         .tfv-report-summary { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
         .tfv-report-rows { display: flex; flex-direction: column; gap: 5px; }
@@ -1054,6 +1208,7 @@ function VaultPageInner() {
           .tfv-heaviest-bar { display: none; }
           .tfv-report-row { grid-template-columns: 18px minmax(0, 1fr); }
           .tfv-report-count, .tfv-report-note { grid-column: 2; }
+          .tfv-risk-row { grid-template-columns: minmax(0, 1fr); gap: 3px; }
         }
       `}</style>
     </div>
