@@ -1175,23 +1175,25 @@ function TallyPageInner() {
                       { value: 'this-fy', label: 'This FY' },
                       { value: 'all', label: 'All years' },
                     ]} />
-                    <button type="button" className="tb-link" onClick={() => {
+                    {(() => {
                       const rows = docTab === 'invoices' ? shownInvoices : shownBills
+                      // A slice with no rows has nothing to bulk-pick; the control would only read "Pick these 0".
+                      if (rows.length === 0) return null
                       const all = rows.every(r => (docTab === 'invoices' ? pickedInv : pickedBills).has(r.id))
-                      const next = new Set(docTab === 'invoices' ? pickedInv : pickedBills)
-                      for (const row of rows) {
-                        if (all) next.delete(row.id)
-                        else next.add(row.id)
-                      }
-                      if (docTab === 'invoices') setPickedInv(next)
-                      else setPickedBills(next)
-                    }}>
-                      {(() => {
-                        const rows = docTab === 'invoices' ? shownInvoices : shownBills
-                        const all = rows.length > 0 && rows.every(r => (docTab === 'invoices' ? pickedInv : pickedBills).has(r.id))
-                        return all ? `Leave out these ${rows.length}` : `Pick these ${rows.length}`
-                      })()}
-                    </button>
+                      return (
+                        <button type="button" className="tb-link" onClick={() => {
+                          const next = new Set(docTab === 'invoices' ? pickedInv : pickedBills)
+                          for (const row of rows) {
+                            if (all) next.delete(row.id)
+                            else next.add(row.id)
+                          }
+                          if (docTab === 'invoices') setPickedInv(next)
+                          else setPickedBills(next)
+                        }}>
+                          {all ? `Leave out these ${rows.length}` : `Pick these ${rows.length}`}
+                        </button>
+                      )
+                    })()}
                   </div>
                   <SearchInput value={search} onChange={setSearch} ariaLabel="Search documents"
                     placeholder="Number, party, note…" style={{ margin: '0 14px 10px', maxWidth: 320 }} />

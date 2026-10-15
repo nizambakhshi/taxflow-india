@@ -255,6 +255,7 @@ export function Segmented({
         <button
           key={o.value}
           type="button"
+          aria-pressed={value === o.value}
           onClick={() => onChange(o.value)}
           style={{
             fontFamily: 'inherit', fontSize: 12, fontWeight: 600, padding: '6px 13px',

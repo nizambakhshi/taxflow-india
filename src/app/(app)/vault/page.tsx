@@ -69,7 +69,7 @@ const TABS: { value: Tab; label: string }[] = [
 type GroupFilter = 'all' | VaultGroup
 
 const GROUP_FILTERS: { value: GroupFilter; label: string }[] = [
-  { value: 'all', label: 'All 30' },
+  { value: 'all', label: `All ${REGISTERS.length}` },
   { value: 'inventory', label: 'Stock' },
   { value: 'paperwork', label: 'Paperwork' },
   { value: 'workpapers', label: 'Workpapers' },
@@ -430,7 +430,7 @@ function VaultPageInner() {
         />
         <StatCard
           label="Rows in the file"
-          value={snap.preview?.counts.rows ?? 0}
+          value={String(snap.preview?.counts.rows ?? 0)}
           sub={`across ${snap.preview?.counts.registers ?? 0} registers with content`}
           icon="list"
           tone="green"

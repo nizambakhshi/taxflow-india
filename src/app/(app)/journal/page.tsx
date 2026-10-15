@@ -447,12 +447,14 @@ function JournalPageInner() {
       {/* ── The invariant, printed instead of asserted ────────────────────────── */}
       <Card pad={false} className="jn-integrity">
         <div className="jn-integrity-body">
-          <span className={`jn-dot ${findings.length === 0 ? 'is-ok' : 'is-bad'}`}>
-            <Icon name={findings.length === 0 ? 'check' : 'alert'} size={18} strokeWidth={2.4} />
+          <span className={`jn-dot ${proof.legs === 0 ? 'is-nil' : findings.length === 0 ? 'is-ok' : 'is-bad'}`}>
+            <Icon name={proof.legs === 0 ? 'book' : findings.length === 0 ? 'check' : 'alert'} size={18} strokeWidth={2.4} />
           </span>
           <div className="jn-integrity-text">
             <div className="jn-integrity-head">
-              {findings.length === 0
+              {proof.legs === 0
+                ? <>Nothing is posted on this register — <strong>no legs, so no balance to prove</strong>. An empty journal is not a broken one, but it is not a balanced one either.</>
+                : findings.length === 0
                 ? <>Every entry on this register <strong>balances to the paisa</strong> — {money(proof.debits)} debited, {money(proof.credits)} credited across {proof.legs} legs.</>
                 : <>The register <strong>shows {findings.length === 1 ? 'a finding' : `${findings.length} findings`}</strong> — the statements still foot, but the arithmetic below is not what the composer wrote.</>}
             </div>
@@ -634,12 +636,14 @@ function JournalPageInner() {
         <>
           <Card pad={false} className="jn-tb-integrity">
             <div className="jn-tb-integrity-body">
-              <span className={`jn-dot ${tb.foots ? 'is-ok' : 'is-bad'}`}>
-                <Icon name={tb.foots ? 'check' : 'alert'} size={18} strokeWidth={2.4} />
+              <span className={`jn-dot ${tb.entries === 0 ? 'is-nil' : tb.foots ? 'is-ok' : 'is-bad'}`}>
+                <Icon name={tb.entries === 0 ? 'scale' : tb.foots ? 'check' : 'alert'} size={18} strokeWidth={2.4} />
               </span>
               <div className="jn-integrity-text">
                 <div className="jn-integrity-head">
-                  {tb.foots
+                  {tb.entries === 0
+                    ? <>The columns are <strong>both zero because nothing has moved</strong>, not because the books agree. Post an entry and this schedule has a figure to foot.</>
+                    : tb.foots
                     ? <>The journal&rsquo;s own columns <strong>foot to the paisa</strong> — {money(tb.total_debit)} carried on a debit, {money(tb.total_credit)} on a credit, across {tb.entries} {tb.entries === 1 ? 'posting' : 'postings'}.</>
                     : <>The columns <strong>do not foot</strong> — the debit side ({money(tb.total_debit)}) and the credit side ({money(tb.total_credit)}) differ by {money(Math.abs(tb.residual))}. That is the rupee this register lost or gained, and no schedule can close it for you.</>}
                 </div>
@@ -1056,6 +1060,7 @@ function JournalPageInner() {
         .jn-dot { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
         .jn-dot.is-ok { color: var(--green); background: var(--green-soft); }
         .jn-dot.is-bad { color: var(--red); background: var(--red-soft); }
+        .jn-dot.is-nil { color: var(--muted); background: var(--surface-2); }
         .jn-integrity-text { min-width: 0; flex: 1; }
         .jn-integrity-head { font-size: 13.5px; color: var(--ink); line-height: 1.5; }
         .jn-integrity-head strong { font-weight: 700; }

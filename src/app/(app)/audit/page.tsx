@@ -296,14 +296,16 @@ function AuditPageInner() {
 
       <Card pad={false} className="au-integrity">
         <div className="au-integrity-body">
-          <span className={`au-seal-dot ${chain.ok ? 'is-ok' : 'is-bad'}`}>
-            <Icon name={chain.ok ? 'check' : 'alert'} size={18} strokeWidth={2.4} />
+          <span className={`au-seal-dot ${chain.count === 0 ? 'is-nil' : chain.ok ? 'is-ok' : 'is-bad'}`}>
+            <Icon name={chain.count === 0 ? 'clock' : chain.ok ? 'check' : 'alert'} size={18} strokeWidth={2.4} />
           </span>
           <div className="au-integrity-text">
             <div className="au-integrity-head">
-              {chain.ok
-                ? <>The trail is <strong>unbroken</strong> — {chain.count} event{chain.count === 1 ? '' : 's'} numbered 1 to {chain.count || 0} with no gap, duplicate or reorder.</>
-                : <>The trail <strong>shows a break</strong> at sequence {chain.broken.join(', ')} — a row was added, removed or re-sorted by hand.</>}
+              {chain.count === 0
+                ? <>The trail is <strong>empty</strong> — nothing has been sealed, released, refused or noted on this device. An empty trail is not a broken one, but it is no proof either: there is nothing here yet to vouch for.</>
+                : chain.ok
+                  ? <>The trail is <strong>unbroken</strong> — {chain.count} event{chain.count === 1 ? '' : 's'} numbered 1 to {chain.count} with no gap, duplicate or reorder.</>
+                  : <>The trail <strong>shows a break</strong> at sequence {chain.broken.join(', ')} — a row was added, removed or re-sorted by hand.</>}
             </div>
             <p>
               This is a checksum over the <span className="au-mono">seq</span> numbers, not a signature. It proves the file was
@@ -584,6 +586,7 @@ function AuditPageInner() {
         .au-seal-dot { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
         .au-seal-dot.is-ok { color: var(--green); background: var(--green-soft); }
         .au-seal-dot.is-bad { color: var(--red); background: var(--red-soft); }
+        .au-seal-dot.is-nil { color: var(--muted); background: var(--surface-2); }
         .au-integrity-text { min-width: 0; flex: 1; }
         .au-integrity-head { font-size: 13.5px; color: var(--ink); line-height: 1.5; }
         .au-integrity-head strong { font-weight: 700; }
