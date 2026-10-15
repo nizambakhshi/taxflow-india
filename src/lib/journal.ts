@@ -15,7 +15,10 @@
 // It rides on localStorage (ADR-013) as `taxflow:journal:<orgId>` at version 1, joins the vault in
 // the same round it is created (Rule 31), and unlike its neighbours it **does hold rupees** — but
 // only as *named movements*, never as a posted general ledger. There is no chart of accounts, no
-// trial balance, no journal in the statutory sense, and no return reads a row from here.
+// trial balance *of the company*, and no statutory journal in the accounting sense — but R3-14 added
+// a read-only trial balance **of this register's own rows** (`trialBalance`), which foots the journal's
+// movements and says plainly that the documents the statements also read are not in it. No return
+// reads a row from here.
 //
 // The four decisions that make it trustworthy rather than decorative:
 //
@@ -1136,4 +1139,222 @@ export function headsCsvRows(store: JournalStore): (string | number)[][] {
     const b = headBalance(store, h.id)
     return [h.name, SLOT_META[h.slot].label, GROUP_LABEL[SLOT_META[h.slot].group], b.entries, b.signed, h.active ? 'open' : 'closed', h.notes]
   })
+}
+
+// ── the trial balance: every rupee this register moved, footed ────────────────
+//
+// R3-2b drew the journal's boundary as *no trial balance*, and for ten rounds that sentence held.
+// This fold amends it, and the amendment is narrow enough to state precisely: **this is a trial
+// balance of the journal's own rows, not of the company.** The financial statements read documents
+// too — invoices, bills, payments — and none of those reach here. So the schedule foots over what
+// the register moved, and says so, rather than pretending to close the books.
+//
+// Why the register is allowed to print this and nothing else: it is the one place that shows
+// *every* rupee the journal carried, including a leg the statements cannot. `journalRows()` feeds the
+// statements, and it `continue`s past a leg whose head has gone — money with no line to move must not
+// invent one. A trial balance does the opposite: a dropped leg is exactly the finding a foot is for,
+// so it lands on a labelled `(no such head)` line and stays inside the totals. When the two sides
+// still foot, the missing head did not lose a rupee; when they do not, the gap is how much it did.
+//
+// The sign convention differs from `headBalance` on purpose. `headBalance` reads a head on its
+// *natural* side (an asset grows on a debit), which is what a statement sub-line wants. A trial
+// balance is older and blunter than that: net the head's raw debits against its credits, carry the
+// difference on whichever side is heavier, and the two grand columns must agree. A head carried on
+// the side opposite to its `natural` is a **contra** balance — a real thing (an asset over-credited,
+// a refunded expense) — so it is flagged and kept on its true side, never folded back to natural
+// (Rule 28: the direction is the finding, not an artefact to correct).
+
+/** One head's place on the schedule, in paise so the foot is exact (Rule 40). */
+export interface TrialLine {
+  head_id: string
+  /** The head's name, or the placeholder text for a leg naming a head that is gone. */
+  label: string
+  slot: StatementSlot
+  group: HeadGroup
+  /** The side the head *grows* on; `''` for the placeholder line, which names no head. */
+  natural: LegSide | ''
+  /** Gross debits carried on this head, paise, over every foldable entry. */
+  debit_paise: number
+  /** Gross credits carried on this head, paise. */
+  credit_paise: number
+  /** debit − credit; the side `carried` is drawn from. */
+  net_paise: number
+  /** The side the balance is carried on: the heavier side, or `nil` when it nets to nothing. */
+  carried: LegSide | 'nil'
+  /** Carried on the side opposite to its natural — flagged, never flipped back. */
+  contra: boolean
+  /** Distinct foldable entries naming this head. */
+  entries: number
+  /** The `(no such head)` placeholder, which gathers the legs the statements drop. */
+  dangling: boolean
+}
+
+export interface TrialBalance {
+  /** Real heads first (in group-then-name order), then the placeholder line only if it carries money. */
+  lines: TrialLine[]
+  /** Σ the heads carried on a debit, paise. */
+  total_debit_paise: number
+  /** Σ the heads carried on a credit, paise. */
+  total_credit_paise: number
+  /** The columns as rupees — what the foot sentence prints. */
+  total_debit: number
+  total_credit: number
+  /** total_debit − total_credit; a non-zero is the rupee the journal lost or gained. */
+  residual: number
+  /** The two grand columns agree. True whenever every foldable entry balanced, missing heads and all. */
+  foots: boolean
+  /** Heads on the schedule that carried at least one rupee. */
+  moved: number
+  /** Heads present and never moved — on the schedule, off the totals. */
+  nil: number
+  contra_heads: number
+  /** Legs naming a head the register no longer holds, gathered onto the placeholder. */
+  dangling_legs: number
+  /** Distinct foldable entries the whole schedule read. */
+  entries: number
+}
+
+/** The group order the schedule walks, and the name order inside it — the way the head picker prints. */
+const TRAIL_GROUP_ORDER: HeadGroup[] = SLOTS_BY_GROUP
+
+function trialCarry(net: number, natural: LegSide | ''): { carried: LegSide | 'nil'; contra: boolean } {
+  if (net === 0) return { carried: 'nil', contra: false }
+  const side: LegSide = net > 0 ? 'debit' : 'credit'
+  // Contra is only a statement about a real head: a placeholder names no natural side.
+  const contra = natural !== '' && side !== natural
+  return { carried: side, contra }
+}
+
+/**
+ * The journal's own trial balance: every head netted Dr/Cr over the foldable entries, a leg naming a
+ * missing head kept on a labelled placeholder rather than dropped, and the two columns footed.
+ * Read-only and deterministic — it writes nothing and reads nothing but the store handed it.
+ */
+export function trialBalance(store: JournalStore): TrialBalance {
+  // One bucket per head, seeded from `store.heads` so a never-moved head still appears as a nil line.
+  const acc = new Map<string, { debit: number; credit: number; entries: Set<string> }>()
+  for (const h of store.heads) acc.set(h.id, { debit: 0, credit: 0, entries: new Set() })
+
+  // The placeholder gathers the legs `journalRows` drops — money the statements cannot place.
+  let dangleDebit = 0
+  let dangleCredit = 0
+  let dangleLegs = 0
+  const dangleEntries = new Set<string>()
+  const readEntries = new Set<string>()
+
+  for (const e of foldableEntries(store)) {
+    readEntries.add(e.id)
+    for (const l of e.legs) {
+      const p = paise(l.amount)
+      const bucket = acc.get(l.head_id)
+      if (!bucket) {
+        dangleLegs += 1
+        dangleEntries.add(e.id)
+        if (l.side === 'debit') dangleDebit += p
+        else dangleCredit += p
+        continue
+      }
+      if (l.side === 'debit') bucket.debit += p
+      else bucket.credit += p
+      bucket.entries.add(e.id)
+    }
+  }
+
+  const lines: TrialLine[] = []
+  let totalDr = 0
+  let totalCr = 0
+  let moved = 0
+  let nil = 0
+  let contraHeads = 0
+
+  const sorted = store.heads
+    .slice()
+    .sort((a, b) => {
+      const ga = TRAIL_GROUP_ORDER.indexOf(SLOT_META[a.slot].group)
+      const gb = TRAIL_GROUP_ORDER.indexOf(SLOT_META[b.slot].group)
+      if (ga !== gb) return ga - gb
+      return a.name.localeCompare(b.name)
+    })
+
+  for (const h of sorted) {
+    const bucket = acc.get(h.id)!
+    const net = bucket.debit - bucket.credit
+    const { carried, contra } = trialCarry(net, SLOT_META[h.slot].natural)
+    if (carried === 'debit') totalDr += net
+    else if (carried === 'credit') totalCr += -net
+    if (net !== 0) moved += 1
+    else nil += 1
+    if (contra) contraHeads += 1
+    lines.push({
+      head_id: h.id,
+      label: h.name,
+      slot: h.slot,
+      group: SLOT_META[h.slot].group,
+      natural: SLOT_META[h.slot].natural,
+      debit_paise: bucket.debit,
+      credit_paise: bucket.credit,
+      net_paise: net,
+      carried,
+      contra,
+      entries: bucket.entries.size,
+      dangling: false,
+    })
+  }
+
+  // The placeholder joins only when it actually carries a leg — an empty register gets no phantom line.
+  if (dangleLegs > 0) {
+    const net = dangleDebit - dangleCredit
+    const { carried } = trialCarry(net, '')
+    if (carried === 'debit') totalDr += net
+    else if (carried === 'credit') totalCr += -net
+    lines.push({
+      head_id: '',
+      label: '(no such head)',
+      slot: 'otherAsset',
+      group: 'asset',
+      natural: '',
+      debit_paise: dangleDebit,
+      credit_paise: dangleCredit,
+      net_paise: net,
+      carried,
+      contra: false,
+      entries: dangleEntries.size,
+      dangling: true,
+    })
+  }
+
+  return {
+    lines,
+    total_debit_paise: totalDr,
+    total_credit_paise: totalCr,
+    total_debit: inr(totalDr),
+    total_credit: inr(totalCr),
+    residual: inr(totalDr - totalCr),
+    foots: totalDr === totalCr,
+    moved,
+    nil,
+    contra_heads: contraHeads,
+    dangling_legs: dangleLegs,
+    entries: readEntries.size,
+  }
+}
+
+/** Rupees for the CSV and the page: paise back to a rounded rupee figure the reader adds up. */
+export const TRIAL_BALANCE_CSV_HEADERS = [
+  'Head', 'Moves', 'Group', 'Grows on', 'Entries', 'Debits', 'Credits', 'Balance', 'Carried', 'Contra',
+]
+
+export function trialBalanceCsvRows(tb: TrialBalance): (string | number)[][] {
+  return tb.lines.map(l => [
+    l.label,
+    l.dangling ? '— a head no longer here' : SLOT_META[l.slot].label,
+    l.dangling ? '—' : GROUP_LABEL[l.group],
+    l.natural === '' ? '—' : l.natural,
+    l.entries,
+    inr(l.debit_paise),
+    inr(l.credit_paise),
+    inr(Math.abs(l.net_paise)),
+    l.carried === 'nil' ? '—' : l.carried,
+    l.contra ? 'contra' : '',
+  ])
 }

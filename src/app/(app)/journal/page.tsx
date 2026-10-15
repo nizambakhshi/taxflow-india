@@ -45,7 +45,8 @@ import {
   journalRows, journalStats, loadJournal, movements, newEntry, newHead, newLeg, peekNumber,
   plugProof, postEntry, reverseEntry, rowsInWindow, setHeadActive, SLOT_META, SLOTS_BY_GROUP,
   slotsInGroup, STATUS_META, type HeadGroup, type JournalEntry, type JournalHead,
-  type JournalLeg, type JournalStore, type LegSide, type StatementSlot, totals, unresolvableLegs,
+  type JournalLeg, type JournalStore, type LegSide, type StatementSlot, totals, trialBalance,
+  trialBalanceCsvRows, TRIAL_BALANCE_CSV_HEADERS, unresolvableLegs,
   validateHead, validateLegs, writeEntry, writeHead,
 } from '@/lib/journal'
 import {
@@ -53,11 +54,12 @@ import {
 } from '@/components/ui'
 import Icon from '@/components/Icons'
 
-type Tab = 'entries' | 'heads'
+type Tab = 'entries' | 'heads' | 'trial'
 
 const TABS: { value: Tab; label: string }[] = [
   { value: 'entries', label: 'The register' },
   { value: 'heads', label: 'Heads' },
+  { value: 'trial', label: 'Trial balance' },
 ]
 
 const SIDES: LegSide[] = ['debit', 'credit']
@@ -130,7 +132,7 @@ function JournalPageInner() {
       setOpeningAsOf(loadOpeningBalances(oid).as_of || '')
 
       const t = searchParams.get('tab')
-      if (t === 'heads' || t === 'entries') setTab(t)
+      if (t === 'heads' || t === 'entries' || t === 'trial') setTab(t)
       if (searchParams.get('new') === '1') openDraft()
       setLoading(false)
     }
@@ -142,6 +144,9 @@ function JournalPageInner() {
   const stats = useMemo(() => journalStats(store, fy.start, fy.end), [store, fy])
   const rows = useMemo(() => journalRows(store), [store])
   const proof = useMemo(() => plugProof(rows), [rows])
+  // The register's own trial balance: every head netted Dr/Cr over the foldable rows, a leg naming a
+  // missing head kept on a labelled placeholder, and the two columns footed. Read-only (R3-14).
+  const tb = useMemo(() => trialBalance(store), [store])
   const movedThisFY = useMemo(() => movements(rowsInWindow(rows, { start: fy.start, end: fy.end })), [rows, fy])
   // The windows that are closed. An entry dated inside one is refused before its legs are read, so the
   // page states the locks it is obeying rather than let a Post button surprise the shop.
@@ -376,6 +381,9 @@ function JournalPageInner() {
   function exportHeads() {
     download(`taxflow-journal-heads-${todayISO()}.csv`, toCsv(HEADS_CSV_HEADERS, headsCsvRows(store)))
   }
+  function exportTrial() {
+    download(`taxflow-journal-trial-balance-${todayISO()}.csv`, toCsv(TRIAL_BALANCE_CSV_HEADERS, trialBalanceCsvRows(tb)))
+  }
 
   if (loading) {
     return <div className="jn-wrap"><p style={{ color: 'var(--muted)', fontSize: 13 }}>Reading the register…</p></div>
@@ -545,9 +553,9 @@ function JournalPageInner() {
           placeholder={tab === 'entries' ? 'Search number, narration, head…' : 'Search heads…'} style={{ width: 240 }} />
         <span className="jn-export">
           <Button variant="ghost" size="sm" icon="download"
-            onClick={tab === 'entries' ? exportRegister : exportHeads}
-            disabled={tab === 'entries' ? store.entries.length === 0 : store.heads.length === 0}>
-            Export {tab === 'entries' ? 'register' : 'heads'}
+            onClick={tab === 'entries' ? exportRegister : tab === 'heads' ? exportHeads : exportTrial}
+            disabled={tab === 'trial' ? store.heads.length === 0 : tab === 'entries' ? store.entries.length === 0 : store.heads.length === 0}>
+            Export {tab === 'entries' ? 'register' : tab === 'heads' ? 'heads' : 'trial balance'}
           </Button>
         </span>
       </div>
@@ -619,6 +627,90 @@ function JournalPageInner() {
               </div>
             </>
           )
+      )}
+
+      {/* ── Trial balance ─────────────────────────────────────────────────────── */}
+      {tab === 'trial' && (
+        <>
+          <Card pad={false} className="jn-tb-integrity">
+            <div className="jn-tb-integrity-body">
+              <span className={`jn-dot ${tb.foots ? 'is-ok' : 'is-bad'}`}>
+                <Icon name={tb.foots ? 'check' : 'alert'} size={18} strokeWidth={2.4} />
+              </span>
+              <div className="jn-integrity-text">
+                <div className="jn-integrity-head">
+                  {tb.foots
+                    ? <>The journal&rsquo;s own columns <strong>foot to the paisa</strong> — {money(tb.total_debit)} carried on a debit, {money(tb.total_credit)} on a credit, across {tb.entries} {tb.entries === 1 ? 'posting' : 'postings'}.</>
+                    : <>The columns <strong>do not foot</strong> — the debit side ({money(tb.total_debit)}) and the credit side ({money(tb.total_credit)}) differ by {money(Math.abs(tb.residual))}. That is the rupee this register lost or gained, and no schedule can close it for you.</>}
+                </div>
+                <p>
+                  This is a trial balance of <em>the journal&rsquo;s rows only</em> — the invoices, bills and payments the financial
+                  statements also read are not here. The two columns foot over what this register moved, not over your whole books.
+                  Every balance is netted from the posted entries a reversed pair cancels, and a leg naming a head the register no
+                  longer holds is kept on its own line rather than dropped — a foot is exactly the check for money that lost its name.
+                </p>
+              </div>
+            </div>
+          </Card>
+
+          <div className="jn-stats">
+            <StatCard label="Postings read" value={String(tb.entries)} icon="book" tone="blue"
+              sub="drafts carry no number and are not here" delay={0} />
+            <StatCard label="Heads with a balance" value={String(tb.moved)} icon="tag" tone="green"
+              sub={`${tb.nil} named, never moved`} delay={60} />
+            <StatCard label="Contra balances" value={String(tb.contra_heads)} icon="scale" tone={tb.contra_heads ? 'amber' : 'grey'}
+              sub="carried against their natural side" delay={120} />
+            <StatCard label="Legs with no head" value={String(tb.dangling_legs)} icon="alert" tone={tb.dangling_legs ? 'red' : 'grey'}
+              sub={tb.dangling_legs ? 'kept on the placeholder line' : 'every rupee still has a name'} delay={180} />
+          </div>
+
+          {tb.lines.length === 0
+            ? <EmptyState icon="scale" title="No head is on the register"
+                message="A trial balance lists every head and the side it carries a balance on. Name a head, post an entry against it, and the schedule fills in." />
+            : (
+              <Card pad={false}>
+                <div className="jn-tb-head">
+                  <span>Head</span><span>Moves</span><span>Entries</span><span>Debit</span><span>Credit</span>
+                </div>
+                {tb.lines.map(l => (
+                  <div key={l.dangling ? '(dangling)' : l.head_id}
+                    className={`jn-tb-row ${l.dangling ? 'is-dangle' : ''} ${l.contra ? 'is-contra' : ''}`}>
+                    <span className="jn-tb-name">
+                      {l.label}
+                      {l.contra && <em className="jn-tb-contra">contra</em>}
+                      {l.dangling && <small>{l.entries} {l.entries === 1 ? 'entry' : 'entries'} name a head this register no longer holds</small>}
+                    </span>
+                    <span className="jn-tb-moves">{l.dangling ? '— no line to move' : SLOT_META[l.slot].label}</span>
+                    <span className="jn-tb-entries">{l.entries}</span>
+                    <span className="jn-tb-amt">{l.carried === 'debit' ? money(l.net_paise / 100) : ''}</span>
+                    <span className="jn-tb-amt is-cr">{l.carried === 'credit' ? money(-l.net_paise / 100) : ''}</span>
+                  </div>
+                ))}
+                <div className="jn-tb-foot">
+                  <span className="jn-tb-foot-label">The two columns</span>
+                  <span className="jn-tb-foot-cell" />
+                  <span className="jn-tb-foot-cell" />
+                  <span className="jn-tb-amt">{money(tb.total_debit)}</span>
+                  <span className="jn-tb-amt is-cr">{money(tb.total_credit)}</span>
+                </div>
+              </Card>
+            )}
+
+          <div className="jn-bounds">
+            <div className="jn-bounds-col">
+              <SectionTitle icon="scale">How to read a line here</SectionTitle>
+              <div className="jn-fact"><Icon name="hash" size={13} /><span>A head is netted across every posted entry that names it; a reversal and its original land on the same head and cancel, so the pair shows as ₹0 carried.</span></div>
+              <div className="jn-fact"><Icon name="alert" size={13} /><span>A <em>contra</em> balance sits on the side opposite to the head&rsquo;s natural one — an asset over-credited, a refunded expense. It is flagged and kept there, never folded back.</span></div>
+              <div className="jn-fact"><Icon name="x" size={13} /><span>A <span className="jn-mono">(no such head)</span> line gathers legs the financial statements silently drop; the columns still foot over them, so the schedule shows money the statements cannot place.</span></div>
+            </div>
+            <div className="jn-bounds-col">
+              <SectionTitle icon="lock">What this schedule is not</SectionTitle>
+              <div className="jn-fact"><Icon name="x" size={13} /><span>It is not the company&rsquo;s trial balance. No document rupee is here — only what the journal moved — and no return or statement is built from this foot.</span></div>
+              <div className="jn-fact"><Icon name="x" size={13} /><span>It reads nothing the register does not hold: no opening balances, no chart of accounts, no statutory closing. It foots the journal, nothing more.</span></div>
+              <div className="jn-fact"><Icon name="x" size={13} /><span>A non-zero residual is a finding, not something to force shut — the register prints the gap and leaves the entry that caused it on the record.</span></div>
+            </div>
+          </div>
+        </>
       )}
 
       <div className="jn-foot">
@@ -1046,6 +1138,29 @@ function JournalPageInner() {
         .jn-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; }
         .jn-card { background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--violet);
           border-radius: var(--radius-lg); padding: 14px 16px; display: flex; flex-direction: column; gap: 9px; box-shadow: var(--shadow-xs); }
+
+        .jn-tb-integrity { margin-bottom: 1rem; }
+        .jn-tb-integrity-body { display: flex; align-items: flex-start; gap: 13px; padding: 14px 16px; }
+        .jn-tb-head, .jn-tb-row, .jn-tb-foot { display: grid;
+          grid-template-columns: minmax(0, 1.7fr) minmax(0, 1.1fr) 76px 130px 130px; gap: 12px; align-items: baseline; }
+        .jn-tb-head { font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+          color: var(--faint); border-bottom: 1px solid var(--line); padding: 10px 16px; }
+        .jn-tb-row { border-top: 1px solid var(--line-soft); padding: 11px 16px; }
+        .jn-tb-row:first-of-type { border-top: none; }
+        .jn-tb-row.is-contra { background: color-mix(in srgb, var(--amber-soft) 42%, var(--surface)); }
+        .jn-tb-row.is-dangle { background: color-mix(in srgb, var(--red-soft) 48%, var(--surface)); }
+        .jn-tb-name { font-size: 12.5px; font-weight: 650; color: var(--ink); min-width: 0; }
+        .jn-tb-name small { display: block; font-size: 10.5px; font-weight: 500; color: var(--red); margin-top: 2px; }
+        .jn-tb-contra { display: inline-block; margin-left: 7px; font-size: 9.5px; font-style: normal; font-weight: 700;
+          letter-spacing: 0.04em; text-transform: uppercase; color: var(--amber); background: var(--amber-soft);
+          border-radius: 6px; padding: 1px 6px; vertical-align: 1px; }
+        .jn-tb-moves { font-size: 11.5px; color: var(--muted); min-width: 0; }
+        .jn-tb-entries { font-size: 11.5px; color: var(--faint); font-variant-numeric: tabular-nums; }
+        .jn-tb-amt { font-size: 12.5px; font-weight: 650; color: var(--brand); font-variant-numeric: tabular-nums; text-align: right; }
+        .jn-tb-amt.is-cr { color: var(--violet); }
+        .jn-tb-foot { border-top: 2px solid var(--line); padding: 11px 16px; font-weight: 700; }
+        .jn-tb-foot-label { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--faint); }
+        .jn-tb-foot .jn-tb-amt { color: var(--ink); }
         .jn-card.is-closed { border-left-color: var(--faint); opacity: 0.85; }
         .jn-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
         .jn-card-name { font-size: 13.5px; font-weight: 700; color: var(--ink); }
@@ -1150,6 +1265,8 @@ function JournalPageInner() {
           .jn-leg .jn-leg-x { grid-column: 2; justify-self: end; }
           .jn-leg-line { grid-template-columns: minmax(0, 1fr) 40px 100px; }
           .jn-leg-note { grid-column: 1 / -1; }
+          .jn-tb-head, .jn-tb-moves, .jn-tb-entries, .jn-tb-foot-cell { display: none; }
+          .jn-tb-row, .jn-tb-foot { grid-template-columns: minmax(0, 1fr) 110px 110px; }
         }
         @media (max-width: 768px) {
           .jn-grid { grid-template-columns: 1fr; }
