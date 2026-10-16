@@ -47,6 +47,16 @@
 // checks, and this page only paints the strip and writes through the register's own append. The
 // finished units are still numbered at the counter on `/inventory/serials` — a run makes a
 // quantity, and only the shop knows how the run's own output got its numbers.
+//
+// And since R3-17, the cost a run prints can become paper: **a built run can be drafted onto the
+// journal as a work-in-progress pair.** The engine for the reading is `wip.ts` — it composes the two
+// balanced entries (the run puts material and, if the shop names a time head, its priced shop minutes
+// into Work-in-progress; the finish hands the same rupee out to finished stock, so WIP nets to nil
+// across the pair) and refuses everything it cannot say honestly, in its own sentences. This page
+// stays what it has always been: it owns no arithmetic, creates no head, and writes no entry of its
+// own — the drafts land through `journal.ts`'s `writeEntry`, which asks the period seal before
+// anything else and burns no number until the shop posts on `/journal`. The job number the movements
+// already carry travels in the entry's `reference`, so the shelf and the books tie on one string.
 
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
@@ -85,6 +95,14 @@ import {
   appendEvents, loadEvents, loadUnits, newEvent, SERIAL_STATUS_LABEL,
   type SerialEvent, type SerialUnit,
 } from '@/lib/serials'
+import {
+  loadJournal, newEntry, newLeg, writeEntry,
+  type JournalEntry, type JournalLeg, type JournalStore,
+} from '@/lib/journal'
+import {
+  ROLE_META, WIP_BOUNDARIES, WIP_ROLES, emptyPicks, headFitsRole, wipCancelNote, wipPaper, wipPlan,
+  type WipPicks, type WipRole,
+} from '@/lib/wip'
 import {
   Badge, Button, Card, EmptyState, PageHeader, ProgressBar, SearchInput, Segmented, StatCard, StatRow,
 } from '@/components/ui'
@@ -186,6 +204,12 @@ function RecipesPageInner() {
   // shelf at record time — but the events it writes go through `serials.ts`'s own append.
   const [units, setUnits] = useState<SerialUnit[]>([])
   const [serialEvents, setSerialEvents] = useState<SerialEvent[]>([])
+  // The journal register, read for the WIP pair (R3-17): this page proposes the legs through
+  // `wip.ts`, prints what the register already holds for a job number, and hands the drafts to
+  // `writeEntry`'s own door. It never creates a head and never posts an entry.
+  const [journal, setJournal] = useState<JournalStore | null>(null)
+  // The shop's role picks, kept per run id and only for the runs it is opening the books on.
+  const [wipPicks, setWipPicks] = useState<Record<string, WipPicks>>({})
 
   // The shopping list's own readings, pulled lazily the first time the board is asked to turn a
   // shortage into paper: who last supplied each short part and at what rate (`supply`, off the bills
@@ -252,6 +276,7 @@ function RecipesPageInner() {
       setLotMoves(loadMoves(oid))
       setUnits(loadUnits(oid))
       setSerialEvents(loadEvents(oid))
+      setJournal(loadJournal(oid))
       const bom = loadBom(oid)
       setStore(bom)
       // Only confirmed orders are demand; a draft is a quote the customer has not signed.
@@ -497,6 +522,7 @@ function RecipesPageInner() {
   function refreshStore() { setStore(loadBom(orgId)) }
   function refreshLots() { setBatches(loadBatches(orgId)); setLotMoves(loadMoves(orgId)) }
   function refreshSerials() { setUnits(loadUnits(orgId)); setSerialEvents(loadEvents(orgId)) }
+  function refreshJournal() { setJournal(loadJournal(orgId)) }
 
   // ── the recipe editor ───────────────────────────────────────────────────────
   function openRecipeEditor(recipe: Recipe, isNew: boolean) {
@@ -1099,6 +1125,52 @@ function RecipesPageInner() {
     flash(`${build.ref} removed — a plan that never touched the shelf.`)
   }
 
+  // ── the run into the books (R3-17: work-in-progress, as journal drafts) ──────
+  // The page holds only the shop's role picks; every rupee in the pair is read fresh, at click
+  // time, by `wip.ts` over the freshly loaded journal. A pick is a head id, never a name typed
+  // here — this screen cannot put a head on the register, and does not try to.
+  function picksFor(buildId: string): WipPicks {
+    return wipPicks[buildId] || emptyPicks()
+  }
+
+  function patchWipPick(buildId: string, role: WipRole, headId: string) {
+    setWipPicks(p => ({ ...p, [buildId]: { ...picksFor(buildId), [role]: headId } }))
+  }
+
+  function draftWipPair(view: BuildView) {
+    if (!orgId || !journal) { warn('The journal register has not been read yet — reopen the page and try again.'); return }
+    // Both readings are taken fresh off storage, not off painted state: a head may have closed and
+    // a price may have been corrected since this screen was drawn, and a draft is a claim.
+    const freshJournal = loadJournal(orgId)
+    const plan = wipPlan(view.build, view.recipe, products, store.rates, picksFor(view.build.id), freshJournal)
+    if (!plan.run || !plan.finish) {
+      warn(plan.refusals.join(' · ') || `${view.build.ref} has no rupee the books can carry yet.`)
+      return
+    }
+    const entries: JournalEntry[] = [plan.run, plan.finish].map(p => ({
+      ...newEntry(p.date),
+      date: p.date,
+      narration: p.narration,
+      reference: p.reference,
+      legs: p.legs.map((l): JournalLeg => ({ ...newLeg(l.headId, l.side), amount: l.amount, note: l.basis })),
+      status: 'draft' as const,
+    }))
+    setBusy(`Drafting ${view.build.ref} on the journal…`)
+    const failures: string[] = []
+    for (const entry of entries) {
+      const res = writeEntry(orgId, entry, orgName)
+      // `writeEntry` asks the seal first and answers in its own words; this page forwards them.
+      if (!res.ok) failures.push(res.problems.join(' · '))
+    }
+    setBusy('')
+    refreshJournal()
+    if (failures.length) {
+      warn(`${view.build.ref} reached the journal in parts — ${failures.join(' — ')}`)
+      return
+    }
+    flash(`${view.build.ref} drafted on the journal as two entries — the pair nets work-in-progress to nothing. Post them on /journal to give them their numbers.`)
+  }
+
   // ── exports ─────────────────────────────────────────────────────────────────
   function exportRecipes() {
     download(`taxflow-recipes-${day}.csv`, toCsv(RECIPE_CSV_HEADERS, recipeCsvRows(visibleRecipes)))
@@ -1615,6 +1687,97 @@ function RecipesPageInner() {
                               ))}
                             </ul>
                           )}
+                          {/* R3-17 — the run's cost can become paper. The reading is `wip.ts`'s;
+                              this block only prints it, picks heads, and hands the pair to the
+                              journal's own door. A run with live paper is sent to /journal, never
+                              drafted twice from here. */}
+                          {journal && (r.build.status === 'built' || r.build.status === 'cancelled') && (() => {
+                            const paper = wipPaper(journal, r.build.ref)
+                            const picks = picksFor(r.build.id)
+                            const plan = r.build.status === 'built' && paper.state === 'none'
+                              ? wipPlan(r.build, r.recipe, products, store.rates, picks, journal)
+                              : null
+                            const cancelNote = r.build.status === 'cancelled' ? wipCancelNote(paper) : ''
+                            const hasPicks = picks.wip !== '' || picks.raw !== '' || picks.finished !== '' || picks.time !== ''
+                            return (
+                              <>
+                                <div className="rc-detail-title">In the books</div>
+                                <p className="rc-detail-note">
+                                  {paper.entries.length > 0
+                                    ? <>{r.build.ref}: {paper.note} — <Link href={`/journal?q=${encodeURIComponent(r.build.ref)}`}>open them on /journal</Link>.</>
+                                    : <>{r.build.ref} has no journal row yet — its cost is a screen reading until the shop drafts it as paper.</>}
+                                </p>
+                                {cancelNote && (
+                                  <ul className="rc-findings">
+                                    <li className="rc-finding rc-finding-amber"><span className="rc-dot rc-dot-amber" />{cancelNote}</li>
+                                  </ul>
+                                )}
+                                {plan && (
+                                  <>
+                                    <div className="rc-wip-picks">
+                                      {WIP_ROLES.map(role => (
+                                        <label key={role} className="rc-field">
+                                          <span>{ROLE_META[role].label}{role === 'time' ? ' — optional' : ''}</span>
+                                          <select
+                                            className="tf-input"
+                                            value={picks[role]}
+                                            onChange={e => patchWipPick(r.build.id, role as WipRole, e.target.value)}
+                                          >
+                                            <option value="">{role === 'time' ? 'Do not capitalise shop time' : 'Pick a head…'}</option>
+                                            {journal.heads.filter(h => headFitsRole(h, role)).map(h => (
+                                              <option key={h.id} value={h.id}>{h.name}{h.active ? '' : ' (closed)'}</option>
+                                            ))}
+                                          </select>
+                                        </label>
+                                      ))}
+                                    </div>
+                                    {hasPicks && plan.refusals.length > 0 && (
+                                      <ul className="rc-findings">
+                                        {plan.refusals.map((f, i) => (
+                                          <li key={i} className="rc-finding rc-finding-red"><span className="rc-dot rc-dot-red" />{f}</li>
+                                        ))}
+                                      </ul>
+                                    )}
+                                    {plan.run && plan.finish && (
+                                      <>
+                                        {[plan.run, plan.finish].map(p => (
+                                          <div key={p.kind} className="rc-wip-pair">
+                                            <div className="rc-detail-title">{p.kind === 'run' ? 'Entry 1 — the run puts into work' : 'Entry 2 — the finish takes it out'}</div>
+                                            {p.legs.map((l, i) => (
+                                              <div key={i} className="rc-vrow">
+                                                <span className="rc-item-name">{journal.heads.find(h => h.id === l.headId)?.name || l.headId}</span>
+                                                <span className={`rc-sub ${l.side === 'debit' ? 'rc-over' : 'rc-under'}`}>{l.side}</span>
+                                                <span className="rc-sub">{l.basis}</span>
+                                                <span className="rc-num">{money(l.amount)}</span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        ))}
+                                        <p className="rc-detail-note">
+                                          Both dated {formatDateIN(plan.date)} and tied to {r.build.ref} — the pair nets work-in-progress to nothing
+                                          {plan.capitalise_time ? '' : '; shop time stays a reading, not a rupee on the page'}.
+                                        </p>
+                                        <div className="rc-wip-act">
+                                          <Button size="sm" icon="journal" disabled={!!busy} onClick={() => draftWipPair(r)}>
+                                            Draft the pair on /journal
+                                          </Button>
+                                          <span className="rc-sub">A draft burns no number; the JR number is taken on /journal, where posting asks the period seal first.</span>
+                                        </div>
+                                        <details className="rc-wip-bounds">
+                                          <summary>What these drafts are, and are not</summary>
+                                          <ul className="rc-findings">
+                                            {WIP_BOUNDARIES.map((b, i) => (
+                                              <li key={i} className="rc-finding"><span className="rc-dot" />{b}</li>
+                                            ))}
+                                          </ul>
+                                        </details>
+                                      </>
+                                    )}
+                                  </>
+                                )}
+                              </>
+                            )
+                          })()}
                           {r.build.notes && <p className="rc-detail-note">Note on the run — {r.build.notes}</p>}
                         </div>
                       )}
@@ -2800,6 +2963,14 @@ function RecipesPageInner() {
         .rc-vrow { display: grid; grid-template-columns: minmax(0, 1.6fr) 1fr 1fr 90px; gap: 8px; align-items: baseline;
           font-size: 12px; padding: 5px 0; border-bottom: 1px solid var(--line-soft); }
         .rc-vrow:last-child { border-bottom: none; }
+        .rc-wip-picks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-top: 4px; }
+        .rc-wip-picks select { cursor: pointer; min-width: 0; }
+        .rc-wip-pair { display: flex; flex-direction: column; gap: 2px; }
+        .rc-wip-act { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+        .rc-wip-act .rc-sub { flex: 1 1 220px; }
+        .rc-wip-bounds { margin-top: 2px; }
+        .rc-wip-bounds summary { cursor: pointer; font-size: 11px; color: var(--faint); }
+        .rc-wip-bounds .rc-findings { margin-top: 6px; }
 
         .rc-section { margin-top: 22px; display: flex; flex-direction: column; gap: 10px; }
         .rc-section-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
@@ -3003,7 +3174,7 @@ function RecipesPageInner() {
           .rc-acts { justify-content: flex-start; }
           .rc-stats { grid-template-columns: 1fr 1fr; }
           .rc-grid, .rc-grid-wide { grid-template-columns: 1fr; }
-          .rc-grid2, .rc-part, .rc-parts-head, .rc-parts-head-edit, .rc-parts-head-draw, .rc-part-edit, .rc-draw, .rc-vrow, .rc-used { grid-template-columns: 1fr; }
+          .rc-grid2, .rc-part, .rc-parts-head, .rc-parts-head-edit, .rc-parts-head-draw, .rc-part-edit, .rc-draw, .rc-vrow, .rc-used, .rc-wip-picks { grid-template-columns: 1fr; }
           .rc-rate-row { grid-template-columns: 1fr 1fr; }
           .rc-po-line { grid-template-columns: 1fr; gap: 2px; }
           .rc-po-qty, .rc-po-rate { text-align: left; }
