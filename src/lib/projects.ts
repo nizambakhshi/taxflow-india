@@ -75,6 +75,7 @@ import { newId, todayISO } from '@/lib/batches'
 import { addDaysISO, daysBetween } from '@/lib/recurring'
 import { DOC_KIND_META, bookDocs, round2 } from '@/lib/costcentres'
 import type { BookDoc, BookInput, DocKind } from '@/lib/costcentres'
+import { plural } from '@/lib/format'
 
 const KEY_PROJECTS = 'taxflow:projects:'
 /** Today's shape. A stored envelope with a different version is read as empty, not guessed at. */
@@ -832,7 +833,7 @@ export function drawHours(
   if (proposedDays === 0) {
     const drawable = rows.filter(r => r.tickable).length
     findings.push(drawable
-      ? `Nothing new is proposed — every day the book marks as worked either sits on the register already or carries hours elsewhere. ${drawable} day(s) can still be ticked by hand.`
+      ? `Nothing new is proposed — every day the book marks as worked either sits on the register already or carries hours elsewhere. ${plural(drawable, 'day')} can still be ticked by hand.`
       : `Nothing is drawn from ${periodLabel(month)}: no day the book marks as worked falls inside this project’s window.`)
   }
   if (loggedHours > 0) findings.push(`${loggedHours} h from ${person} already sit on this project in ${periodLabel(month)}.`)

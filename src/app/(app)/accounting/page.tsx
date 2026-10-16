@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { formatDateIN } from '@/lib/format'
+import { formatDateIN, plural } from '@/lib/format'
 import { Button, Card, PageHeader, Segmented, StatCard } from '@/components/ui'
 import Icon from '@/components/Icons'
 import {
@@ -375,7 +375,7 @@ export default function FinancialStatementsPage() {
               <Line label="TOTAL ASSETS" value={bs.totalAssets} bold />
             </div>
             <div className="ac-foot">
-              {stockLines ? `${stockLines} stock line(s) valued at purchase price.` : 'No stock tracked, so inventory is nil.'}
+              {stockLines ? `${plural(stockLines, 'stock line')} valued at purchase price.` : 'No stock tracked, so inventory is nil.'}
               {bs.openingReceivables > 0 && ' A payment grows cash but cannot reduce the opening receivable — the engine will not guess which pre-books paper it settled; a debt you have settled belongs on an invoice, not in the opening.'}
               {sideMoved(ASSET_SLOTS) && (
                 <>

@@ -37,7 +37,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { formatDateIN } from '@/lib/format'
+import { formatDateIN, plural } from '@/lib/format'
 import { toCsv } from '@/lib/registers'
 import { download } from '@/lib/party-ledger'
 import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
@@ -542,15 +542,17 @@ function FilingsPageInner() {
     return <div className="page-container" style={{ color: 'var(--muted)', fontSize: 13 }}>Opening the register…</div>
   }
 
+  // Each finding prints its number in `<strong>`, so the label carries only the noun — and the noun takes
+  // the same number as the figure beside it. A bracketed hint here would hedge a count the line computed.
   const findings = [
-    { n: stats.blocked, label: 'row(s) the chain shuts', detail: 'rule 59(6) — the previous period is not in, or an 88C(1) intimation stands unpaid', bad: true },
-    { n: stats.overdue, label: 'return(s) past their date', detail: 'measured against the date each row carries', bad: true },
+    { n: stats.blocked, label: stats.blocked === 1 ? 'row the chain shuts' : 'rows the chain shuts', detail: 'rule 59(6) — the previous period is not in, or an 88C(1) intimation stands unpaid', bad: true },
+    { n: stats.overdue, label: stats.overdue === 1 ? 'return past its date' : 'returns past their date', detail: 'measured against the date each row carries', bad: true },
     { n: stats.late, label: 'filed late', detail: 'filed after the date the row was written against', bad: false },
-    { n: stats.drift, label: 'row(s) where the calendar and the rule disagree', detail: 'the app\'s own date against the date the rule text states', bad: true },
-    { n: checks.length, label: 'tick(s) the two lists do not agree about', detail: '/gst/calendar and this register, on the same return', bad: true },
-    { n: stats.lapsedAmendments, label: 'amendment(s) with no window left', detail: 'section 16(4), the proviso to rule 59(1), or the annual return', bad: true },
-    { n: board.filter(b => b.dangling).length, label: 'amendment(s) naming a document the books do not hold', detail: 'matched against this year\'s invoices and credit notes', bad: false },
-    { n: objections.length, label: 'objection(s) to what the calendar asks', detail: 'where the rules say something different for this shop', bad: false },
+    { n: stats.drift, label: stats.drift === 1 ? 'row where the calendar and the rule disagree' : 'rows where the calendar and the rule disagree', detail: 'the app\'s own date against the date the rule text states', bad: true },
+    { n: checks.length, label: checks.length === 1 ? 'tick the two lists do not agree about' : 'ticks the two lists do not agree about', detail: '/gst/calendar and this register, on the same return', bad: true },
+    { n: stats.lapsedAmendments, label: stats.lapsedAmendments === 1 ? 'amendment with no window left' : 'amendments with no window left', detail: 'section 16(4), the proviso to rule 59(1), or the annual return', bad: true },
+    { n: board.filter(b => b.dangling).length, label: board.filter(b => b.dangling).length === 1 ? 'amendment naming a document the books do not hold' : 'amendments naming a document the books do not hold', detail: 'matched against this year\'s invoices and credit notes', bad: false },
+    { n: objections.length, label: objections.length === 1 ? 'objection to what the calendar asks' : 'objections to what the calendar asks', detail: 'where the rules say something different for this shop', bad: false },
   ].filter(f => f.n > 0)
 
   return (
@@ -687,7 +689,16 @@ function FilingsPageInner() {
         <StatCard label="Rows on the register" value={String(store.filings.length)} sub={`${stats.total} expected this year, ${stats.open} still open`} icon="file-check" tone="blue" />
         <StatCard label="Filed on time" value={String(stats.filed - stats.late)} sub={`${stats.nil} of them nil, ${stats.late} late`} icon="check" tone="green" />
         <StatCard label="Open amendments" value={String(stats.openAmendments)} sub={`${stats.lapsedAmendments} already lapsed`} icon="undo" tone="amber" />
-        <StatCard label="At risk on this year" value={money(exposure.total)} sub={`${exposure.periods} period(s) past their date — see the breakdown below`} icon="wallet" tone={exposure.total > 0 ? 'red' : 'grey'} />
+        {/* The rupee this card prints is the sum of the two figures below it, so the sentence under it names
+            those parts instead of pointing a reader at a list. Three states, because a nil card that says
+            "see the breakdown" is a card that has not decided what it found (Rule 52). */}
+        <StatCard label="At risk this year" value={money(exposure.total)}
+          sub={exposure.total > 0
+            ? `${money(exposure.fee)} of late fee and ${money(exposure.interest)} of section 50 interest, over ${plural(exposure.periods, 'period')} past their date`
+            : exposure.periods > 0
+              ? `${plural(exposure.periods, 'period')} past their date and nothing owed on them`
+              : 'no period on this register is past its date'}
+          icon="wallet" tone={exposure.total > 0 ? 'red' : 'grey'} />
       </div>
 
       <div className="fg-toolbar">
@@ -867,12 +878,12 @@ function FilingsPageInner() {
                 <p className="fg-side-note" style={{ margin: 0 }}>
                   {costTotals.quantified === 0
                     ? 'Nothing on this board can be costed yet — every row prints its reason below.'
-                    : `${costTotals.quantified} of ${costs.length} correction(s) carry a figure. Interest still accruing on open rows reads ${money(costTotals.running)}, and ${money(costTotals.upperBound)} is the ceiling across every row the register can cost — the difference is rows marked carried whose payment date this register does not hold. Every open row together adds about ${money(costTotals.perDay)} a day.`}
+                    : `${costTotals.quantified} of ${plural(costs.length, 'correction')} carry a figure. Interest still accruing on open rows reads ${money(costTotals.running)}, and ${money(costTotals.upperBound)} is the ceiling across every row the register can cost — the difference is rows marked carried whose payment date this register does not hold. Every open row together adds about ${money(costTotals.perDay)} a day.`}
                 </p>
                 {costTotals.oldest && (
                   <p className="fg-side-note" style={{ margin: 0 }}>
                     The longest wait is {costTotals.oldest.doc_ref || 'a correction with no document named'}{' '}
-                    ({periodLabel(costTotals.oldest.period)}) — found {costTotals.oldest.days} day(s) ago and still open.
+                    ({periodLabel(costTotals.oldest.period)}) — found {plural(costTotals.oldest.days, 'day')} ago and still open.
                   </p>
                 )}
                 {costTotals.unquantified.length > 0 && (
@@ -981,7 +992,7 @@ function FilingsPageInner() {
                 {board.filter(b => b.dangling).length === 0 ? (
                   <p className="fg-side-note">
                     {docs.length
-                      ? `Every amendment names a document found among this year's ${docs.length} outward paper(s) on this device.`
+                      ? `Every amendment names a document found among this year's ${plural(docs.length, 'outward document')} on this device.`
                       : 'No outward documents are loaded for this year, so the board cannot say whether an amendment names a real document. It still prints the reference exactly as written.'}
                   </p>
                 ) : (
@@ -1095,7 +1106,7 @@ function FilingsPageInner() {
             {openAmendmentsFor(store, removing.row.period).length > 0 && (
               <div className="fg-warn">
                 <Icon name="alert" size={14} />
-                {openAmendmentsFor(store, removing.row.period).length} open amendment(s) name {periodLabel(removing.row.period)}.
+                {plural(openAmendmentsFor(store, removing.row.period).length, 'open amendment')} name {periodLabel(removing.row.period)}.
                 Close or re-date them first — {removing.mode === 'delete' ? 'this removal will be refused until they are.' : 'withdrawing the row leaves them answering nothing.'}
               </div>
             )}
@@ -1481,7 +1492,7 @@ function FilingRow({
         </div>
         <div className="fg-actions" style={{ flexWrap: 'wrap' }}>
           <Badge tone={state.tone}>{state.label}</Badge>
-          {row.days > 0 && !rec && <span className="fg-period">{row.days} day(s) past</span>}
+          {row.days > 0 && !rec && <span className="fg-period">{plural(row.days, 'day')} past</span>}
         </div>
         <div className="fg-stated">
           {heads
@@ -1683,7 +1694,7 @@ function AmendRow({
         <div className="fg-window">
           {board.closesOn ? formatDateIN(board.closesOn) : 'no date on this clock'}
           <small>
-            {board.urgency === 'lapsed' ? 'shut' : board.left <= 0 ? 'shutting' : `${board.left} day(s) left`}
+            {board.urgency === 'lapsed' ? 'shut' : board.left <= 0 ? 'shutting' : `${plural(board.left, 'day')} left`}
           </small>
         </div>
         <div className="fg-actions">
@@ -1729,7 +1740,7 @@ function AmendRow({
                   {cost.state === 'running' && cost.perDay > 0
                     ? ` One more day adds about ${money(cost.perDay)}.` : ''}
                   {cost.foundDays !== null
-                    ? ` Found ${cost.foundDays} day(s) ago.` : ' The day it was found is not on this row.'}
+                    ? ` Found ${plural(cost.foundDays, 'day')} ago.` : ' The day it was found is not on this row.'}
                 </p>
               )}
               <p className="is-cite">{cost.citation}</p>
@@ -1778,7 +1789,7 @@ function ClockCard({
           {w.open ? 'Open' : 'Shut'}
         </Badge>
       </h4>
-      <div className="left">{w.left > 0 ? `${w.left} day(s)` : w.open ? 'shutting' : 'closed'}</div>
+      <div className="left">{w.left > 0 ? `${plural(w.left, 'day')}` : w.open ? 'shutting' : 'closed'}</div>
       <p>{w.why}</p>
       <small>{note} — {w.citation}</small>
     </div>
@@ -2118,7 +2129,7 @@ function AmendForm({
               onChange={e => set({ docRef: e.target.value })} />
             <small>
               Printed exactly as written. {knownCount > 0
-                ? `Matched against ${knownCount} outward document(s) of this year on this device — a reference found on nothing is printed as such.`
+                ? `Matched against ${plural(knownCount, 'outward document')} of this year on this device — a reference found on nothing is printed as such.`
                 : 'No outward documents are loaded for this year, so nothing can be matched.'}
             </small>
           </label>
@@ -2169,7 +2180,7 @@ function AmendForm({
 
         {windows && governing && (
           <div className="fg-provenance">
-            <strong>{governing.open ? `${governing.left} day(s) on the ${meta.clock === 'gstr1a' ? 'GSTR-1A' : meta.clock === 'table9a' ? 'Table 9A' : 'ITC'} clock` : 'This window has shut'}</strong>
+            <strong>{governing.open ? `${plural(governing.left, 'day')} on the ${meta.clock === 'gstr1a' ? 'GSTR-1A' : meta.clock === 'table9a' ? 'Table 9A' : 'ITC'} clock` : 'This window has shut'}</strong>
             <p>{governing.why}</p>
             <p className="is-cite">{governing.citation}</p>
           </div>

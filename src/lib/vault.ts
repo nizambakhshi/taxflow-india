@@ -57,6 +57,7 @@ import { isCashTaxKey, loadStatuses, saveStatuses } from '@/lib/compliance'
 import { loadCC, saveCC } from '@/lib/costcentres'
 import { loadExp, saveExp } from '@/lib/exports'
 import { loadFilings, saveFilings } from '@/lib/filings'
+import { plural } from '@/lib/format'
 import { loadFx, saveFx } from '@/lib/fx'
 import { loadGodowns, saveGodowns } from '@/lib/godowns'
 import * as gstr4 from '@/lib/gstr4'
@@ -133,17 +134,6 @@ const arrCount = (v: unknown, name: string): number => list(field(v, name)).leng
 
 /** Two arrays in one envelope is the commonest register shape in this app. */
 const twoLists = (a: string, b: string) => (v: unknown) => arrCount(v, a) + arrCount(v, b)
-
-/**
- * The counter's English. A bare `+ 's'` is what the first vault printed, and it read as
- * "3 time entrys" — which is the kind of thing a shop notices on a page whose whole job is to look
- * like a bookkeeper wrote it. Two rules cover every unit this register names: a word ending in a
- * consonant and "y" turns it into "ies", anything else takes an "s".
- */
-function plural(count: number, unit: string): string {
-  const many = /[^aeiou]y$/i.test(unit) ? `${unit.slice(0, -1)}ies` : `${unit}s`
-  return `${count} ${count === 1 ? unit : many}`
-}
 
 /** `2026-27` → 2026; the FY-keyed workpapers live one label at a time inside one key. */
 export function fyStartOf(label: string): number {

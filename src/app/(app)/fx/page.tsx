@@ -21,7 +21,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { formatDateIN } from '@/lib/format'
+import { formatDateIN, plural } from '@/lib/format'
 import { toCsv } from '@/lib/registers'
 import { download } from '@/lib/party-ledger'
 import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
@@ -730,7 +730,7 @@ function FxPageInner() {
                       type="button" className="fx-linkbtn"
                       onClick={() => setOpenHistory(openHistory === r.code ? '' : r.code)}
                     >
-                      {openHistory === r.code ? 'Hide' : `${rateHistory(store.rates, r.code).length} day(s)`}
+                      {openHistory === r.code ? 'Hide' : `${plural(rateHistory(store.rates, r.code).length, 'day')}`}
                     </button>
                     <button type="button" className="fx-linkbtn is-bad" onClick={() => removeRate(r.code, r.as_of)}>Delete</button>
                   </span>

@@ -64,6 +64,16 @@ const TABS: { value: Tab; label: string }[] = [
 
 const SIDES: LegSide[] = ['debit', 'credit']
 
+/**
+ * One label for the one action that seeds the starting chart. Three places offer that click — the soft bar
+ * under a thin register, the empty journal, the empty heads tab — and they had drifted into two spellings
+ * and two glyphs, so a reader who met the offer twice could not tell it was the same offer. The wording is
+ * the one the click itself prints when it reports back. The glyph is `plus`, because the click writes rows;
+ * `tag` stays on the actions that open the head form, where the shop is naming something rather than
+ * accepting six names it did not choose.
+ */
+const STARTER_LABEL = 'Add the six starting heads'
+
 const inr2 = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 })
 const money = (v: number) => inr2.format(Number.isFinite(v) ? v : 0)
 /** A signed rupee says its own direction in words — never a bare minus the reader decodes (Rule 28). */
@@ -525,10 +535,11 @@ function JournalPageInner() {
           <Icon name="tag" size={14} />
           <span>
             An entry moves a rupee between two named heads, and a head is the only place the decision &ldquo;this money belongs on that
-            statement line&rdquo; is written down. Name a pair before composing — or take the six movements the engine offers.
+            statement line&rdquo; is written down. Name a pair before composing — or take the six starting heads the engine offers, each one
+            named for a movement shops ask for most.
           </span>
           {store.heads.length === 0
-            ? <Button variant="ghost" size="sm" icon="plus" onClick={runStarters}>Add the starting six</Button>
+            ? <Button variant="ghost" size="sm" icon="plus" onClick={runStarters}>{STARTER_LABEL}</Button>
             : <Button variant="ghost" size="sm" icon="tag" onClick={() => setTab('heads')}>Name one</Button>}
         </div>
       )}
@@ -573,7 +584,7 @@ function JournalPageInner() {
                 : 'No entry matches this search.'}
               action={store.entries.length === 0
                 ? (store.heads.length === 0
-                  ? <Button icon="tag" onClick={runStarters}>Add the six starting heads</Button>
+                  ? <Button icon="plus" onClick={runStarters}>{STARTER_LABEL}</Button>
                   : <Button icon="plus" onClick={() => openDraft()}>New entry</Button>)
                 : <Button variant="ghost" onClick={() => setSearch('')}>Clear search</Button>} />
           ) : (
@@ -600,13 +611,13 @@ function JournalPageInner() {
             <EmptyState icon="tag"
               title={store.heads.length === 0 ? 'No head is on the register' : 'Nothing matches'}
               message={store.heads.length === 0
-                ? 'A head names which line of the statements an entry moves, and it is the only place that decision is written down. Six movements a shop asks for most are offered as a starting chart.'
+                ? 'A head names which line of the statements an entry moves, and it is the only place that decision is written down. Six heads, named for the movements a shop asks for most, are offered as a starting chart.'
                 : 'No head matches this search.'}
               action={store.heads.length === 0
                 ? (
                   <span className="jn-actions">
                     <Button variant="ghost" icon="tag" onClick={() => openHead()}>Name your own</Button>
-                    <Button icon="plus" onClick={runStarters}>Add the six starting heads</Button>
+                    <Button icon="plus" onClick={runStarters}>{STARTER_LABEL}</Button>
                   </span>
                 )
                 : <Button variant="ghost" onClick={() => setSearch('')}>Clear search</Button>} />

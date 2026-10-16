@@ -43,6 +43,7 @@ import {
   type AttendancePlan, type DayMark, type DayMarkSource, type Employee, type PayInput,
   type PayrollStore,
 } from '@/lib/payroll'
+import { plural } from '@/lib/format'
 
 /** The register's own string guard, re-declared here so this file never trusts an untyped cell. */
 function str(v: unknown): string {
@@ -268,7 +269,7 @@ export function dayBook(store: PayrollStore, month: string, today = todayISO()):
   const findings = [...outside]
   for (const r of rows) {
     if (r.loss_days > 0 && r.month_lop_days !== null && r.month_lop_days !== r.loss_days) {
-      findings.push(`${r.employee.name}: the book says ${r.loss_days} lost day(s), the month row says ${r.month_lop_days}. The month row is what the salary uses — pull the book, or correct it by hand.`)
+      findings.push(`${r.employee.name}: the book says ${plural(r.loss_days, 'lost day')}, the month row says ${r.month_lop_days}. The month row is what the salary uses — pull the book, or correct it by hand.`)
     }
     for (const c of r.cells) {
       if (c.on_roll && c.written && c.weekly_off && markMeaning(c.mark) === 'loss') {
@@ -526,7 +527,7 @@ export function pullMonthFromBook(orgId: string, month: string, today = todayISO
       const candidate: PayInput = current ? { ...current, lop_days: r.loss_days } : { ...newInput(r.employee.id, month), lop_days: r.loss_days }
       const blocked = validateInput(candidate, employee, month, today).find(x => x.level === 'block')
       if (blocked) { refused.push({ name: r.employee.name, reason: blocked.message }); continue }
-      const detail = `day book, ${monthLabel(month)}: ${r.written_days} of ${r.on_roll_days} day(s) marked`
+      const detail = `day book, ${monthLabel(month)}: ${r.written_days} of ${plural(r.on_roll_days, 'day')} marked`
       // The register's own stamper: the tag is replaced rather than stacked, so two provenances can
       // never sit on one month row, and any hand text after the em dash survives.
       const stamped = current
@@ -551,7 +552,7 @@ export function dayBookCsv(book: DayBook): string {
     lines.push([q(r.employee.code || ''), q(r.employee.name), ...r.cells.map(c => q(c.mark))].join(','))
   }
   if (book.findings.length) lines.push('', `Findings: ${book.findings.join('; ')}`)
-  lines.push('', `Unwritten days are not absent days. ${book.footer.cells_written} of ${book.footer.cells_expected} day(s) written for ${monthLabel(book.month)}.`)
+  lines.push('', `Unwritten days are not absent days. ${book.footer.cells_written} of ${plural(book.footer.cells_expected, 'day')} written for ${monthLabel(book.month)}.`)
   return lines.join('\n')
 }
 
@@ -592,5 +593,5 @@ export function dayBookSentence(book: DayBook): string {
   if (!book.footer.cells_written) {
     return `${monthLabel(book.month)}: ${book.footer.people} ${book.footer.people === 1 ? 'person' : 'people'} on the rolls, no day written yet. An unwritten day is not an absent day.`
   }
-  return `${monthLabel(book.month)}: ${book.footer.cells_written} of ${book.footer.cells_expected} day(s) written; ${book.footer.people_with_loss} ${book.footer.people_with_loss === 1 ? 'person' : 'people'} with lost days, ${book.footer.loss_days_total} lost day(s) counted. ${book.footer.unwritten_days} day(s) unwritten — counted nowhere.`
+  return `${monthLabel(book.month)}: ${book.footer.cells_written} of ${plural(book.footer.cells_expected, 'day')} written; ${book.footer.people_with_loss} ${book.footer.people_with_loss === 1 ? 'person' : 'people'} with lost days, ${plural(book.footer.loss_days_total, 'lost day')} counted. ${plural(book.footer.unwritten_days, 'day')} unwritten — counted nowhere.`
 }

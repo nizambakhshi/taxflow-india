@@ -74,6 +74,7 @@ import {
   fyLabel as auditFyLabel, loadAudit, monthLabel, recordNote, sealForDate, sealPeriod, todayISO,
   type AuditStore, type PeriodSeal, type SealResult,
 } from '@/lib/audit'
+import { plural } from '@/lib/format'
 
 const KEY_FILINGS = 'taxflow:filings:'
 export const FILINGS_VERSION = 1
@@ -657,7 +658,7 @@ export function estimateLateFee(args: {
   }
   if (days > 0 && args.tax > 0) {
     prints.push(interestDays > 0
-      ? `Interest under section 50: ${INTEREST_PCT}% a year on ₹${args.tax.toLocaleString('en-IN')} for ${interestDays} day(s)${isDate(args.paidOn ?? '') ? '' : ' — to today, because the date the cash left is not stated'} = ₹${interest.toLocaleString('en-IN')}.`
+      ? `Interest under section 50: ${INTEREST_PCT}% a year on ₹${args.tax.toLocaleString('en-IN')} for ${plural(interestDays, 'day')}${isDate(args.paidOn ?? '') ? '' : ' — to today, because the date the cash left is not stated'} = ₹${interest.toLocaleString('en-IN')}.`
       : 'Interest cannot run backwards to the due date — the payment date is on or before it.')
   }
   if (days > 0 && args.tax <= 0 && slab.perDay > 0) {

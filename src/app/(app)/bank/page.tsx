@@ -11,7 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { formatDateIN } from '@/lib/format'
+import { formatDateIN, plural } from '@/lib/format'
 import { toCsv } from '@/lib/registers'
 import { download } from '@/lib/party-ledger'
 import {
@@ -197,8 +197,8 @@ export default function BankMatchingPage() {
     setView('review')
     setFilter('review')
     setFlash(
-      `${parsed.txns.length} line(s) read from ${formatDateIN(parsed.from)} to ${formatDateIN(parsed.to)}`
-      + (parsed.issues.length ? ` · ${parsed.issues.length} note(s) from the parser` : '.'),
+      `${plural(parsed.txns.length, 'line')} read from ${formatDateIN(parsed.from)} to ${formatDateIN(parsed.to)}`
+      + (parsed.issues.length ? ` · ${plural(parsed.issues.length, 'note')} from the parser` : '.'),
     )
   }
 
@@ -264,9 +264,9 @@ export default function BankMatchingPage() {
       {flash && <div className="bm-alert bm-alert-green"><Icon name="check" size={14} />{flash}</div>}
 
       <div className="bm-stats">
-        <StatCard label="Lines read" value={String(summary.rows)} sub={`${bank.statements.length} statement(s) loaded`} icon="book" tone="blue" />
-        <StatCard label="Explained" value={money(summary.matchedValue)} sub={`${summary.confirmed + summary.suggested} of ${summary.rows} line(s)`} icon="check" tone="green" />
-        <StatCard label="Needs your eye" value={money(summary.reviewValue)} sub={`${summary.review} line(s) unexplained`} icon="alert" tone="amber" />
+        <StatCard label="Lines read" value={String(summary.rows)} sub={`${plural(bank.statements.length, 'statement')} loaded`} icon="book" tone="blue" />
+        <StatCard label="Explained" value={money(summary.matchedValue)} sub={`${summary.confirmed + summary.suggested} of ${plural(summary.rows, 'line')}`} icon="check" tone="green" />
+        <StatCard label="Needs your eye" value={money(summary.reviewValue)} sub={`${plural(summary.review, 'line')} unexplained`} icon="alert" tone="amber" />
         <StatCard label="Already in books" value={String(summary.inBooks)} sub="receipts you had already recorded" icon="compare" tone="cyan" />
       </div>
 
@@ -490,7 +490,7 @@ export default function BankMatchingPage() {
                   <div className="bm-hist-main">
                     <span className="bm-hist-name">{s.name}</span>
                     <span className="bm-hist-sub">
-                      {formatDateIN(s.from)} – {formatDateIN(s.to)} · {s.txns.length} line(s) ·{' '}
+                      {formatDateIN(s.from)} – {formatDateIN(s.to)} · {plural(s.txns.length, 'line')} ·{' '}
                       {s.source === 'file' ? 'file' : 'pasted'} · delimiter <code className="bm-code">{s.delimiter === '\t' ? 'tab' : s.delimiter}</code>
                     </span>
                     <span className="bm-cols">

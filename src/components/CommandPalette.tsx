@@ -303,6 +303,11 @@ export default function CommandPalette({ orgId, pathname, open, setOpen }: Props
               {searching
                 ? 'Searching your books…'
                 : <>No match for <strong>“{query}”</strong> — try an invoice number, GSTIN or party name.</>}
+              {/* The boundary R3-15's drive found: a period nobody recorded is not a record, so no record
+                  search can reach it. Month names now route to the two pages that print those periods, and
+                  this says where the rest live rather than leaving "nothing found" as a claim about the
+                  books. */}
+              {!searching && <div className="tf-cmd-none-sub">The palette reads pages, actions and the records on this device — a due date nobody wrote down is not missing, it is computed, and the Compliance Calendar prints it.</div>}
             </div>
           )}
         </div>

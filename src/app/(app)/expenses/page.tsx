@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { formatDateIN } from '@/lib/format'
+import { formatDateIN, plural } from '@/lib/format'
 import { GST_RATES } from '@/lib/gst-rates'
 import { Badge, Button, Card, EmptyState, PageHeader, SearchInput, StatCard } from '@/components/ui'
 import SealNotice from '@/components/SealNotice'
@@ -235,10 +235,10 @@ export default function ExpensesPage() {
 
       <div className="ex-stats">
         <StatCard label="Spend" value={money(summary.spend)}
-          sub={summary.filtered ? `in ${summary.visible.length} of ${expenses.length} record(s)` : `${expenses.length} record(s)`}
+          sub={summary.filtered ? `in ${summary.visible.length} of ${plural(expenses.length, 'record')}` : `${plural(expenses.length, 'record')}`}
           icon="wallet" tone="blue" />
         <StatCard label="GST paid" value={money(summary.gst)} sub="carved out of the amounts you entered" icon="percent" tone="violet" delay={40} />
-        <StatCard label="ITC claimable" value={money(summary.itc)} sub={`${expenses.filter(e => e.itc_eligible).length} bill(s) tagged eligible`} icon="check" tone="green" delay={80} />
+        <StatCard label="ITC claimable" value={money(summary.itc)} sub={`${plural(expenses.filter(e => e.itc_eligible).length, 'bill')} tagged eligible`} icon="check" tone="green" delay={80} />
         <StatCard label="Not yet paid" value={money(summary.unpaid)} sub="settled from your own account" icon="clock" tone="amber" delay={120} />
       </div>
 

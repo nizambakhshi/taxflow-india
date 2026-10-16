@@ -21,7 +21,7 @@ import { GST_RATES } from '@/lib/gst-rates'
 import {
   calculateInvoiceTotals, calculateLineItem, determineGSTType, getFinancialYear,
 } from '@/lib/gst-engine'
-import { formatDateIN } from '@/lib/format'
+import { formatDateIN, plural } from '@/lib/format'
 import { toCsv } from '@/lib/registers'
 import { download } from '@/lib/party-ledger'
 import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
@@ -687,7 +687,7 @@ function RecurringPageInner() {
                   <option value="">Blank schedule</option>
                   {orders.map(d => (
                     <option key={d.id} value={d.id}>
-                      {d.number} · {d.party_name} · {d.lines.filter(l => l.item_name).length} line(s)
+                      {d.number} · {d.party_name} · {plural(d.lines.filter(l => l.item_name).length, 'line')}
                     </option>
                   ))}
                 </select>

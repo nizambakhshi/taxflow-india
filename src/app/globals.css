@@ -956,6 +956,15 @@ body {
   color: var(--muted);
 }
 
+/* The no-match boundary sits under the query echo and is quieter than it: same colour, smaller, and a
+   measure kept short so a two-line sentence stays a sentence rather than a paragraph. */
+.tf-cmd-none-sub {
+  margin: 8px auto 0;
+  max-width: 42ch;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .tf-cmd-foot {
   flex: none;
   display: flex;

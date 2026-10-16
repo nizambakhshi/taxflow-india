@@ -343,6 +343,28 @@ export function isKnownHref(href: string): boolean {
   return DYNAMIC_CHILD_PREFIXES.some(p => path.startsWith(p))
 }
 
+/**
+ * The two pages whose rows are dates the rules compute, not records the shop wrote.
+ *
+ * R3-15's drive found ⌘K answering "March" with nothing while /gst/filings was printing twenty-six
+ * calendar-derived rows and /gst/calendar was printing the days those rows are owed on. Neither page is
+ * reachable by a record search: `registerRecordCommands` can only read the rows a shop has transcribed,
+ * and a period nobody recorded has no row to find. The pages hold the answer, so the pages take the words.
+ *
+ * The list is deliberately limited to vocabulary those two pages already print — the twelve month names,
+ * the four financial-year quarters, the form codes the boards row, and the words a due date is described
+ * with. Adding a month is adding a claim that the page shows that month; it does for all twelve, because
+ * the financial year runs April to March and both boards emit every period in it. A third-party word — a
+ * state, a section, a rule number — would send a reader to a page that cannot answer them.
+ */
+const PERIOD_KEYWORDS: Record<string, string> = {
+  '/gst/calendar': 'april may june july august september october november december january february march '
+    + 'q1 q2 q3 q4 due date deadline when to file return period month quarter financial year',
+  '/gst/filings': 'april may june july august september october november december january february march '
+    + 'q1 q2 q3 q4 gstr 1 3b 9 9c 4 cmp 08 1a iff pmt 06 due date overdue late fee interest filed not filed '
+    + 'amend amendment window return period month quarter financial year',
+}
+
 export function buildPageCommands(): Command[] {
   return NAV_ITEMS.flatMap(section =>
     section.items.map(item => ({
@@ -353,7 +375,7 @@ export function buildPageCommands(): Command[] {
       href: item.href,
       icon: item.icon,
       badge: 'Page',
-      keywords: `${section.section} ${item.label}`.toLowerCase(),
+      keywords: `${section.section} ${item.label} ${PERIOD_KEYWORDS[item.href] ?? ''}`.toLowerCase().trim(),
     }))
   )
 }

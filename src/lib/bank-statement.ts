@@ -6,6 +6,7 @@
  * is, and the confirmed lines are recorded on the Payments page. */
 
 import { invoiceNoCandidates } from './gstr2b'
+import { plural } from '@/lib/format'
 
 export type Direction = 'credit' | 'debit'
 export type Tier = 'exact' | 'likely' | 'possible'
@@ -358,8 +359,8 @@ export function parseStatement(text: string): ParseResult {
     )
   }
 
-  if (skippedNoAmount) issues.push({ line: header.headerLine + 2, text: `${skippedNoAmount} row(s) skipped`, reason: 'no amount' })
-  if (skippedNoDate) issues.push({ line: header.headerLine + 2, text: `${skippedNoDate} row(s) skipped`, reason: 'no readable date' })
+  if (skippedNoAmount) issues.push({ line: header.headerLine + 2, text: `${plural(skippedNoAmount, 'row')} skipped`, reason: 'no amount' })
+  if (skippedNoDate) issues.push({ line: header.headerLine + 2, text: `${plural(skippedNoDate, 'row')} skipped`, reason: 'no readable date' })
 
   const dates = txns.map(t => t.date).filter(Boolean).sort()
   return {
@@ -534,7 +535,7 @@ function matchDoc(txn: StatementTxn, doc: OpenDoc, tolerance: number): Candidate
   const diff = dayDiff(doc.date, txn.date)
   if (diff >= 0) {
     const s = dateScore(diff)
-    if (s) { score += s; reasons.push(`${diff} day(s) after the document`) }
+    if (s) { score += s; reasons.push(`${plural(diff, 'day')} after the document`) }
   } else if (Math.abs(diff) <= 7 && party.hit) {
     score += 3; reasons.push('paid shortly before the document')
   }
@@ -575,7 +576,7 @@ function matchPayment(txn: StatementTxn, pay: BookPayment, tolerance: number): C
 
   const days = dayDiff(pay.date, txn.date)
   const s = dateScore(days)
-  if (s) { score += ref ? Math.min(s, 8) : s; reasons.push(`${Math.abs(days)} day(s) from the recorded payment`) }
+  if (s) { score += ref ? Math.min(s, 8) : s; reasons.push(`${plural(Math.abs(days), 'day')} from the recorded payment`) }
 
   // Only a reference hit, or an unambiguous amount+party+date agreement, is
   // worth claiming "this is already in your books". Without the reference the

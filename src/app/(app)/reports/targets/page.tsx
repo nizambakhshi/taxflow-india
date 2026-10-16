@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { formatCompactINR } from '@/lib/format'
+import { formatCompactINR, plural } from '@/lib/format'
 import { toCsv } from '@/lib/registers'
 import { download } from '@/lib/party-ledger'
 import {
@@ -468,7 +468,7 @@ export default function TargetsPage() {
             <MiniStat
               label="Budget used"
               value={summary.budgetPct === null ? '—' : `${summary.budgetPct}%`}
-              hint={summary.monthsOverBudget ? `${summary.monthsOverBudget} month(s) over` : 'within monthly limits'}
+              hint={summary.monthsOverBudget ? `${plural(summary.monthsOverBudget, 'month')} over` : 'within monthly limits'}
             />
             <MiniStat
               label="Pace verdict"

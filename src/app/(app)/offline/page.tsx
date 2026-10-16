@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { formatDateIN } from '@/lib/format'
+import { formatDateIN, plural } from '@/lib/format'
 import { Badge, Button, EmptyState, PageHeader, StatCard } from '@/components/ui'
 import Icon from '@/components/Icons'
 import {
@@ -131,7 +131,7 @@ function OfflinePageInner() {
           sub={summary.count ? 'not on the server yet' : 'nothing waiting'}
           icon="box" tone={summary.count ? 'amber' : 'grey'} delay={0} />
         <StatCard label="Value waiting" value={money(summary.value)}
-          sub={`${summary.count} invoice(s) to push`} icon="invoice" tone="blue" delay={40} />
+          sub={`${plural(summary.count, 'invoice')} to push`} icon="invoice" tone="blue" delay={40} />
         <StatCard label="Failed" value={String(summary.failed)}
           sub={summary.failed ? 'still queued, safe to retry' : 'nothing blocked'}
           icon="alert" tone={summary.failed ? 'red' : 'green'} delay={80} />

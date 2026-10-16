@@ -32,7 +32,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { formatDateIN } from '@/lib/format'
+import { formatDateIN, plural } from '@/lib/format'
 import { toCsv } from '@/lib/registers'
 import { download } from '@/lib/party-ledger'
 import { getFinancialYear } from '@/lib/gst-engine'
@@ -623,15 +623,15 @@ function TallyPageInner() {
       journal_drafts: tally.journal_draft,
       challan_drafts: tally.challan_draft,
       skipped: plan.summary.skipped,
-      note: `${tally.invoice + tally.purchase_bill + tally.credit_note + tally.debit_note} document(s), ${tally.customer + tally.vendor + tally.product} master(s)`
-        + (tally.journal_draft + tally.challan_draft ? `, ${tally.journal_draft + tally.challan_draft} draft(s) awaiting a human` : '')
+      note: `${plural(tally.invoice + tally.purchase_bill + tally.credit_note + tally.debit_note, 'document')}, ${plural(tally.customer + tally.vendor + tally.product, 'master')}`
+        + (tally.journal_draft + tally.challan_draft ? `, ${plural(tally.journal_draft + tally.challan_draft, 'draft')} awaiting a human` : '')
         + (flagged ? ` · ${flagged} carried a look-at-this` : '')
         + (failed ? ` · ${failed} failed` : ''),
     })
     setLog(stamped)
     setFlash(failed
-      ? `${out.length - failed} row(s) written, ${failed} failed — the file is still here, so the rest can go after a fix.`
-      : `${tally.invoice + tally.purchase_bill + tally.credit_note + tally.debit_note} document(s) and ${tally.customer + tally.vendor + tally.product} master(s) written from this file${tally.journal_draft + tally.challan_draft ? `, ${tally.journal_draft + tally.challan_draft} draft(s) raised for a human to post or confirm` : ''}.`)
+      ? `${plural(out.length - failed, 'row')} written, ${failed} failed — the file is still here, so the rest can go after a fix.`
+      : `${plural(tally.invoice + tally.purchase_bill + tally.credit_note + tally.debit_note, 'document')} and ${plural(tally.customer + tally.vendor + tally.product, 'master')} written from this file${tally.journal_draft + tally.challan_draft ? `, ${plural(tally.journal_draft + tally.challan_draft, 'draft')} raised for a human to post or confirm` : ''}.`)
     setImporting(false)
   }
 
@@ -842,7 +842,7 @@ function TallyPageInner() {
     const name = tallyExportFileName('all', preview.vouchers, getFinancialYear())
     saveXml(name, exportTallyXml(exportData, { company: company.trim(), action, includeMasters }))
     setExportNote(
-      `${name} · ${preview.vouchers} voucher(s), ${preview.ledgers} ledger(s), ${preview.stockItems} stock item(s), ${money(preview.rupees)} `
+      `${name} · ${plural(preview.vouchers, 'voucher')}, ${plural(preview.ledgers, 'ledger')}, ${plural(preview.stockItems, 'stock item')}, ${money(preview.rupees)} `
       + `· written ${action === 'Create' ? 'as new objects' : 'as updates to objects Tally already has'}${includeMasters ? ' with their masters' : ' as vouchers only'}.`,
     )
   }
@@ -974,7 +974,7 @@ function TallyPageInner() {
                   sub={`${plan.summary.ledgers} ledgers · ${plan.summary.stockItems} items · ${plan.summary.vouchers} vouchers`}
                   icon="book" tone="blue" />
                 <StatCard label="Ready to write" value={String(plan.summary.ready)}
-                  sub={`${plan.summary.byTarget.invoice.count + plan.summary.byTarget.purchase_bill.count + plan.summary.byTarget.credit_note.count + plan.summary.byTarget.debit_note.count} document(s) · ${money(plan.summary.byTarget.invoice.rupees + plan.summary.byTarget.purchase_bill.rupees + plan.summary.byTarget.credit_note.rupees + plan.summary.byTarget.debit_note.rupees)}`}
+                  sub={`${plural(plan.summary.byTarget.invoice.count + plan.summary.byTarget.purchase_bill.count + plan.summary.byTarget.credit_note.count + plan.summary.byTarget.debit_note.count, 'document')} · ${money(plan.summary.byTarget.invoice.rupees + plan.summary.byTarget.purchase_bill.rupees + plan.summary.byTarget.credit_note.rupees + plan.summary.byTarget.debit_note.rupees)}`}
                   icon="check" tone="green" />
                 <StatCard label="Blocked" value={String(plan.summary.blocked)}
                   sub="the file never named what they need" icon="alert" tone="red" />
@@ -985,11 +985,11 @@ function TallyPageInner() {
 
               <div className="tb-filebar">
                 <span className="tb-filename"><Icon name="file-check" size={13} />{fileName || 'Pasted text'}</span>
-                <span className="tb-fmeta">{plan.items.length} row(s) · {dump?.parsedNodes || 0} tag(s) read</span>
+                <span className="tb-fmeta">{plural(plan.items.length, 'row')} · {plural(dump?.parsedNodes || 0, 'tag')} read</span>
                 {dump && dump.envelope === 'request' && (
                   <Badge tone="amber" dot={false}>this looks like a Tally <em>request</em>, not an export</Badge>
                 )}
-                {!!dump?.issues.length && <Badge tone="amber" dot={false}>{dump.issues.length} reader note(s)</Badge>}
+                {!!dump?.issues.length && <Badge tone="amber" dot={false}>{plural(dump.issues.length, 'reader note')}</Badge>}
                 <span className="tb-filer">
                   <button type="button" className="tb-link" onClick={() => loadText('', '')}>
                     <Icon name="x" size={12} /> Put another file
@@ -1010,7 +1010,7 @@ function TallyPageInner() {
                     {dump.issues.slice(0, 8).map((issue, i) => (
                       <li key={`iss-${i}`}><strong>Tag {issue.at}</strong> — {issue.message}</li>
                     ))}
-                    {dump.issues.length > 8 && <li>… {dump.issues.length - 8} more note(s) in the CSV.</li>}
+                    {dump.issues.length > 8 && <li>… {plural(dump.issues.length - 8, 'more note')} in the CSV.</li>}
                   </ul>
                 </Card>
               )}
@@ -1038,19 +1038,19 @@ function TallyPageInner() {
               <Card pad={false} className="tb-bar">
                 <div className="tb-bar-main">
                   <div className="tb-bar-line">
-                    <strong>{writeSet.length}</strong> row(s) will be written
+                    <strong>{writeSet.length}</strong> {writeSet.length === 1 ? 'row' : 'rows'} will be written
                     <span className="tb-dot">·</span>
-                    {writeDocs.length} document(s) worth <strong className="tb-num">{money(writeRupees)}</strong>
+                    {plural(writeDocs.length, 'document')} worth <strong className="tb-num">{money(writeRupees)}</strong>
                     <span className="tb-dot">·</span>
-                    {writeMasters} master(s) first
+                    {plural(writeMasters, 'master')} first
                     {!!writeDrafts.length && (
                       <>
                         <span className="tb-dot">·</span>
-                        {writeDrafts.length} draft(s) — posted or confirmed by a human, not by this import
+                        {plural(writeDrafts.length, 'draft')} — posted or confirmed by a human, not by this import
                       </>
                     )}
                     {picked.size > writeSet.length && (
-                      <em className="tb-faint"> — {picked.size - writeSet.length} picked row(s) are not ready, so they stay put</em>
+                      <em className="tb-faint"> — {plural(picked.size - writeSet.length, 'picked row')} not ready and left out of this import</em>
                     )}
                   </div>
                   <ProgressBar value={writeSet.length} max={Math.max(plan.summary.ready, 1)}
@@ -1061,7 +1061,7 @@ function TallyPageInner() {
                   {!!picked.size && <button type="button" className="tb-link tb-danger" onClick={() => setPicked(new Set())}>Clear {picked.size}</button>}
                   <Button size="sm" icon={importing ? 'clock' : 'upload'} onClick={() => void runImport()}
                     disabled={!writeSet.length || importing}>
-                    {importing ? 'Writing…' : `Import ${writeSet.length} row(s)`}
+                    {importing ? 'Writing…' : `Import ${plural(writeSet.length, 'row')}`}
                   </Button>
                 </div>
               </Card>
@@ -1111,7 +1111,7 @@ function TallyPageInner() {
               ))}
 
               {!!dump?.issues.length && (
-                <p className="tb-foot-note">The reader kept {dump.objectTags && Object.keys(dump.objectTags).length} kind(s) of object in this file; only ledgers, stock items and vouchers are planned, and the rest are listed above as they arrived.</p>
+                <p className="tb-foot-note">The reader kept {plural(dump.objectTags && Object.keys(dump.objectTags).length, 'kind')} of object in this file; only ledgers, stock items and vouchers are planned, and the rest are listed above as they arrived.</p>
               )}
             </>
           )}
@@ -1155,7 +1155,7 @@ function TallyPageInner() {
             <>
               <div className="tb-stats">
                 <StatCard label="On this desk" value={String(exportInvoices.length + exportBills.length)}
-                  sub={`${exportInvoices.length} invoice(s) · ${exportBills.length} bill(s)`} icon="book" tone="blue" />
+                  sub={`${plural(exportInvoices.length, 'invoice')} · ${plural(exportBills.length, 'bill')}`} icon="book" tone="blue" />
                 <StatCard label="Picked" value={String(preview.vouchers)}
                   sub={`${money(preview.rupees)} of vouchers`} icon="check" tone="green" />
                 <StatCard label="Ledgers to write" value={String(preview.ledgers)}
@@ -1265,7 +1265,7 @@ function TallyPageInner() {
 
                   <Button icon="download" onClick={makeXml} disabled={!preview.vouchers || linesPending}
                     title={linesPending ? 'Line items are still arriving' : undefined}>
-                    {linesPending ? 'Reading the lines…' : `Write ${preview.vouchers} voucher(s) to XML`}
+                    {linesPending ? 'Reading the lines…' : `Write ${plural(preview.vouchers, 'voucher')} to XML`}
                   </Button>
                   <p className="tb-help tb-after">
                     {tallyExportFileName('all', preview.vouchers, getFinancialYear())} in your Downloads, then in TallyPrime:
@@ -1290,7 +1290,7 @@ function TallyPageInner() {
         <>
           <div className="tb-toolbar">
             <span className="tb-help">
-              {log.length ? `${log.length} import(s) this browser has run for this business.` : 'The log is local to this browser: which file, when, and what it wrote.'}
+              {log.length ? `${plural(log.length, 'import')} this browser has run for this business.` : 'The log is local to this browser: which file, when, and what it wrote.'}
             </span>
             {!!log.length && <Button size="sm" variant="ghost" icon="undo" onClick={clearLog}>Forget the log</Button>}
           </div>
@@ -1308,16 +1308,16 @@ function TallyPageInner() {
                     <div className="tb-hist-name">{r.file}</div>
                     <div className="tb-hist-sub">{new Date(r.at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })} · {r.note}</div>
                     <div className="tb-cols">
-                      {!!r.invoices && <span className="tb-chip-2">{r.invoices} invoice(s)</span>}
-                      {!!r.bills && <span className="tb-chip-2">{r.bills} bill(s)</span>}
-                      {!!r.credit_notes && <span className="tb-chip-2">{r.credit_notes} credit note(s)</span>}
-                      {!!r.debit_notes && <span className="tb-chip-2">{r.debit_notes} debit note(s)</span>}
-                      {!!r.journal_drafts && <span className="tb-chip-2">{r.journal_drafts} journal draft(s)</span>}
-                      {!!r.challan_drafts && <span className="tb-chip-2">{r.challan_drafts} challan draft(s)</span>}
-                      {!!r.customers && <span className="tb-chip-2">{r.customers} customer(s)</span>}
-                      {!!r.vendors && <span className="tb-chip-2">{r.vendors} vendor(s)</span>}
-                      {!!r.products && <span className="tb-chip-2">{r.products} product(s)</span>}
-                      {!!r.skipped && <span className="tb-chip-2">{r.skipped} object(s) left alone</span>}
+                      {!!r.invoices && <span className="tb-chip-2">{plural(r.invoices, 'invoice')}</span>}
+                      {!!r.bills && <span className="tb-chip-2">{plural(r.bills, 'bill')}</span>}
+                      {!!r.credit_notes && <span className="tb-chip-2">{plural(r.credit_notes, 'credit note')}</span>}
+                      {!!r.debit_notes && <span className="tb-chip-2">{plural(r.debit_notes, 'debit note')}</span>}
+                      {!!r.journal_drafts && <span className="tb-chip-2">{plural(r.journal_drafts, 'journal draft')}</span>}
+                      {!!r.challan_drafts && <span className="tb-chip-2">{plural(r.challan_drafts, 'challan draft')}</span>}
+                      {!!r.customers && <span className="tb-chip-2">{plural(r.customers, 'customer')}</span>}
+                      {!!r.vendors && <span className="tb-chip-2">{plural(r.vendors, 'vendor')}</span>}
+                      {!!r.products && <span className="tb-chip-2">{plural(r.products, 'product')}</span>}
+                      {!!r.skipped && <span className="tb-chip-2">{plural(r.skipped, 'object')} left alone</span>}
                     </div>
                   </div>
                   <div className="tb-hist-side">

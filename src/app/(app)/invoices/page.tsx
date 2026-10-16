@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { formatDateIN } from '@/lib/format'
+import { formatDateIN, plural } from '@/lib/format'
 import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
 import { Badge, Button, EmptyState, PageHeader, SearchInput, Segmented, StatCard } from '@/components/ui'
 import Icon from '@/components/Icons'
@@ -124,7 +124,7 @@ function InvoicesPageInner() {
 
       <div className="iv-stats">
         <StatCard label="Billed" value={money(summary.billed)} sub="excluding cancelled" icon="invoice" tone="blue" delay={0} />
-        <StatCard label="To collect" value={money(summary.outstanding)} sub={`${summary.open} invoice(s) not fully paid`} icon="swap" tone="amber" delay={40} href="/payments" />
+        <StatCard label="To collect" value={money(summary.outstanding)} sub={`${plural(summary.open, 'invoice')} not fully paid`} icon="swap" tone="amber" delay={40} href="/payments" />
         <StatCard label="Draft" value={String(summary.drafts)} sub="not issued yet" icon="clipboard" tone="grey" delay={80} />
         <StatCard label="Documents" value={String(invoices.length)} sub="in this browser's organisation" icon="book" tone="cyan" delay={120} />
       </div>
