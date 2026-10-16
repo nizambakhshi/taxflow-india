@@ -723,6 +723,16 @@ export function buildActionCommands(): Command[] {
       keywords: 'audit trail log who changed what when history events refused writes integrity unbroken checksum evidence compliance control period locks seals releases notes trail tamper edit history',
     },
     {
+      id: 'action:period-close',
+      kind: 'action',
+      label: 'Read a period close',
+      sublabel: 'What one month still holds — its money, its unfinished paper, its returns — before its seal falls',
+      href: '/audit?tab=close',
+      icon: 'calendar',
+      badge: 'Action',
+      keywords: 'period close close a period month end month-end closing books ready to close what is left in this month unfinished drafts unbilled challan outstanding receipts returns not filed seal before sealing window reading register trail audit',
+    },
+    {
       id: 'action:journal-entry',
       kind: 'action',
       label: 'Strike a journal entry',

@@ -8,10 +8,10 @@
 // integrity verdict on that trail, and the two dialogs (close a period, lift a seal) that
 // are the only ways anything is written from here.
 //
-// Three boundaries are printed on the screen rather than left to the reader to assume,
-// because each one is where a "audit log" feature elsewhere quietly overreaches:
+// This page holds three answers, and three boundaries are printed on the screen rather than left to
+// the reader to assume, because each one is where an "audit log" feature elsewhere quietly overreaches:
 //
-//  * **This register holds no rupee.** A seal is a window, an event is a sentence. The money
+//  * **The seals and the trail hold no rupee.** A seal is a window, an event is a sentence. The money
 //    stays in the invoices and bills; nothing here charges, debits or files anything.
 //  * **The trail is a checksum, not a signature.** The page says "the trail is unbroken" —
 //    that the `seq` numbers run 1..n with no gap, duplicate or reorder. That is what a
@@ -25,12 +25,20 @@
 //    table (expenses, payments, cancelling or marking a document paid) ask from their own page.
 //    Anything still not wired is printed below by name, not implied: a lock that quietly covers
 //    some doors is worse than a smaller lock that says which ones it covers.
+//
+// The third tab is the exception to the first boundary, and says so: the **period close**
+// (`src/lib/period-close.ts`) folds the four document tables for one month — the only server read this
+// page makes — beside the journal, the order registers, the filings register and this trail, and prints
+// what the window still holds. It is a reading, not a door: it seals nothing itself, and its one button
+// hands the month to the dialog below, which keeps its own date check and its own note (Rule 54: a
+// reading reaches paper only through the register that owns the paper).
 
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { formatDateIN } from '@/lib/format'
+import { formatINR } from '@/lib/gst-engine'
 import { toCsv } from '@/lib/registers'
 import { download } from '@/lib/party-ledger'
 import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
@@ -40,16 +48,33 @@ import {
   type SealKind, trailCsvRows, trailStats, TRAIL_CSV_HEADERS, releaseSeal, recordNote, todayISO, verifyChain,
 } from '@/lib/audit'
 import {
+  CLOSE_CSV_HEADERS, CLOSE_STATE_META, closeCsvRows, closeMonthOptions, closeReading, closeWindowOf,
+  defaultCloseMonth, SEAL_VIEW_META, type CloseReading,
+} from '@/lib/period-close'
+import { loadFilings } from '@/lib/filings'
+import { loadJournal } from '@/lib/journal'
+import { loadAllDocs, type FlowDoc } from '@/lib/orderflow'
+import type { LedgerBill, LedgerExpense, LedgerInvoice, LedgerPayment } from '@/lib/ledger'
+import {
   Badge, Button, Card, EmptyState, PageHeader, SearchInput, SectionTitle, Segmented, StatCard, StatRow,
 } from '@/components/ui'
 import Icon from '@/components/Icons'
 
-type Tab = 'seals' | 'trail'
+type Tab = 'seals' | 'trail' | 'close'
 
 const TABS: { value: Tab; label: string }[] = [
   { value: 'seals', label: 'Period seals' },
   { value: 'trail', label: 'The trail' },
+  { value: 'close', label: 'Period close' },
 ]
+
+/** The four document tables a close reading folds, exactly as `ledger.ts` asks for them. */
+interface CloseDocs {
+  invoices: LedgerInvoice[]
+  bills: LedgerBill[]
+  expenses: LedgerExpense[]
+  payments: LedgerPayment[]
+}
 
 // The doors, named. A seal is only as strong as the paths that consult it, so the page prints them
 // rather than let "period lock" imply a coverage the wiring has not earned.
@@ -135,6 +160,13 @@ function AuditPageInner() {
   const [search, setSearch] = useSearchDeepLink()
   const [notice, setNotice] = useState<{ msg: string; bad: boolean } | null>(null)
 
+  // The period close — a reading the page takes, not a state it keeps. `closeDocs` is null until the
+  // fetch answers, and the engine prints that as ignorance rather than as an empty month (Rule 27).
+  const [closeMonth, setCloseMonth] = useState(() => defaultCloseMonth(todayISO()))
+  const [closeFy, setCloseFy] = useState(() => fyStartOf(defaultCloseMonth(todayISO())) ?? new Date().getFullYear())
+  const [closeDocs, setCloseDocs] = useState<CloseDocs | null>(null)
+  const [closeLoading, setCloseLoading] = useState(false)
+
   const [seal, setSeal] = useState<SealDraft | null>(null)
   const [sealError, setSealError] = useState('')
   const [release, setRelease] = useState<ReleaseDraft | null>(null)
@@ -161,7 +193,14 @@ function AuditPageInner() {
       setStore(loadAudit(oid))
 
       const t = searchParams.get('tab')
-      if (t === 'trail' || t === 'seals') setTab(t)
+      if (t === 'trail' || t === 'seals' || t === 'close') setTab(t)
+      // ?month=YYYY-MM — the palette and a seal dialog's neighbour rows land on one period's close.
+      const mo = searchParams.get('month')
+      if (mo && /^\d{4}-\d{2}$/.test(mo)) {
+        setCloseMonth(mo)
+        const fy = fyStartOf(`${mo}-01`)
+        if (fy !== null) setCloseFy(fy)
+      }
       // ?new=1 — the palette's "Seal a period" action lands here with the dialog open.
       if (searchParams.get('new') === '1') openSeal()
       setLoading(false)
@@ -169,6 +208,58 @@ function AuditPageInner() {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // The documents the close folds are the only thing this page has ever asked the server for, and it
+  // asks for one window at a time — the same four tables, the same columns `ledger.ts` reads.
+  useEffect(() => {
+    if (tab !== 'close' || !orgId || !/^\d{4}-\d{2}$/.test(closeMonth)) return
+    const w = closeWindowOf(closeMonth)
+    if (!w) return
+    const win = { from: w.from, to: w.to }
+    let dead = false
+    async function pull() {
+      setCloseLoading(true)
+      setCloseDocs(null)
+      const [inv, bill, exp, pay] = await Promise.all([
+        supabase.from('invoices').select('status, invoice_date, taxable_amount, total_tax, balance_due')
+          .eq('organization_id', orgId).gte('invoice_date', win.from).lte('invoice_date', win.to),
+        supabase.from('purchase_bills').select('status, bill_date, taxable_amount, total_tax, itc_eligible, balance_due')
+          .eq('organization_id', orgId).gte('bill_date', win.from).lte('bill_date', win.to),
+        supabase.from('expenses').select('expense_date, amount, gst_amount, taxable_amount, itc_eligible, payment_status, category')
+          .eq('organization_id', orgId).gte('expense_date', win.from).lte('expense_date', win.to),
+        supabase.from('payments').select('payment_type, amount, payment_date')
+          .eq('organization_id', orgId).gte('payment_date', win.from).lte('payment_date', win.to),
+      ])
+      if (dead) return
+      if (inv.error || bill.error || exp.error || pay.error) {
+        setCloseDocs(null)
+        setCloseLoading(false)
+        return
+      }
+      setCloseDocs({
+        invoices: (inv.data || []) as LedgerInvoice[],
+        bills: (bill.data || []) as LedgerBill[],
+        expenses: (exp.data || []) as LedgerExpense[],
+        payments: (pay.data || []) as LedgerPayment[],
+      })
+      setCloseLoading(false)
+    }
+    pull()
+    return () => { dead = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, orgId, closeMonth])
+
+  const closeReadingNow = useMemo(() => {
+    if (tab !== 'close') return null
+    return closeReading({
+      month: closeMonth,
+      documents: closeDocs,
+      journal: orgId ? loadJournal(orgId) : null,
+      flow: orgId ? (loadAllDocs(orgId) as FlowDoc[]) : null,
+      filings: orgId ? loadFilings(orgId).filings : null,
+      audit: store,
+    })
+  }, [tab, closeMonth, closeDocs, store, orgId])
 
   const stats = useMemo(() => trailStats(store), [store])
   const chain = useMemo(() => verifyChain(store), [store])
@@ -205,6 +296,13 @@ function AuditPageInner() {
     setSealError('')
   }
 
+  /** The close reading's one action: hand the period to the seal dialog, preset to the month it read. */
+  function openSealFor(month: string) {
+    const year = fyStartOf(`${month}-01`) ?? Number(month.slice(0, 4))
+    setSeal({ year, kind: 'month', month, note: '' })
+    setSealError('')
+  }
+
   function runSeal() {
     if (!seal || !orgId) return
     const result = sealPeriod(orgId, {
@@ -218,7 +316,7 @@ function AuditPageInner() {
     setStore(result.store)
     setSeal(null)
     setSealError('')
-    setTab('seals')
+    if (tab !== 'close') setTab('seals')
     setNotice({ msg: `The period is sealed. A write dated inside it is now refused at ${sealedDoors()}, and each refusal lands on the trail.`, bad: false })
   }
 
@@ -248,6 +346,10 @@ function AuditPageInner() {
   function exportTrail() {
     download(`taxflow-audit-trail-${todayISO()}.csv`, toCsv(TRAIL_CSV_HEADERS, trailCsvRows(store)))
   }
+  function exportClose() {
+    if (!closeReadingNow) return
+    download(`taxflow-period-close-${closeMonth}.csv`, toCsv(CLOSE_CSV_HEADERS, closeCsvRows(closeReadingNow)))
+  }
 
   if (loading) {
     return <div className="au-wrap"><p style={{ color: 'var(--muted)', fontSize: 13 }}>Reading the register…</p></div>
@@ -261,7 +363,7 @@ function AuditPageInner() {
       <PageHeader
         eyebrow="Evidence & locks"
         title="Audit trail and period seals"
-        subtitle="Who closed what, and whether a filed period can still be typed over. This register keeps the decisions; the rupees stay in the documents."
+        subtitle="Who closed what, whether a filed period can still be typed over, and — on the close tab — what one month still holds. The seals and the trail keep decisions and no rupee; the close reads the documents' money and moves none of it."
         actions={
           <>
             <Button variant="ghost" icon="edit" onClick={() => setNoteOpen(true)}>Add a note</Button>
@@ -349,8 +451,9 @@ function AuditPageInner() {
         </div>
         <div className="au-bounds-col">
           <SectionTitle icon="alert">What this register is not</SectionTitle>
-          <div className="au-fact"><Icon name="x" size={13} strokeWidth={2.2} /><span>It holds no rupee — a seal is a window, an event is a sentence.</span></div>
-          <div className="au-fact"><Icon name="x" size={13} strokeWidth={2.2} /><span>It files nothing. The seals are your shop’s decision, not the portal’s.</span></div>
+          <div className="au-fact"><Icon name="x" size={13} strokeWidth={2.2} /><span>The seals and the trail hold no rupee — a seal is a window, an event is a sentence.</span></div>
+          <div className="au-fact"><Icon name="x" size={13} strokeWidth={2.2} /><span>Nothing here files anything. The seals are your shop’s decision, not the portal’s.</span></div>
+          <div className="au-fact"><Icon name="x" size={13} strokeWidth={2.2} /><span>The close tab prints figures, but it closes nothing: it reads the period so the seal dialog can be decided, and never instead of it.</span></div>
           <div className="au-fact"><Icon name="x" size={13} strokeWidth={2.2} /><span>It lives in this browser (ADR-013). It travels only inside the books vault, never on its own.</span></div>
           <div className="au-fact"><Icon name="x" size={13} strokeWidth={2.2} /><span>Releasing a seal keeps it — a silent unlock is exactly what an auditor looks for, so a reason is required.</span></div>
         </div>
@@ -359,13 +462,14 @@ function AuditPageInner() {
       {/* ── Toolbar ───────────────────────────────────────────────────────────── */}
       <div className="au-toolbar">
         <Segmented options={TABS} value={tab} onChange={v => setTab(v as Tab)} />
-        <SearchInput value={search} onChange={setSearch} ariaLabel="Search seals and the trail"
-          placeholder={tab === 'seals' ? 'Search periods…' : 'Search the trail…'} style={{ width: 240 }} />
+        <SearchInput value={search} onChange={setSearch} ariaLabel="Search seals, the trail and the close"
+          placeholder={tab === 'seals' ? 'Search periods…' : tab === 'close' ? 'Search the returns and events…' : 'Search the trail…'}
+          style={{ width: 240 }} />
         <span className="au-export">
           <Button variant="ghost" size="sm" icon="download"
-            onClick={tab === 'seals' ? exportSeals : exportTrail}
-            disabled={tab === 'seals' ? store.seals.length === 0 : store.events.length === 0}>
-            Export {tab === 'seals' ? 'seals' : 'trail'}
+            onClick={tab === 'seals' ? exportSeals : tab === 'trail' ? exportTrail : exportClose}
+            disabled={tab === 'seals' ? store.seals.length === 0 : tab === 'trail' ? store.events.length === 0 : !closeReadingNow}>
+            Export {tab === 'seals' ? 'seals' : tab === 'trail' ? 'trail' : 'this close'}
           </Button>
         </span>
       </div>
@@ -410,6 +514,23 @@ function AuditPageInner() {
               {visibleEvents.map(e => <EventRow key={e.id} e={e} />)}
             </Card>
           )
+      )}
+
+      {/* ── Period close ──────────────────────────────────────────────────────── */}
+      {tab === 'close' && (
+        <PeriodClose
+          month={closeMonth}
+          fy={closeFy}
+          onMonth={m => {
+            setCloseMonth(m)
+            const fy = fyStartOf(`${m}-01`)
+            if (fy !== null) setCloseFy(fy)
+          }}
+          reading={closeReadingNow}
+          loading={closeLoading}
+          search={search}
+          onSeal={() => openSealFor(closeMonth)}
+        />
       )}
 
       <div className="au-foot">
@@ -674,6 +795,20 @@ function AuditPageInner() {
         .au-mchip.is-off, .au-mchip:disabled { opacity: 0.45; cursor: not-allowed; }
         .au-mchip-year { font-size: 10px; font-weight: 500; color: var(--faint); }
 
+        .au-seal-dot.is-warn { color: var(--amber); background: var(--amber-soft); }
+
+        .au-close-pick { display: grid; gap: 10px; justify-items: center; margin-bottom: 14px; }
+        .au-close-pick > .au-months { width: 100%; }
+        .au-find-list { display: grid; gap: 9px; margin-top: 10px; }
+        .au-find { background: var(--surface-2); border: 1px solid var(--line); border-radius: 11px;
+          padding: 10px 12px; display: flex; flex-direction: column; gap: 5px; }
+        .au-find-head { display: flex; align-items: baseline; gap: 7px; font-size: 12.5px; font-weight: 650; color: var(--ink); }
+        .au-find-head svg { color: var(--amber); flex-shrink: 0; align-self: center; }
+        .au-find-take { margin-left: auto; font-size: 11.5px; font-weight: 650; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+        .au-find-why { font-size: 11.5px; color: var(--muted); line-height: 1.6; }
+        .au-find-link { font-size: 11.5px; color: var(--brand); font-weight: 600; text-decoration: none; }
+        .au-find-link:hover { text-decoration: underline; }
+
         .au-note-box { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; color: var(--muted);
           background: var(--surface-2); border-radius: 10px; padding: 10px 12px; line-height: 1.55; }
         .au-note-box svg { flex-shrink: 0; margin-top: 2px; color: var(--brand); }
@@ -709,8 +844,213 @@ function AuditPageInner() {
   )
 }
 
-function matchesView(s: PeriodSeal, tab: Tab): boolean {
-  // The seals tab shows every seal (standing first, released after); the trail tab has no seal rows.
+/** The state's dot, in the three colours this page already owns plus the amber the seals use. */
+function dotClass(tone: 'blue' | 'green' | 'red' | 'amber' | 'grey'): string {
+  return tone === 'green' ? 'is-ok' : tone === 'red' ? 'is-bad' : tone === 'amber' ? 'is-warn' : 'is-nil'
+}
+
+const STATE_GLYPH: Record<string, string> = {
+  'not-loaded': 'clock', 'in-progress': 'calendar', 'nothing-here': 'list', unfinished: 'alert', ready: 'check',
+}
+
+/**
+ * The period close — the third tab, and the only one of the three that prints rupees.
+ *
+ * Every figure on it came from `closeReading`, which folds the documents the page fetched, the
+ * journal, the order registers, the filings register and the trail for one month. The tab is placed
+ * here rather than on `/accounting` because the question it answers belongs to the seal: *is this
+ * period finished enough to close*. It changes nothing — the one button on it hands the month to the
+ * seal dialog, and that dialog keeps its own date check, its own note and its own refusal.
+ */
+function PeriodClose({ month, fy, onMonth, reading, loading, search, onSeal }: {
+  month: string
+  fy: number
+  onMonth: (m: string) => void
+  reading: CloseReading | null
+  loading: boolean
+  search: string
+  onSeal: () => void
+}) {
+  const months = useMemo(() => closeMonthOptions(fy), [fy])
+
+  if (!reading) {
+    return (
+      <Card pad={false}>
+        <div className="au-note-box" style={{ border: 0, background: 'transparent' }}>
+          <Icon name={loading ? 'clock' : 'alert'} size={14} />
+          <span>{loading
+            ? `Reading ${monthLabel(month)} — the documents, the journal, the order registers and the filings register for that window.`
+            : `${month} is not a month this register can read. Pick one of the twelve above.`}</span>
+        </div>
+      </Card>
+    )
+  }
+
+  const state = CLOSE_STATE_META[reading.state]
+  const sealView = SEAL_VIEW_META[reading.seal.view]
+  const visibleReturns = reading.returns.filter(t =>
+    matchesAny(search, [t.form, t.label, t.status, t.due, t.filedOn, String(t.statedTax)]))
+  const visibleEvents = [...reading.trail.about, ...reading.trail.acts].filter(e =>
+    matchesAny(search, [EVENT_META[e.kind].label, e.ref, e.target, e.actor, e.note, e.date]))
+  const canSeal = reading.window.ended && reading.seal.view === 'open'
+
+  return (
+    <>
+      {/* The subject is named before its totals: a reading always says which window it read. */}
+      <div className="au-close-pick">
+        <div className="au-yearpick">
+          <button type="button" className="au-ybtn" aria-label="Previous financial year"
+            onClick={() => { const m = closeMonthOptions(fy - 1)[0]; if (m) onMonth(m.month) }}>
+            <Icon name="chevron-left" size={16} />
+          </button>
+          <span className="au-year-label">FY {fyLabel(fy)} · months</span>
+          <button type="button" className="au-ybtn" aria-label="Next financial year"
+            onClick={() => { const m = closeMonthOptions(fy + 1)[0]; if (m) onMonth(m.month) }}>
+            <Icon name="chevron-right" size={16} />
+          </button>
+        </div>
+        <div className="au-months">
+          {months.map(m => {
+            const chosen = m.month === month
+            return (
+              <button key={m.month} type="button"
+                className={`au-mchip ${chosen ? 'is-chosen' : ''}`}
+                title={m.ended ? 'Read this close' : 'Still running — a close can be read, but only an ended period can be sealed'}
+                aria-pressed={chosen}
+                onClick={() => onMonth(m.month)}>
+                {m.label.replace(/\s\d{4}$/, '')}
+                <span className="au-mchip-year">{m.ended ? m.month.slice(0, 4) : `${m.month.slice(0, 4)} · open`}</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      <Card pad={false} className="au-integrity">
+        <div className="au-integrity-body">
+          <span className={`au-seal-dot ${dotClass(state.tone)}`}>
+            <Icon name={STATE_GLYPH[reading.state] ?? 'clock'} size={18} strokeWidth={2.4} />
+          </span>
+          <div className="au-integrity-text">
+            <div className="au-integrity-head"><strong>{reading.headline}</strong></div>
+            <p>{reading.why}</p>
+            <p>
+              Read on <span className="au-mono">{reading.window.today}</span> across{' '}
+              <span className="au-mono">{reading.window.from}</span> → <span className="au-mono">{reading.window.to}</span>{' '}
+              — one month of this shop’s documents, journal, order registers, filings register and trail. It is not the company’s
+              balance sheet, not a return, and not the figure a wider statement prints: the same derivations, a narrower window.
+            </p>
+          </div>
+          <div className="au-integrity-side">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
+              <Badge tone={state.tone} dot={false}>{state.label}</Badge>
+              <Badge tone={sealView.tone} dot={false}>{sealView.label}</Badge>
+              {canSeal && <Button size="sm" icon="lock" onClick={onSeal}>Seal this period</Button>}
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {reading.money.loaded ? (
+        <div className="au-stats">
+          <StatCard label="Revenue billed" value={reading.money.revenue} icon="trend" tone="blue"
+            sub={`${reading.counts.invoices} invoice${reading.counts.invoices === 1 ? '' : 's'}${reading.counts.cancelledInvoices ? ` · ${reading.counts.cancelledInvoices} cancelled` : ''}`} delay={0} />
+          <StatCard label="Purchases" value={reading.money.purchases} icon="bag" tone="amber"
+            sub={`${reading.counts.bills} bill${reading.counts.bills === 1 ? '' : 's'} dated here`} delay={60} />
+          <StatCard label="Expenses" value={reading.money.expenses} icon="wallet" tone="red"
+            sub={`${reading.counts.expenses} expense${reading.counts.expenses === 1 ? '' : 's'} dated here`} delay={120} />
+          <StatCard label="Net for the window" value={reading.money.netProfit}
+            icon={reading.money.netProfit >= 0 ? 'check' : 'arrow-down'} tone={reading.money.netProfit >= 0 ? 'green' : 'red'}
+            sub={`Journal: ${reading.money.journalEntries} posting${reading.money.journalEntries === 1 ? '' : 's'}, ${reading.money.journalTouched} line${reading.money.journalTouched === 1 ? '' : 's'} moved`}
+            delay={180} />
+        </div>
+      ) : (
+        <div className="au-note-box">
+          <Icon name="clock" size={14} />
+          <span><strong>No money is printed.</strong> The page has no document rows for this window yet — an empty fetch, not an
+            empty month. The seal’s answer above is still real; the figures are simply not read.</span>
+        </div>
+      )}
+
+      <div className="au-bounds">
+        <div className="au-bounds-col">
+          <SectionTitle icon="alert">What is still moving in it</SectionTitle>
+          {reading.findings.length === 0
+            ? <div className="au-note-box"><Icon name="check" size={14} /><span>
+              {reading.state === 'in-progress'
+                ? 'Nothing dated here is left draft, unbilled or unfiled — while the month is still running, that is a snapshot, not a close.'
+                : 'Nothing dated here is left draft, unbilled or unfiled. The period’s own paper is finished; the seal’s decision is the only thing left.'}
+            </span></div>
+            : (
+              <div className="au-find-list">
+                {reading.findings.map(f => (
+                  <div key={f.key} className="au-find">
+                    <div className="au-find-head">
+                      <Icon name="pause" size={13} />
+                      <span>{f.label}</span>
+                      {f.amount > 0 && <span className="au-find-take">₹{formatINR(f.amount)}</span>}
+                    </div>
+                    <div className="au-find-why">{f.detail}</div>
+                    <Link href={f.href} className="au-find-link">Open the register →</Link>
+                  </div>
+                ))}
+              </div>
+            )}
+          <p className="au-bounds-note">
+            Money that moved and money waiting: <strong>₹{formatINR(reading.money.received)}</strong> received and{' '}
+            <strong>₹{formatINR(reading.money.paid)}</strong> paid with a date inside the window, and{' '}
+            <strong>₹{formatINR(reading.money.outstanding)}</strong> still outstanding on the invoices this window raised. The journal
+            contributed {reading.money.journalEntries} entr{reading.money.journalEntries === 1 ? 'y' : 'ies'} and{' '}
+            {reading.money.journalLegs} leg{reading.money.journalLegs === 1 ? '' : 's'} to the figures above, through the same fold the
+            statements read. A payment dated after the window settles what the window raised without touching it, so the outstanding
+            line is the books reading themselves today, not the last day of the period.
+          </p>
+        </div>
+        <div className="au-bounds-col">
+          <SectionTitle icon="x">What this reading is not</SectionTitle>
+          {reading.boundaries.map(b => (
+            <div key={b} className="au-fact"><Icon name="x" size={13} strokeWidth={2.2} /><span>{b}</span></div>
+          ))}
+        </div>
+      </div>
+
+      {reading.returns.length > 0 && (
+        <Card pad={false} style={{ marginBottom: '1rem' }}>
+          <div className="au-head au-event-row">
+            <span>Form</span><span>Period</span><span>Status</span><span>Due</span><span>Filed</span><span>Tax as transcribed</span>
+          </div>
+          {visibleReturns.map(t => (
+            <div key={`${t.form}#${t.period}`} className="au-event-row is-row">
+              <span className="au-ev-what"><Link href={`/gst/filings?q=${encodeURIComponent(t.period)}`} className="au-door-link">{t.form.toUpperCase()}</Link></span>
+              <span className="au-ev-what"><span className="au-ev-ref">{t.label}</span><span className="au-ev-ref">covers the {t.touches}</span></span>
+              <span><Badge tone={t.status === 'not_filed' ? 'amber' : t.status === 'nil' ? 'grey' : 'green'} dot={false}>{t.status.replace('_', ' ')}</Badge></span>
+              <span className="au-ev-when">{t.due ? formatDateIN(t.due) : '—'}</span>
+              <span className="au-ev-by">{t.filedOn ? formatDateIN(t.filedOn) : '—'}</span>
+              <span className="au-ev-note">₹{formatINR(t.statedTax)}</span>
+            </div>
+          ))}
+          {visibleReturns.length === 0 && (
+            <div className="au-event-row is-row"><span className="au-ev-note" style={{ gridColumn: '1 / -1' }}>No return covering this period matches the search.</span></div>
+          )}
+        </Card>
+      )}
+
+      {reading.trail.about.length + reading.trail.acts.length > 0 && (
+        <Card pad={false}>
+          <div className="au-head au-event-row">
+            <span>#</span><span>Event</span><span>When</span><span>About</span><span>By</span><span>Detail</span>
+          </div>
+          {visibleEvents.map(e => <EventRow key={e.id} e={e} />)}
+          {visibleEvents.length === 0 && (
+            <div className="au-event-row is-row"><span className="au-ev-note" style={{ gridColumn: '1 / -1' }}>Nothing on the trail about this period matches the search.</span></div>
+          )}
+        </Card>
+      )}
+    </>
+  )
+}
+
+function matchesView(s: PeriodSeal, tab: Tab): boolean {  // The seals tab shows every seal (standing first, released after); the trail tab has no seal rows.
   return tab === 'seals' ? true : s.released_at === null
 }
 
