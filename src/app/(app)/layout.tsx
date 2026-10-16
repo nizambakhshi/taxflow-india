@@ -114,7 +114,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <div style={{
               display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: '10px',
               fontSize: '10px', color: 'var(--brand-dark)', background: 'var(--brand-soft)',
-              padding: '3px 8px', borderRadius: '99px', fontFamily: 'ui-monospace, monospace',
+              padding: '3px 8px', borderRadius: '99px', fontFamily: 'var(--mono)',
               fontWeight: 600, letterSpacing: '0.02em'
             }}>
               <span style={{ width: 5, height: 5, borderRadius: 99, background: 'var(--green)' }} />
@@ -257,7 +257,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             }}>
               <div style={{ fontWeight: 700, color: 'var(--ink)', fontSize: '14px' }}>{orgName}</div>
               <div style={{ fontSize: '12px', color: 'var(--muted)' }}>{userEmail}</div>
-              {gstin && <div style={{ fontSize: '11px', color: 'var(--faint)', fontFamily: 'monospace', marginTop: 2 }}>{gstin}</div>}
+              {gstin && <div style={{ fontSize: '11px', color: 'var(--faint)', fontFamily: 'var(--mono)', marginTop: 2 }}>{gstin}</div>}
             </div>
 
             {NAV_ITEMS.map(section => (

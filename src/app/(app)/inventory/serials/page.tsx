@@ -883,7 +883,7 @@ function SerialsPageInner() {
         .sr-where { color: var(--ink-2); overflow-wrap: anywhere; }
         .sr-sub { font-size: 11px; color: var(--faint); margin-top: 2px; }
         .sr-sub-red { color: var(--red); font-weight: 600; }
-        .sr-mono { font-family: ui-monospace, Menlo, monospace; }
+        .sr-mono { font-family: var(--mono); }
         .sr-num { font-variant-numeric: tabular-nums; color: var(--ink-2); }
         .sr-dim { opacity: 0.72; }
         .sr-actions { display: flex; gap: 6px; }
@@ -914,7 +914,7 @@ function SerialsPageInner() {
         .sr-hintline { font-size: 11.5px; color: var(--muted); font-style: normal; }
         .sr-hintline.is-bad { color: var(--red); font-weight: 600; }
         .sr-locked { background: var(--surface-2); color: var(--muted); }
-        .sr-area { resize: vertical; min-height: 120px; font-family: ui-monospace, Menlo, monospace;
+        .sr-area { resize: vertical; min-height: 120px; font-family: var(--mono);
           font-size: 12px; line-height: 1.7; letter-spacing: 0.02em; }
 
         .sr-note-inline { display: flex; align-items: flex-start; gap: 6px; padding: 8px 12px; border-radius: 8px;

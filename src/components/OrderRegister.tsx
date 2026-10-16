@@ -720,7 +720,7 @@ function OrderRegisterInner({ kind }: { kind: OrderKind }) {
         .ob-party { display: flex; flex-direction: column; gap: 2px; color: var(--ink); min-width: 0; }
         .ob-sub { font-size: 11px; color: var(--faint); }
         .ob-faint { opacity: 0.85; }
-        .ob-mono { font-family: ui-monospace, Menlo, monospace; }
+        .ob-mono { font-family: var(--mono); }
         .ob-amount { color: var(--ink); font-weight: 650; }
         .ob-dim { opacity: 0.72; }
         .ob-foot { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 11.5px;

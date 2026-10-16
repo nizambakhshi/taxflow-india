@@ -554,7 +554,7 @@ export default function BankMatchingPage() {
 
         .bm-import { margin-bottom: 1rem; }
         .bm-import-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 22px; }
-        .bm-textarea { width: 100%; min-height: 168px; margin-top: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        .bm-textarea { width: 100%; min-height: 168px; margin-top: 10px; font-family: var(--mono);
           font-size: 11.5px; line-height: 1.5; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line);
           border-radius: var(--radius-sm); padding: 10px 11px; outline: none; resize: vertical; }
         .bm-textarea:focus { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-ring); background: var(--surface); }
@@ -579,7 +579,7 @@ export default function BankMatchingPage() {
         .bm-bal { font-style: normal; font-size: 10.5px; color: var(--faint); font-weight: 500; }
         .bm-line { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
         .bm-narr { color: var(--ink); overflow-wrap: anywhere; }
-        .bm-ref { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--faint); }
+        .bm-ref { font-family: var(--mono); font-size: 11px; color: var(--faint); }
         .bm-faint { color: var(--faint); }
         .bm-in { color: var(--green); font-weight: 650; }
         .bm-out { color: var(--red); font-weight: 650; }
@@ -615,7 +615,7 @@ export default function BankMatchingPage() {
         .bm-cols { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
         .bm-chip { font-size: 10.5px; color: var(--muted); background: var(--surface); border: 1px solid var(--line);
           border-radius: 99px; padding: 1px 8px; }
-        .bm-code { font-family: ui-monospace, Menlo, monospace; background: var(--slate-soft); border-radius: 4px; padding: 0 4px; }
+        .bm-code { font-family: var(--mono); background: var(--slate-soft); border-radius: 4px; padding: 0 4px; }
 
         .bm-how { margin-top: 1rem; }
         .bm-how-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 20px; align-items: start; }

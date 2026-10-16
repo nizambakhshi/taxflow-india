@@ -449,7 +449,7 @@ function CustomersPageInner() {
         .cu-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
         .cu-name-main { color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
         .cu-sub { font-size: 11px; color: var(--faint); overflow-wrap: anywhere; }
-        .cu-mono { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; color: var(--ink-2); overflow-wrap: anywhere; }
+        .cu-mono { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); overflow-wrap: anywhere; }
         .cu-contact { display: flex; flex-direction: column; gap: 2px; color: var(--ink-2); min-width: 0; }
         .cu-dim { opacity: 0.62; }
         .cu-flag { font-size: 10.5px; color: var(--amber); margin-top: 3px; }
@@ -472,7 +472,7 @@ function CustomersPageInner() {
         .cu-field { display: flex; flex-direction: column; gap: 4px; }
         .cu-field > span { font-size: 12px; font-weight: 550; color: var(--ink-2); }
         .cu-textarea { min-height: 60px; resize: vertical; }
-        .cu-mono-input { font-family: ui-monospace, Menlo, monospace; letter-spacing: 0.03em; }
+        .cu-mono-input { font-family: var(--mono); letter-spacing: 0.03em; }
         .cu-note { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; color: var(--ink-2);
           background: var(--amber-soft); border-radius: var(--radius-sm); padding: 10px 12px; }
         .cu-note svg { color: var(--amber); flex-shrink: 0; margin-top: 1px; }

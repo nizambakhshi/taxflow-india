@@ -477,7 +477,7 @@ export default function InvoiceDetailPage() {
                   )}
                   {invoice.customer_gstin && (
                     <div><strong>GSTIN:</strong>{' '}
-                      <span style={{ fontFamily: 'monospace' }}>{invoice.customer_gstin}</span>
+                      <span style={{ fontFamily: 'var(--mono)' }}>{invoice.customer_gstin}</span>
                     </div>
                   )}
                 </div>
@@ -509,7 +509,7 @@ export default function InvoiceDetailPage() {
                       )}
                       {invoice.customer_gstin && (
                         <div><strong>GSTIN:</strong>{' '}
-                          <span style={{ fontFamily: 'monospace' }}>{invoice.customer_gstin}</span>
+                          <span style={{ fontFamily: 'var(--mono)' }}>{invoice.customer_gstin}</span>
                         </div>
                       )}
                     </>
@@ -568,7 +568,7 @@ export default function InvoiceDetailPage() {
                         <div style={{ fontSize: '9px', color: '#555' }}>{item.item_description}</div>
                       )}
                     </td>
-                    <td style={td({ fontFamily: 'monospace' })}>{item.hsn_sac || '—'}</td>
+                    <td style={td({ fontFamily: 'var(--mono)' })}>{item.hsn_sac || '—'}</td>
                     <td style={td()}>
                       {Number(item.quantity).toFixed(2)}<br />
                       <span style={{ fontSize: '9px', color: '#555' }}>{item.unit}</span>

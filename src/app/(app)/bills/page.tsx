@@ -602,7 +602,7 @@ function BillsPageInner() {
               <div>
                 <label style={labelStyle}>Vendor GSTIN</label>
                 <input
-                  style={{ ...inputStyle, background: '#f8fafc', fontFamily: 'monospace' }}
+                  style={{ ...inputStyle, background: '#f8fafc', fontFamily: 'var(--mono)' }}
                   value={vendorGstin} readOnly placeholder="Auto-filled" />
               </div>
             </div>

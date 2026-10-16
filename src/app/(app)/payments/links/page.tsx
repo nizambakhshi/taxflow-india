@@ -471,7 +471,7 @@ function PaymentLinksPageInner() {
         .pl-modal .pl-field { width: 100%; }
         .pl-link-row { display: flex; gap: 8px; align-items: flex-start; }
         .pl-link { flex: 1; min-width: 0; color: var(--ink-2); background: var(--surface-2);
-          font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; word-break: break-all; }
+          font-family: var(--mono); font-size: 11.5px; word-break: break-all; }
         .pl-link-row .pl-field { flex: 1; }
         .pl-text { resize: vertical; line-height: 1.55; font-family: inherit; font-size: 13px; }
         .pl-modal .pl-alert { width: 100%; margin-bottom: 0; }

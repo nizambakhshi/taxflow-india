@@ -744,7 +744,7 @@ export default function NewInvoicePage() {
         .ni-field { display: flex; flex-direction: column; gap: 4px; }
         .ni-field > span { font-size: 12px; font-weight: 550; color: var(--ink-2); }
         .ni-lock { background: var(--surface-2); font-weight: 600; }
-        .ni-mono { font-family: ui-monospace, monospace; }
+        .ni-mono { font-family: var(--mono); }
         .ni-area { height: 70px; resize: vertical; }
 
         .ni-seller-name { font-weight: 650; font-size: 15px; color: var(--ink); }

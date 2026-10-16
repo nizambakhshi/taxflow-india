@@ -1368,7 +1368,7 @@ function JobWorkPageInner() {
         .jw-right { text-align: right; justify-content: flex-end; }
         .jw-num { font-variant-numeric: tabular-nums; color: var(--ink-2); }
         .jw-num.is-hot { color: var(--red); font-weight: 650; }
-        .jw-mono { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; }
+        .jw-mono { font-family: var(--mono); font-size: 11.5px; }
         .jw-sub { font-size: 11px; color: var(--faint); }
         .jw-name { font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
         .jw-blank { color: var(--faint); font-weight: 550; font-size: 11px; }

@@ -606,7 +606,7 @@ function BusinessPageInner() {
         .bu-foot { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap;
           font-size: 11.5px; color: var(--faint); margin-top: 18px; }
         .bu-foot-links { display: flex; gap: 12px; flex-wrap: wrap; }
-        .bu-mono { font-family: ui-monospace, Menlo, monospace; font-size: 0.94em; }
+        .bu-mono { font-family: var(--mono); font-size: 0.94em; }
 
         .bu-scrim { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); display: flex;
           align-items: center; justify-content: center; padding: 1rem; z-index: 100; }

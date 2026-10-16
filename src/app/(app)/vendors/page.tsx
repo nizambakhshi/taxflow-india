@@ -409,7 +409,7 @@ function VendorsPageInner() {
         .vd-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
         .vd-name-main { color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
         .vd-sub { font-size: 11px; color: var(--faint); overflow-wrap: anywhere; }
-        .vd-mono { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; color: var(--ink-2); overflow-wrap: anywhere; }
+        .vd-mono { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); overflow-wrap: anywhere; }
         .vd-contact { display: flex; flex-direction: column; gap: 2px; color: var(--ink-2); min-width: 0; }
         .vd-dim { opacity: 0.62; }
         .vd-flag { font-size: 10.5px; color: var(--amber); margin-top: 3px; }
@@ -431,7 +431,7 @@ function VendorsPageInner() {
         .vd-grid-3 { display: grid; grid-template-columns: 1fr 1.3fr 0.8fr; gap: 12px; }
         .vd-field { display: flex; flex-direction: column; gap: 4px; }
         .vd-field > span { font-size: 12px; font-weight: 550; color: var(--ink-2); }
-        .vd-mono-input { font-family: ui-monospace, Menlo, monospace; letter-spacing: 0.03em; }
+        .vd-mono-input { font-family: var(--mono); letter-spacing: 0.03em; }
         .vd-note { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; color: var(--ink-2);
           background: var(--amber-soft); border-radius: var(--radius-sm); padding: 10px 12px; }
         .vd-note svg { color: var(--amber); flex-shrink: 0; margin-top: 1px; }

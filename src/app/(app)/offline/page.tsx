@@ -255,7 +255,7 @@ function OfflinePageInner() {
           font-weight: 650; color: var(--faint); text-transform: uppercase; letter-spacing: 0.05em; }
         .of-right { text-align: right; }
         .of-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-        .of-mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--ink);
+        .of-mono { font-family: var(--mono); font-size: 12px; color: var(--ink);
           font-weight: 600; overflow-wrap: anywhere; }
         .of-sub { font-size: 11px; color: var(--faint); }
         .of-amt { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink); }

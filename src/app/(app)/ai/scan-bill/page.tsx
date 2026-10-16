@@ -549,7 +549,7 @@ export default function ScanBillPage() {
                   onChange={e => setPasteText(e.target.value)}
                   rows={8}
                   placeholder={'Paste what the bill says — description, HSN, qty, rate, GST and totals.'}
-                  style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12 }}
+                  style={{ fontFamily: 'var(--mono)', fontSize: 12 }}
                 />
                 <Button
                   size="sm"

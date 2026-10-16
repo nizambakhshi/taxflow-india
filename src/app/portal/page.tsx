@@ -168,14 +168,14 @@ export default function PortalPage() {
           gap: 14px; flex-wrap: wrap; padding: 0 4px;
         }
         .pt-biz { font-size: 24px; font-weight: 750; letter-spacing: -0.025em; color: var(--ink); line-height: 1.15; }
-        .pt-gstin { font-family: ui-monospace, monospace; font-size: 12px; color: var(--muted); margin-top: 4px; letter-spacing: 0.03em; }
+        .pt-gstin { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-top: 4px; letter-spacing: 0.03em; }
         .pt-head-for { text-align: right; }
         .pt-k {
           font-size: 10.5px; font-weight: 700; letter-spacing: 0.09em;
           text-transform: uppercase; color: var(--faint);
         }
         .pt-v { font-size: 15px; font-weight: 650; color: var(--ink); margin-top: 3px; }
-        .pt-sub { font-family: ui-monospace, monospace; font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+        .pt-sub { font-family: var(--mono); font-size: 11.5px; color: var(--muted); margin-top: 2px; }
 
         /* ── outstanding hero ─ */
         .pt-hero {
@@ -231,7 +231,7 @@ export default function PortalPage() {
           gap: 12px; align-items: center;
         }
         .pt-dot { width: 6px; height: 6px; border-radius: 99px; display: inline-block; flex: none; }
-        .pt-doc { font-family: ui-monospace, monospace; font-size: 12.5px; color: var(--ink-2); }
+        .pt-doc { font-family: var(--mono); font-size: 12.5px; color: var(--ink-2); }
         .pt-paycell { text-align: right; }
         .pt-pay {
           display: inline-block; font-size: 11.5px; font-weight: 700;

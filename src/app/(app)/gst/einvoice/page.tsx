@@ -790,7 +790,7 @@ export default function EInvoicePage() {
         .ef-alert.is-error { background: var(--red-soft); color: #b91c1c; }
         .ef-alert.is-success { background: var(--green-soft); color: #15803d; }
         .ef-alert code {
-          font-family: ui-monospace, Menlo, monospace; font-size: 11px;
+          font-family: var(--mono); font-size: 11px;
           background: var(--surface); padding: 1px 5px; border-radius: 4px;
         }
 
@@ -819,7 +819,7 @@ export default function EInvoicePage() {
         .ef-lead strong, .ef-buyer strong { display: block; font-size: 12.5px; font-weight: 600; color: var(--ink); }
         .ef-lead em, .ef-buyer em {
           display: block; font-style: normal; font-size: 11px; color: var(--faint);
-          font-family: ui-monospace, Menlo, monospace;
+          font-family: var(--mono);
         }
         .ef-doc { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
         .ef-doc em { font-style: normal; font-size: 11px; color: var(--muted); }
@@ -828,7 +828,7 @@ export default function EInvoicePage() {
           font-family: inherit; background: none; border: none; padding: 0; color: var(--faint);
         }
         .ef-actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
-        .ef-mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; word-break: break-all; }
+        .ef-mono { font-family: var(--mono); font-size: 12px; word-break: break-all; }
         .ef-warn-text { font-size: 11.5px; color: #b45309; }
 
         .ef-scrim {
@@ -858,7 +858,7 @@ export default function EInvoicePage() {
         .ef-json {
           margin: 0; padding: 14px 16px; max-height: 46vh; overflow: auto;
           background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm);
-          font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; line-height: 1.6;
+          font-family: var(--mono); font-size: 11.5px; line-height: 1.6;
           color: var(--ink-2); white-space: pre; tab-size: 2;
         }
         .ef-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }

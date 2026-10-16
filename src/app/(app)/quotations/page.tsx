@@ -652,7 +652,7 @@ function QuotationsPageInner() {
               <div style={{ marginBottom: '1rem' }}>
                 <div style={{ fontSize: '10px', fontWeight: '700', color: '#94a3b8', marginBottom: '4px', textTransform: 'uppercase' as const }}>Bill To</div>
                 <div style={{ fontWeight: '600' }}>{selectedQuotation.customer_name}</div>
-                {selectedQuotation.customer_gstin && <div style={{ color: '#374151', fontFamily: 'monospace' }}>GSTIN: {selectedQuotation.customer_gstin}</div>}
+                {selectedQuotation.customer_gstin && <div style={{ color: '#374151', fontFamily: 'var(--mono)' }}>GSTIN: {selectedQuotation.customer_gstin}</div>}
                 {selectedQuotation.customer_address && <div style={{ color: '#64748b' }}>{selectedQuotation.customer_address}</div>}
               </div>
 
@@ -674,7 +674,7 @@ function QuotationsPageInner() {
                     <tr key={item.id} style={{ background: idx % 2 === 0 ? 'white' : '#fafafa' }}>
                       <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', fontSize: '11px' }}>{idx + 1}</td>
                       <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', fontSize: '11px', fontWeight: '500' }}>{item.item_name}</td>
-                      <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', fontSize: '11px', fontFamily: 'monospace' }}>{item.hsn_sac || '—'}</td>
+                      <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', fontSize: '11px', fontFamily: 'var(--mono)' }}>{item.hsn_sac || '—'}</td>
                       <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', fontSize: '11px' }}>{item.quantity} {item.unit}</td>
                       <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', fontSize: '11px', textAlign: 'right' as const }}>₹{formatINR(item.rate)}</td>
                       <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', fontSize: '11px', textAlign: 'right' as const }}>₹{formatINR(item.taxable_value)}</td>

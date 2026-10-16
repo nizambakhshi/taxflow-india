@@ -1341,7 +1341,7 @@ function TallyPageInner() {
         .tb-drag .tf-card { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
         .tb-load { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 24px; }
         .tb-load-main { display: flex; flex-direction: column; min-width: 0; }
-        .tb-textarea { width: 100%; min-height: 180px; margin-top: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        .tb-textarea { width: 100%; min-height: 180px; margin-top: 10px; font-family: var(--mono);
           font-size: 11.5px; line-height: 1.55; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line);
           border-radius: var(--radius-sm); padding: 10px 11px; outline: none; resize: vertical; }
         .tb-textarea:focus { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-ring); background: var(--surface); }
@@ -1354,7 +1354,7 @@ function TallyPageInner() {
         .tb-points { margin: 0 0 10px; padding-left: 16px; display: flex; flex-direction: column; gap: 7px; }
         .tb-points li { font-size: 12px; color: var(--muted); line-height: 1.55; }
         .tb-points strong { color: var(--ink-2); font-weight: 650; }
-        .tb-points em { font-style: normal; color: var(--ink-2); font-family: ui-monospace, Menlo, monospace; font-size: 11px; }
+        .tb-points em { font-style: normal; color: var(--ink-2); font-family: var(--mono); font-size: 11px; }
 
         .tb-filebar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--muted);
           background: var(--surface-2); border: 1px solid var(--line-soft); border-radius: 10px; padding: 9px 13px; margin-bottom: 12px; }
@@ -1400,7 +1400,7 @@ function TallyPageInner() {
           background: none; border: none; cursor: pointer; padding: 0; text-align: left; font-weight: 650; min-width: 0; }
         .tb-open:hover { color: var(--brand); }
         .tb-sub { font-size: 11.5px; color: var(--muted); font-weight: 450; overflow-wrap: anywhere; }
-        .tb-ref { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--faint); overflow-wrap: anywhere; }
+        .tb-ref { font-family: var(--mono); font-size: 11px; color: var(--faint); overflow-wrap: anywhere; }
         .tb-rupees { font-variant-numeric: tabular-nums; font-weight: 650; color: var(--ink-2); }
         .tb-flags { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--amber); justify-content: flex-end; }
         .tb-dim { opacity: .62; }

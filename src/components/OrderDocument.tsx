@@ -483,7 +483,7 @@ export default function OrderDocument({ kind }: { kind: OrderKind }) {
                   )}
                   {doc.party_gstin && (
                     <div><strong>GSTIN:</strong>{' '}
-                      <span style={{ fontFamily: 'monospace' }}>{doc.party_gstin}</span>
+                      <span style={{ fontFamily: 'var(--mono)' }}>{doc.party_gstin}</span>
                     </div>
                   )}
                   {doc.notes && (
@@ -537,7 +537,7 @@ export default function OrderDocument({ kind }: { kind: OrderKind }) {
                       <td style={td({ textAlign: 'left' as const, paddingLeft: '6px' })}>
                         <span style={{ fontWeight: 500 }}>{line.item_name}</span>
                       </td>
-                      <td style={td({ fontFamily: 'monospace' })}>{line.hsn_sac || '—'}</td>
+                      <td style={td({ fontFamily: 'var(--mono)' })}>{line.hsn_sac || '—'}</td>
                       <td style={td()}>
                         {Number(line.quantity).toFixed(2)}<br />
                         <span style={{ fontSize: '9px', color: 'var(--muted)' }}>{line.unit}</span>

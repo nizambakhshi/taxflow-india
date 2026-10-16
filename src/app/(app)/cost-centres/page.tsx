@@ -960,7 +960,7 @@ function CostCentresPageInner() {
               <label className="cc-field">
                 <span>Its own GSTIN</span>
                 <input className="tf-input" value={editor.centre.gstin} onChange={e => patchEditor({ gstin: e.target.value })}
-                  placeholder="27AAAAA0000A1Z5" style={{ fontFamily: 'ui-monospace, Menlo, monospace' }} />
+                  placeholder="27AAAAA0000A1Z5" style={{ fontFamily: 'var(--mono)' }} />
               </label>
             </div>
 
@@ -1219,7 +1219,7 @@ function CostCentresPageInner() {
         .cc-right { text-align: right; justify-content: flex-end; }
         .cc-num { font-variant-numeric: tabular-nums; color: var(--ink-2); }
         .cc-num.is-hot { color: var(--amber); font-weight: 650; }
-        .cc-mono { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; }
+        .cc-mono { font-family: var(--mono); font-size: 11.5px; }
         .cc-sub { font-size: 10.5px; color: var(--faint); line-height: 1.4; }
         .cc-name { font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
         .cc-what { display: flex; flex-direction: column; gap: 2px; min-width: 0; }

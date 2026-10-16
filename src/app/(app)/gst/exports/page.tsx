@@ -1541,7 +1541,7 @@ function ExportsPageInner() {
         .ex-row.is-dim { opacity: 0.62; }
         .ex-num { font-variant-numeric: tabular-nums; color: var(--ink-2); }
         .ex-num.is-strong { font-weight: 700; color: var(--ink); }
-        .ex-mono { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; color: var(--ink-2); overflow-wrap: anywhere; }
+        .ex-mono { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); overflow-wrap: anywhere; }
         .ex-sub { font-size: 11px; color: var(--faint); line-height: 1.5; }
         .ex-name { font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
         .ex-blank { color: var(--faint); font-weight: 550; font-size: 11px; }

@@ -467,7 +467,7 @@ export default function GSTR1Page() {
         .r1-td.is-right { text-align: right; font-variant-numeric: tabular-nums; }
         .r1-td.is-strong { font-weight: 650; color: var(--ink); }
         .r1-doc { font-weight: 650; color: var(--brand); }
-        .r1-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+        .r1-mono { font-family: var(--mono); font-size: 12px; }
         .r1-dim { color: var(--muted); }
         .r1-foot { background: var(--surface-2); border-bottom: none; }
         .r1-foot .r1-td { color: var(--ink); font-weight: 700; }

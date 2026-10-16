@@ -753,7 +753,7 @@ function GodownsPageInner() {
           font-weight: 650; color: var(--faint); text-transform: uppercase; letter-spacing: 0.05em; }
         .gd-right { text-align: right; justify-content: flex-end; }
         .gd-num { font-variant-numeric: tabular-nums; color: var(--ink-2); }
-        .gd-mono { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; }
+        .gd-mono { font-family: var(--mono); font-size: 11.5px; }
         .gd-sub { font-size: 11px; color: var(--faint); }
         .gd-item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
         .gd-item-name { font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }

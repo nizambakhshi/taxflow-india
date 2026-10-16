@@ -582,7 +582,7 @@ function PayrollPageInner() {
         .pa-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 18px; }
         .pa-help { font-size: 12px; color: var(--muted); line-height: 1.6; margin: 0 0 8px; }
         .pa-help b { color: var(--ink); font-weight: 650; }
-        .pa-text { width: 100%; min-height: 176px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        .pa-text { width: 100%; min-height: 176px; font-family: var(--mono);
           font-size: 11.5px; line-height: 1.5; color: var(--ink-2); background: var(--surface-2);
           border: 1px solid var(--line); border-radius: 11px; padding: 10px 11px; resize: vertical; }
         .pa-text:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-ring); background: var(--surface); }
@@ -597,7 +597,7 @@ function PayrollPageInner() {
           font-size: 11.5px; line-height: 1.55; color: var(--ink-2); }
         .pa-points b { color: var(--ink); font-weight: 650; }
         .pa-marks { display: flex; flex-wrap: wrap; gap: 5px; margin: 0 0 12px; }
-        .pa-mark { font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; font-weight: 700; letter-spacing: .04em;
+        .pa-mark { font-family: var(--mono); font-size: 10.5px; font-weight: 700; letter-spacing: .04em;
           border-radius: 7px; padding: 3px 7px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); }
         .pa-mark-present { color: var(--green); background: var(--green-soft); border-color: color-mix(in srgb, var(--green) 24%, white); }
         .pa-mark-loss { color: var(--red); background: var(--red-soft); border-color: color-mix(in srgb, var(--red) 24%, white); }
@@ -654,7 +654,7 @@ function PayrollPageInner() {
         .pb-thw.is-off span, .pb-thw.is-off b { color: var(--brand); }
         .pb-thw.is-today b { color: var(--ink); }
         .pb-cell { width: 100%; height: 27px; display: grid; place-items: center; padding: 0; min-height: 0;
-          font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 9.5px; font-weight: 700;
+          font-family: var(--mono); font-size: 9.5px; font-weight: 700;
           color: var(--line); background: var(--surface); border: 1px solid var(--line-soft); border-radius: 6px; cursor: pointer; }
         .pb-cell:hover { border-color: var(--brand); color: var(--brand); }
         .pb-cell:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }

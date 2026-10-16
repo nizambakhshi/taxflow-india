@@ -576,7 +576,7 @@ export default function PosPage() {
         .pos-cart { position: sticky; top: 1rem; }
 
         .pos-label { display: block; font-size: 12px; font-weight: 550; color: var(--ink-2); margin-bottom: 4px; }
-        .pos-mono { font-family: ui-monospace, Menlo, monospace; letter-spacing: 0.03em; }
+        .pos-mono { font-family: var(--mono); letter-spacing: 0.03em; }
         .pos-hint { font-size: 11px; color: var(--faint); }
         .pos-link { color: var(--brand); }
 

@@ -278,7 +278,7 @@ export default function LedgerPage() {
                     {selected.overdue > 0 && <Badge tone="red">{formatCompactINR(selected.overdue)} overdue</Badge>}
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
-                    {selected.party.gstin ? <span style={{ fontFamily: 'monospace' }}>{selected.party.gstin} · </span> : null}
+                    {selected.party.gstin ? <span style={{ fontFamily: 'var(--mono)' }}>{selected.party.gstin} · </span> : null}
                     {selected.party.phone || 'no phone on file'}
                     {selected.party.email ? ` · ${selected.party.email}` : ''}
                   </div>
@@ -556,7 +556,7 @@ export default function LedgerPage() {
         .pt-share-field > span { font-size: 12px; font-weight: 550; color: var(--ink-2); }
         .pt-share-linkrow { display: flex; gap: 8px; }
         .pt-share-input {
-          flex: 1; min-width: 0; font-family: ui-monospace, monospace; font-size: 12px;
+          flex: 1; min-width: 0; font-family: var(--mono); font-size: 12px;
           padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px;
           background: var(--surface-2); color: var(--ink-2); outline: none;
         }

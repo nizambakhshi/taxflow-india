@@ -463,7 +463,7 @@ function ProductsPageInner() {
         .pr-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
         .pr-name-main { color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
         .pr-sub { font-size: 11px; color: var(--faint); overflow-wrap: anywhere; }
-        .pr-mono { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; color: var(--ink-2); }
+        .pr-mono { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); }
         .pr-price { font-weight: 650; color: var(--ink); }
         .pr-stock { font-weight: 650; color: var(--ink); }
         .pr-actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
@@ -486,7 +486,7 @@ function ProductsPageInner() {
         .pr-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
         .pr-field > span { font-size: 12px; font-weight: 550; color: var(--ink-2); }
         .pr-textarea { min-height: 60px; resize: vertical; }
-        .pr-mono-input { font-family: ui-monospace, Menlo, monospace; letter-spacing: 0.03em; }
+        .pr-mono-input { font-family: var(--mono); letter-spacing: 0.03em; }
         .pr-sku { display: flex; gap: 6px; align-items: flex-start; }
         .pr-sku-error { font-size: 11px; color: var(--red); }
         .pr-stock-box { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm);

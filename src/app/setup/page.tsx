@@ -376,7 +376,7 @@ export default function SetupPage() {
             <input
               className="tf-input"
               style={{
-                fontFamily: 'ui-monospace, monospace',
+                fontFamily: 'var(--mono)',
                 letterSpacing: '1px',
                 fontSize: '15px',
                 borderColor: gstinError

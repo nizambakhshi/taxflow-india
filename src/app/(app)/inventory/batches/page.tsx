@@ -773,7 +773,7 @@ function BatchesPageInner() {
         .bt-sub { font-size: 11px; color: var(--faint); margin-top: 2px; }
         .bt-sub-red { color: var(--red); }
         .bt-sub-inline { font-size: 11px; color: var(--faint); }
-        .bt-mono { font-family: ui-monospace, Menlo, monospace; }
+        .bt-mono { font-family: var(--mono); }
         .bt-place { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; color: var(--ink-2); }
         .bt-place > svg { color: var(--faint); flex-shrink: 0; }
         .bt-place > .bt-sub { margin-left: 2px; }

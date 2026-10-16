@@ -2943,7 +2943,7 @@ function RecipesPageInner() {
           font-weight: 650; color: var(--faint); text-transform: uppercase; letter-spacing: 0.05em; }
         .rc-right { text-align: right; justify-content: flex-end; }
         .rc-num { font-variant-numeric: tabular-nums; color: var(--ink-2); text-align: right; }
-        .rc-mono { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; }
+        .rc-mono { font-family: var(--mono); font-size: 11.5px; }
         .rc-sub { font-size: 10.5px; color: var(--faint); line-height: 1.45; }
         .rc-item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
         .rc-item-name { font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }

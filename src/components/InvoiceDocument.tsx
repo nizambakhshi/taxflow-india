@@ -94,7 +94,7 @@ export function InvoiceDocument({ invoice, items, org, gstReg, template }: Props
                 <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.02em' }}>{d.sellerName}</div>
                 <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,.78)', marginTop: 3 }}>{d.sellerAddress}</div>
                 <div style={{ display: 'flex', gap: 10, marginTop: 5, fontSize: 10.5, color: 'rgba(255,255,255,.86)', flexWrap: 'wrap' }}>
-                  {d.sellerGstin && <span>GSTIN <b style={{ fontFamily: 'ui-monospace, monospace' }}>{d.sellerGstin}</b></span>}
+                  {d.sellerGstin && <span>GSTIN <b style={{ fontFamily: 'var(--mono)' }}>{d.sellerGstin}</b></span>}
                   {d.phone && <span>{d.phone}</span>}
                   {d.email && <span>{d.email}</span>}
                 </div>
@@ -184,7 +184,7 @@ export function InvoiceDocument({ invoice, items, org, gstReg, template }: Props
                   <div style={{ fontWeight: 600 }}>{it.item_name}</div>
                   {Number(it.discount_amount) > 0 && <div style={{ fontSize: 9.5, color: muted }}>Discount ₹{money(it.discount_amount)}</div>}
                 </td>
-                <td style={{ padding: '8px 10px', fontFamily: 'ui-monospace, monospace', fontSize: 10.5, color: muted }}>{it.hsn_sac || '—'}</td>
+                <td style={{ padding: '8px 10px', fontFamily: 'var(--mono)', fontSize: 10.5, color: muted }}>{it.hsn_sac || '—'}</td>
                 <td style={{ padding: '8px 10px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{Number(it.quantity)} {it.unit || ''}</td>
                 <td style={{ padding: '8px 10px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{money(it.rate)}</td>
                 <td style={{ padding: '8px 10px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{money(it.taxable_value)}</td>
@@ -215,7 +215,7 @@ export function InvoiceDocument({ invoice, items, org, gstReg, template }: Props
             <div style={{ marginTop: 12, padding: '9px 11px', border: `1px ${modern ? 'solid' : 'dashed'} ${line}`, borderRadius: modern ? 9 : 4, fontSize: 10, color: muted, lineHeight: 1.7 }}>
               <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: ink }}>Payment details</div>
               {org?.bank_name && <div>Bank <b style={{ color: ink }}>{org.bank_name}</b></div>}
-              {org?.bank_account_number && <div>A/C <b style={{ fontFamily: 'ui-monospace, monospace', color: ink }}>{org.bank_account_number}</b></div>}
+              {org?.bank_account_number && <div>A/C <b style={{ fontFamily: 'var(--mono)', color: ink }}>{org.bank_account_number}</b></div>}
               {org?.bank_ifsc_code && <div>IFSC <b style={{ color: ink }}>{org.bank_ifsc_code}</b></div>}
               {org?.bank_upi_id && <div>UPI <b style={{ color: ink }}>{org.bank_upi_id}</b></div>}
             </div>

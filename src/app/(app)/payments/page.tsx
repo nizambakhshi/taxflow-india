@@ -622,7 +622,7 @@ function PaymentsPageInner() {
         .pm-doc-number { color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
         .pm-party { color: var(--ink); overflow-wrap: anywhere; }
         .pm-sub { color: var(--muted); font-size: 12px; }
-        .pm-mono { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; color: var(--ink-2); overflow-wrap: anywhere; }
+        .pm-mono { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); overflow-wrap: anywhere; }
         .pm-balance { color: var(--red); font-weight: 650; }
         .pm-amount { color: var(--ink); font-weight: 650; }
         .pm-flag { font-size: 11.5px; color: var(--amber); }
@@ -650,7 +650,7 @@ function PaymentsPageInner() {
         .pm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
         .pm-field { display: flex; flex-direction: column; gap: 4px; }
         .pm-field > span { font-size: 12px; font-weight: 550; color: var(--ink-2); }
-        .pm-mono-input { font-family: ui-monospace, Menlo, monospace; letter-spacing: 0.03em; }
+        .pm-mono-input { font-family: var(--mono); letter-spacing: 0.03em; }
         .pm-save { display: flex; gap: 10px; justify-content: flex-end; margin-top: 2px; }
 
         @media (max-width: 1100px) { .pm-stats { grid-template-columns: 1fr 1fr; } }

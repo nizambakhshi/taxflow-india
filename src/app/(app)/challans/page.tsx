@@ -681,7 +681,7 @@ function ChallansPageInner() {
         .dc-party { display: flex; flex-direction: column; gap: 2px; color: var(--ink); min-width: 0; }
         .dc-sub { font-size: 11px; color: var(--faint); }
         .dc-faint { opacity: 0.85; }
-        .dc-mono { font-family: ui-monospace, Menlo, monospace; }
+        .dc-mono { font-family: var(--mono); }
         .dc-amount { color: var(--ink); font-weight: 650; }
         .dc-dim { opacity: 0.72; }
         .dc-foot { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 11.5px;

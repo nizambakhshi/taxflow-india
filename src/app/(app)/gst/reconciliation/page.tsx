@@ -570,7 +570,7 @@ export default function Gstr2bReconciliationPage() {
         .rc-lead strong { display: block; font-size: 12.5px; font-weight: 600; color: var(--ink); }
         .rc-lead em {
           display: block; font-style: normal; font-size: 11px; color: var(--faint);
-          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-family: var(--mono);
         }
         .rc-diff { font-weight: 700; }
         .rc-diff.is-short { color: var(--red); }

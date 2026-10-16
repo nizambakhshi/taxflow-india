@@ -1255,7 +1255,7 @@ function VaultPageInner() {
         .tfv-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 1.1rem; }
         .tfv-right { text-align: right; }
         .tfv-num { font-variant-numeric: tabular-nums; }
-        .tfv-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; }
+        .tfv-mono { font-family: var(--mono); font-size: 10.5px; }
         .tfv-sub { display: block; font-size: 11px; color: var(--faint); line-height: 1.5; margin-top: 3px; }
         .tfv-sub.is-warn { color: var(--red); font-weight: 600; }
         .tfv-sub.is-inline { display: inline; margin-top: 0; }
@@ -1276,7 +1276,7 @@ function VaultPageInner() {
           font-size: 12px; color: var(--muted); background: var(--surface-2); border: 1px solid var(--line-soft);
           line-height: 1.55; margin-top: 10px; }
         .tfv-note svg { flex-shrink: 0; margin-top: 2px; }
-        .tfv-note code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--ink-2); }
+        .tfv-note code { font-family: var(--mono); font-size: 11px; color: var(--ink-2); }
         .tfv-note.is-hot { color: var(--red); background: var(--red-soft); border-color: color-mix(in srgb, var(--red) 24%, white); }
 
         .tfv-decisions { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
