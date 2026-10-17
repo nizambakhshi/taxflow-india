@@ -788,6 +788,12 @@ export interface Amendment {
   status: AmendmentStatus
   /** The return the correction actually went through, once it has. */
   carried_in: string
+  /**
+   * The day the tax this correction carries actually left the shop's account, as the shop states it.
+   * Rule 88B(2) measures to this date, so it is the one field that stops the clock — and a blank here is
+   * a state the page prints, never a guess (R3-12 shipped the bound precisely because this was missing).
+   */
+  paid_on: string
   notes: string
   actor: string
   created_at: string
@@ -944,6 +950,7 @@ function parseAmendment(raw: unknown): Amendment | null {
     found_on: isDate(a.found_on) ? str(a.found_on) : '',
     status: a.status === 'carried' || a.status === 'lapsed' ? a.status : 'open',
     carried_in: str(a.carried_in),
+    paid_on: isDate(a.paid_on) ? str(a.paid_on) : '',
     notes: str(a.notes),
     actor: str(a.actor),
     created_at: str(a.created_at),
@@ -1287,6 +1294,7 @@ export interface AmendmentDraft {
   found_on?: string
   status?: AmendmentStatus
   carried_in?: string
+  paid_on?: string
   notes?: string
   actor?: string
 }
@@ -1299,6 +1307,20 @@ export function validateAmendment(draft: AmendmentDraft, store: FilingsStore, to
   if (n(draft.taxable) <= 0 && n(draft.tax) <= 0) problems.push('An amendment carries a value or a tax — otherwise nothing is being corrected.')
   if (draft.found_on && !isDate(draft.found_on)) problems.push('The day the mistake was found must be a date.')
   if (draft.found_on && isDate(draft.found_on) && (draft.found_on as string) > today) problems.push('A mistake cannot be found in the future.')
+  // The day the tax was paid is the day rule 88B(2) stops measuring to, so it is held to the same three
+  // tests as the day the mistake was found — and to one more: a payment date on a row that pays nothing
+  // would stop a clock that was never running.
+  if (draft.paid_on && !isDate(draft.paid_on)) problems.push('The day this tax was paid must be a date.')
+  if (draft.paid_on && isDate(draft.paid_on) && (draft.paid_on as string) > today) problems.push('Tax cannot have been paid on a date that has not arrived.')
+  if (draft.paid_on && isDate(draft.paid_on) && isDate(draft.found_on) && (draft.paid_on as string) < (draft.found_on as string)) {
+    problems.push(`Paid on ${draft.paid_on}, before the row says the mistake was found on ${draft.found_on} — the money left before the omission it pays for was known.`)
+  }
+  if (draft.paid_on && draft.effect === 'reduce') {
+    problems.push('A reduction takes tax off what the period owed; nothing left the shop to pay for it, so there is no day it was paid.')
+  }
+  if (draft.paid_on && isDate(draft.paid_on) && n(draft.tax) <= 0) {
+    problems.push('This row states no tax, so there is no payment for a date to stop.')
+  }
   const range = periodRange(draft.period)
   if (range && draft.found_on && isDate(draft.found_on) && (draft.found_on as string) < range.from) {
     problems.push(`A correction of ${periodLabel(draft.period)} cannot have been found on ${draft.found_on}, before the period opened.`)
@@ -1342,6 +1364,7 @@ export function addAmendment(
     found_on: isDate(draft.found_on ?? '') ? (draft.found_on as string) : today,
     status: draft.status ?? existing?.status ?? 'open',
     carried_in: str(draft.carried_in ?? existing?.carried_in).trim(),
+    paid_on: isDate(draft.paid_on ?? existing?.paid_on ?? '') ? str(draft.paid_on ?? existing?.paid_on) : '',
     notes: str(draft.notes ?? existing?.notes).trim(),
     actor: str(draft.actor ?? existing?.actor).trim() || store.settings.actor,
     created_at: existing?.created_at ?? at,
@@ -1357,6 +1380,10 @@ export function addAmendment(
   if (!existing) recordNote(orgId, amendmentTrailNote(amendment, 'added'), amendment.actor)
   else if (existing.status !== amendment.status) {
     recordNote(orgId, amendmentTrailNote(amendment, amendment.status === 'carried' ? 'carried' : 'closed'), amendment.actor)
+  } else if (existing.paid_on !== amendment.paid_on) {
+    // The day a payment left is the day the register stops measuring interest to, so a row that gains or
+    // loses one has changed what it costs — that is a trail line, not a silent edit.
+    recordNote(orgId, amendmentPaidNote(amendment, existing.paid_on), amendment.actor)
   }
   return { ok: true, store: next, amendment, problems: [] }
 }
@@ -1366,8 +1393,28 @@ export function amendmentTrailNote(a: Amendment, action: 'added' | 'carried' | '
   if (action === 'added') {
     return `Amendment logged for ${where}: ${AMENDMENT_META[a.kind].label} — ${a.doc_ref || 'no document named'}, ${a.effect === 'add' ? 'adding' : 'reducing'} ₹${a.taxable.toLocaleString('en-IN')} taxable.`
   }
-  if (action === 'carried') return `Amendment on ${where} (${a.doc_ref || 'document not named'}) carried through ${a.carried_in || 'a return'}.`
+  if (action === 'carried') {
+    return `Amendment on ${where} (${a.doc_ref || 'document not named'}) carried through ${a.carried_in || 'a return'}`
+      + `${isDate(a.paid_on) ? `; the register now holds ${a.paid_on} as the day that tax was paid` : ''}.`
+  }
   return `Amendment on ${where} (${a.doc_ref || 'document not named'}) marked ${a.status}.`
+}
+
+/**
+ * A payment date moving is a money fact: rule 88B(2) measures to it, so the row's cost changes the day it
+ * is written or cleared. Recorded on its own line because the status did not change and the ordinary
+ * trail note would have nothing to say.
+ */
+export function amendmentPaidNote(a: Amendment, was: string): string {
+  const where = periodLabel(a.period)
+  const what = `${where} (${a.doc_ref || 'document not named'})`
+  if (!was && isDate(a.paid_on)) {
+    return `Amendment on ${what}: the day that tax was paid is now ${a.paid_on}. Its interest reads to that day, not to today.`
+  }
+  if (was && !isDate(a.paid_on)) {
+    return `Amendment on ${what}: the payment date ${was} has been cleared. Its interest is read to today as an upper figure again.`
+  }
+  return `Amendment on ${what}: the day that tax was paid moved from ${was || 'nothing'} to ${a.paid_on || 'nothing'}. Its interest reads to the date now on the row.`
 }
 
 export function deleteAmendment(orgId: string, id: string): { ok: boolean; store: FilingsStore; why: string } {
@@ -1542,10 +1589,20 @@ export function openAmendmentsFor(store: FilingsStore, period: string): Amendmen
  * on the whole ₹18,000 from July's due date. So this fold does not reach for the net-cash relief the
  * register cannot see — it prints the gross figure, prints the rule that makes it gross, and prints
  * what it would take to answer the other way.
+ *
+ * The other half of that sentence is the stop date, and it shipped late. R3-12 could only measure "till
+ * the date such tax is paid" up to today, because nothing here held that day, and it said so on the card
+ * and in the boundary. R3-24 took that card as a task: a row can now state the day its tax left, and the
+ * register can also read that day off the GSTR-3B row of the return the correction went through. Where
+ * either date exists the figure is exact and the clock is stopped; where neither does, the ceiling and its
+ * reason are kept exactly as they were, because a bound the shop can see is worth more than a guess it
+ * cannot check.
  */
 export type CostState =
   | 'running'
   | 'carried_undated'
+  | 'stopped'
+  | 'stopped_before_due'
   | 'no_tax_to_run_on'
   | 'reduce_takes_tax_out'
   | 'not_due_yet'
@@ -1554,6 +1611,8 @@ export type CostState =
 export const COST_STATE_META: Record<CostState, { label: string; tone: 'blue' | 'green' | 'red' | 'amber' | 'grey' }> = {
   running: { label: 'Running', tone: 'red' },
   carried_undated: { label: 'Carried, date not on the register', tone: 'amber' },
+  stopped: { label: 'Paid — the clock stopped', tone: 'green' },
+  stopped_before_due: { label: 'Paid before it was due', tone: 'green' },
   no_tax_to_run_on: { label: 'No tax on this row', tone: 'grey' },
   reduce_takes_tax_out: { label: 'Takes tax out', tone: 'green' },
   not_due_yet: { label: 'Not due yet', tone: 'blue' },
@@ -1574,8 +1633,16 @@ export interface AmendmentCost {
   dueOn: string
   /** Whose date that is: the register's own filed row, or rule 61 re-derived for this cadence. */
   dueBasis: string
-  /** Where the clock is read up to. Carried or open, the register holds no payment date, so this is today. */
+  /** Where the clock is read up to. A stopped row reads to the day the tax left; an unstopped one reads to today. */
   readTo: string
+  /** Whether `readTo` is a date the register stands behind (the day of payment) or simply today. */
+  stopped: boolean
+  /** The day this row itself says the tax was paid — blank when the shop has not said it. */
+  paidOnRow: string
+  /** Whose date stopped the clock, in the register's own words, or why nothing could stop it. */
+  paidBasis: string
+  /** Two dates the register holds for the same payment that disagree, printed as a finding — never resolved in silence. */
+  dateConflict: string
   /** Days from the day after the due date to `readTo`; 0 in every state that prints no figure. */
   days: number
   /** The gross tax rule 88B(2) charges on. Kept beside `tax` so a future state can disagree with it. */
@@ -1622,6 +1689,76 @@ function dueToBePaid(
   }
 }
 
+/**
+ * Where the clock stops. Rule 88B(2) measures "till the date such tax is paid", and since R3-24 the
+ * register can answer that question two ways — the day the shop states on the row itself, and the day
+ * the return this correction went through already carries on its own GSTR-3B row. The order is the one
+ * the register can stand behind: the shop's own statement about money that left is the most specific
+ * claim there is, so it wins; the carried-in return is the register's own record and is read when the
+ * row is silent; and when the return gives a filing date but no payment date, the filing day is the
+ * earliest day the tax can have gone in, and is named as exactly that.
+ *
+ * "Nothing" is still a state, not a zero: a row with no stop date reads to today and prints as a
+ * ceiling, which is what R3-12 shipped and is kept whole.
+ */
+export interface StopDate {
+  date: string
+  /** Whose date this is, or why no date could be read — always printed beside the figure. */
+  basis: string
+  /** Which of the register's own answers this is: the row, the carried return, its filing day, or none. */
+  from: 'row' | 'carried_row' | 'carried_filed' | 'none'
+  /** The two dates the register holds that disagree, spelled out. A finding, never a silent preference. */
+  conflict: string
+}
+
+export function stopDate(a: Amendment, store: FilingsStore): StopDate {
+  const onRow = isDate(a.paid_on) ? a.paid_on : ''
+  // The return a correction went through is free text the shop writes. It dates the clock only when it
+  // names a period this register can place — "2026-04", not "the 3B for Apr 2026" — and a name it cannot
+  // parse is reported as such rather than guessed at.
+  const carriedPeriod = parsePeriod(a.carried_in) ? a.carried_in.trim() : null
+  const carried = carriedPeriod
+    ? store.filings.find(f => f.form === 'gstr3b' && f.period === carriedPeriod) ?? null
+    : null
+  const fromReturn = carried && isDate(carried.tax_paid_on) ? carried.tax_paid_on : ''
+  const fromFiling = carried && !fromReturn && isDate(carried.filed_on) ? carried.filed_on : ''
+
+  if (onRow) {
+    const basis = 'the day this row states the tax was paid — written on the correction itself'
+    const conflict = fromReturn && fromReturn !== onRow
+      ? `This row says the tax left on ${onRow}, and ${periodLabel(carriedPeriod!)}'s GSTR-3B row says ${fromReturn}. `
+        + `Both are printed; the figure is measured to the shop's own date.`
+      : ''
+    return { date: onRow, basis, from: 'row', conflict }
+  }
+  if (fromReturn) {
+    return {
+      date: fromReturn,
+      basis: `${periodLabel(carriedPeriod!)}'s GSTR-3B row — the return this correction went through — records its tax paid on ${fromReturn}`,
+      from: 'carried_row',
+      conflict: '',
+    }
+  }
+  if (fromFiling) {
+    return {
+      date: fromFiling,
+      basis: `${periodLabel(carriedPeriod!)}'s GSTR-3B row states no payment date, so the clock stops on the day that return went in — the earliest day the tax can have been paid`,
+      from: 'carried_filed',
+      conflict: '',
+    }
+  }
+  return {
+    date: '',
+    basis: !a.carried_in.trim()
+      ? 'the row is still open and no payment date is on it, so nothing has stopped the clock'
+      : carriedPeriod && !carried
+        ? `no GSTR-3B is on the register for ${periodLabel(carriedPeriod)}, the return this row names, so its payment date cannot be read`
+        : 'the return this correction went through is written in words this register cannot date, and no payment date is on the row',
+    from: 'none',
+    conflict: '',
+  }
+}
+
 /** One amendment against the clock rule 88B(2) puts it on. Reads the register; writes nothing. */
 export function amendmentCost(
   a: Amendment, store: FilingsStore, today: string,
@@ -1629,6 +1766,7 @@ export function amendmentCost(
   const settings = store.settings
   const p = parsePeriod(a.period)
   const { date: dueOn, basis: dueBasis } = dueToBePaid(store, a.period, settings)
+  const stop = stopDate(a, store)
   const foundDays = isDate(a.found_on) && isDate(today) ? Math.max(0, daysBetween(a.found_on, today)) : null
   const cite = 'rule 88B(2) — "the interest shall be calculated on the amount of tax which remains unpaid, '
     + 'for the period starting from the date on which such tax was due to be paid till the date such tax is paid"'
@@ -1636,6 +1774,7 @@ export function amendmentCost(
   const blank = (state: CostState, why: string, extra: Partial<AmendmentCost> = {}): AmendmentCost => ({
     id: a.id, period: a.period, kind: a.kind, doc_ref: a.doc_ref, effect: a.effect, status: a.status,
     tax: a.tax, state, dueOn, dueBasis, readTo: state === 'cannot_tell' ? '' : today,
+    stopped: false, paidOnRow: isDate(a.paid_on) ? a.paid_on : '', paidBasis: stop.basis, dateConflict: stop.conflict,
     days: 0, base: state === 'reduce_takes_tax_out' ? 0 : a.tax, interest: 0, perDay: 0,
     foundDays, why, citation: cite, ...extra,
   })
@@ -1655,6 +1794,27 @@ export function amendmentCost(
     return blank('cannot_tell',
       `Cannot tell what the wait has cost. ${dueBasis}. No start date is a finding, not a zero.`)
   }
+  // Rule 88B(2) measures "till the date such tax is paid". Where the register holds that day — on the row
+  // itself, or on the GSTR-3B row of the return the correction went through — the clock stops and the
+  // figure is exact: an open row whose tax has left is not running, and a carried row with a payment date
+  // is no longer a ceiling. Where it does not, R3-12's upper bound is kept whole.
+  if (isDate(stop.date)) {
+    const ran = daysBetween(dueOn, stop.date)
+    const days = Math.max(0, ran)
+    const interest = round2(a.tax * (INTEREST_PCT / 100) * (days / 365))
+    const why = ran > 0
+      ? `Interest under section 50 on ₹${a.tax.toLocaleString('en-IN')} of tax that was due on ${dueOn} and paid on `
+        + `${stop.date} — ${plural(days, 'day')} between them, read to the day the money left. ${stop.basis}.`
+        + (a.status === 'open' ? ` The row is still open, so its window is still closing even though this clock is not.` : '')
+      : `Nothing ran. This row's tax was paid on ${stop.date}, on or before the ${dueOn} it was owed — the figure is nil, `
+        + `and the nil here is a reading, not a blank. ${stop.basis}.`
+    return {
+      id: a.id, period: a.period, kind: a.kind, doc_ref: a.doc_ref, effect: a.effect, status: a.status,
+      tax: a.tax, state: ran > 0 ? 'stopped' : 'stopped_before_due', dueOn, dueBasis, readTo: stop.date,
+      stopped: true, paidOnRow: isDate(a.paid_on) ? a.paid_on : '', paidBasis: stop.basis, dateConflict: stop.conflict,
+      days, base: a.tax, interest, perDay: 0, foundDays, why, citation: cite,
+    }
+  }
   // Interest runs "from the day succeeding the day on which such tax was due" — section 50(2).
   const clockStart = dueOn
   const elapsed = daysBetween(clockStart, today)
@@ -1671,12 +1831,14 @@ export function amendmentCost(
     ? `Interest under section 50 on ₹${a.tax.toLocaleString('en-IN')} of tax left unpaid since ${dueOn} — `
       + `${plural(days, 'day')} so far, read to today because nothing has been paid on this row yet. `
       + `It adds about ₹${perDay.toLocaleString('en-IN')} for every further day it stays open.`
-    : `Recorded as carried${a.carried_in ? ` through ${a.carried_in}` : ''}, but this register holds no date the tax `
-      + `was paid, so the clock cannot be stopped honestly. Read to today (${plural(days, 'day')}) as an upper figure — `
-      + `the real one is lower by however long ago it actually went in.`
+    : `Recorded as carried${a.carried_in ? ` through ${a.carried_in}` : ''}, and the day this tax left is not on the `
+      + `register — ${stop.basis} — so the clock cannot be stopped honestly. Read to today (${plural(days, 'day')}) as `
+      + `an upper figure: the real one is lower by however long ago it actually went in, and writing that day on the `
+      + `row turns it into a figure.`
   return {
     id: a.id, period: a.period, kind: a.kind, doc_ref: a.doc_ref, effect: a.effect, status: a.status,
     tax: a.tax, state: still ? 'running' : 'carried_undated', dueOn, dueBasis, readTo: today,
+    stopped: false, paidOnRow: isDate(a.paid_on) ? a.paid_on : '', paidBasis: stop.basis, dateConflict: stop.conflict,
     days, base: a.tax, interest, perDay, foundDays, why, citation: cite,
   }
 }
@@ -1686,10 +1848,19 @@ export function amendmentCosts(store: FilingsStore, today: string): AmendmentCos
 }
 
 export interface CostTotals {
-  /** Only `running` and `carried_undated` add up; the other four states print reasons, not money. */
+  /** Stopped, running and undated rows add up; the other four states print reasons, not money. */
   quantified: number
-  running: number
-  upperBound: number
+  /** Rows whose clock the register stopped on a day the tax left. Their money is a figure, not a ceiling. */
+  stoppedRows: number
+  stoppedMoney: number
+  /** Open rows with no payment date: the sum is still growing, and `perDay` says how fast. */
+  runningRows: number
+  runningMoney: number
+  /** Carried rows the register holds no payment date for. Read to today, so they are ceilings. */
+  undatedRows: number
+  undatedMoney: number
+  /** Running plus undated — the most the unpaid rows could cost read to today, and no more than that. */
+  ceiling: number
   perDay: number
   /** Counted out of the sum on purpose, each named. */
   unquantified: { state: CostState; n: number }[]
@@ -1697,19 +1868,27 @@ export interface CostTotals {
 }
 
 export function amendmentCostTotals(rows: AmendmentCost[]): CostTotals {
-  const money = rows.filter(r => r.state === 'running' || r.state === 'carried_undated')
+  const stopped = rows.filter(r => r.stopped)
+  const running = rows.filter(r => r.state === 'running')
+  const undated = rows.filter(r => r.state === 'carried_undated')
+  const footed = (list: AmendmentCost[]) => round2(list.reduce((s, r) => s + r.interest, 0))
   const byState = new Map<CostState, number>()
   for (const r of rows) {
-    if (r.state === 'running' || r.state === 'carried_undated') continue
+    if (r.stopped || r.state === 'running' || r.state === 'carried_undated') continue
     byState.set(r.state, (byState.get(r.state) ?? 0) + 1)
   }
   const aged = rows.filter(r => r.state === 'running' && r.foundDays !== null)
   const slowest = aged.sort((x, y) => (y.foundDays ?? 0) - (x.foundDays ?? 0))[0] ?? null
   return {
-    quantified: money.length,
-    running: round2(money.filter(r => r.state === 'running').reduce((s, r) => s + r.interest, 0)),
-    upperBound: round2(money.reduce((s, r) => s + r.interest, 0)),
-    perDay: round2(rows.filter(r => r.state === 'running').reduce((s, r) => s + r.perDay, 0)),
+    quantified: stopped.length + running.length + undated.length,
+    stoppedRows: stopped.length,
+    stoppedMoney: footed(stopped),
+    runningRows: running.length,
+    runningMoney: footed(running),
+    undatedRows: undated.length,
+    undatedMoney: footed(undated),
+    ceiling: round2(footed(running) + footed(undated)),
+    perDay: round2(running.reduce((s, r) => s + r.perDay, 0)),
     unquantified: [...byState.entries()].map(([state, n]) => ({ state, n })),
     oldest: slowest
       ? { id: slowest.id, doc_ref: slowest.doc_ref, period: slowest.period, days: slowest.foundDays ?? 0 }
@@ -2469,12 +2648,16 @@ export const NOT_TRACKED: { title: string; why: string }[] = [
       + 'notice file this app does not keep yet.',
   },
   {
-    title: 'The date a correction tax actually left',
-    why: 'An amendment row records the period, the document and what it carries, and — once carried — which '
-      + 'return it went through. It does not record the day that tax was paid, and rule 88B(2) measures to '
-      + 'that day. So *What waiting costs* reads its clock up to today and prints the figure as an upper '
-      + 'bound with the reason beside it, rather than inventing a payment date to stop it on. The challan '
-      + 'that paid it lives on /gst/calendar.',
+    // R3-21's shape, one round on: a card that printed a limitation about this register became the task,
+    // and what is left of the card is only the part the portal holds. Written as an amendment to R3-12's
+    // entry titled "The date a correction tax actually left", which this replaces.
+    title: 'The challan the department holds',
+    why: 'An amendment row keeps the day its tax left, and the register can also read that day off the '
+      + 'GSTR-3B row of the return the correction went through — which is what *What waiting costs* measures '
+      + 'to. Neither is the department\'s record of the payment. A challan number, its BRL-TR receipt and the '
+      + 'portal\'s own date are not readable here; the row states the shop\'s day and the page prints whose '
+      + 'date it is reading. Where the row and the carried return disagree, both are printed and the figure '
+      + 'follows the shop.',
   },
   {
     title: 'The figures on the statements',
@@ -2495,6 +2678,11 @@ export const BOUNDARY: string[] = [
     + 'for a return filed late; rule 88B(2) covers "all other cases" — a document the return missed — on the '
     + 'tax that remains unpaid. This register cannot see the electronic ledgers, so it never claims the first '
     + 'base for the second case: an amendment is costed gross, and the figure is a starting one, not a demand.',
+  '**The clock stops on a date the register holds, or it does not stop.** Rule 88B(2) measures from the day the '
+    + 'tax was due to the day it was paid, so a row\'s own payment date is preferred, then the GSTR-3B row of '
+    + 'the return the correction went through, then that return\'s filing day as the earliest it can be. With '
+    + 'none of the three the clock is read to today and labelled a ceiling; it is never stopped on a date '
+    + 'invented for it, and a row whose tax left before it was owed prints a nil that is a reading.',
   '**The chain is quoted, not invented.** Rule 59(6)(a)/(b) and 59(6)(d) with 88C(1) are the only bars this '
     + 'register states, because both can be read from the rows on the register.',
   '**A filed row is a transcript.** It can be corrected, and the correction is journalled on /audit — but it is '
@@ -2529,7 +2717,8 @@ export function filingsCsvRows(rows: RegisterRow[]): (string | number)[][] {
 
 export const AMENDMENT_CSV_HEADERS = [
   'Period', 'Kind', 'Document', 'Party', 'Effect', 'Taxable', 'Tax', 'Found on', 'Status',
-  'Urgency', 'Window shuts', 'Days left', 'Governing clock', 'Carried through', 'In the books?', 'Notes', 'By',
+  'Urgency', 'Window shuts', 'Days left', 'Governing clock', 'Carried through', 'Tax paid on',
+  'In the books?', 'Notes', 'By',
 ]
 
 export function amendmentCsvRows(board: BoardRow[]): (string | number)[][] {
@@ -2539,7 +2728,7 @@ export function amendmentCsvRows(board: BoardRow[]): (string | number)[][] {
       periodLabel(a.period), AMENDMENT_META[a.kind].label, a.doc_ref, a.party,
       a.effect === 'reduce' ? 'Reduces' : 'Adds', a.taxable, a.tax, a.found_on,
       AMENDMENT_STATUS_META[a.status].label, URGENCY_META[b.urgency].label,
-      b.closesOn, b.left, b.clock, a.carried_in,
+      b.closesOn, b.left, b.clock, a.carried_in, a.paid_on,
       b.dangling ? 'No document of this number is on the list you gave the register' : 'Named on the register',
       a.notes, a.actor,
     ]
@@ -2561,15 +2750,17 @@ export function varianceCsvRows(rows: VarianceRow[]): (string | number)[][] {
 
 export const AMENDMENT_COST_CSV_HEADERS = [
   'Period corrected', 'Kind', 'Document', 'Effect', 'Status', 'Tax on the row', 'State',
-  'Tax due on', 'Where that date comes from', 'Read to', 'Days', 'Interest so far', 'Per day',
-  'Days since found', 'Why', 'Rule',
+  'Tax due on', 'Where that date comes from', 'Tax paid on (the row)', 'Where the stop date comes from',
+  'Read to', 'Clock stopped', 'Days', 'Interest so far', 'Per day',
+  'Days since found', 'Dates that disagree', 'Why', 'Rule',
 ]
 
 export function amendmentCostCsvRows(rows: AmendmentCost[]): (string | number)[][] {
   return rows.map(r => [
     r.period, AMENDMENT_META[r.kind].label, r.doc_ref, r.effect, AMENDMENT_STATUS_META[r.status].label,
-    r.tax, COST_STATE_META[r.state].label, r.dueOn, r.dueBasis, r.readTo, r.days, r.interest, r.perDay,
-    r.foundDays ?? '', r.why, r.citation,
+    r.tax, COST_STATE_META[r.state].label, r.dueOn, r.dueBasis, r.paidOnRow, r.paidBasis, r.readTo,
+    r.stopped ? 'Stopped on the day the tax was paid' : 'Read to today', r.days, r.interest, r.perDay,
+    r.foundDays ?? '', r.dateConflict, r.why, r.citation,
   ])
 }
 
@@ -2645,9 +2836,11 @@ export const COST_CITATIONS: CostCitation[] = [
     read: 'own',
   },
   {
-    text: 'Reading: an amendment carried through a later return stops the clock on the date that tax was paid, '
-      + 'and this register does not hold that date — so the page prints the figure to today as an upper bound '
-      + 'and names the reason. It never prints a lower one it cannot support.',
+    text: 'Reading: an amendment carried through a later return stops the clock on the date that tax was paid. '
+      + 'Since R3-24 the register holds that date two ways — stated on the row, or read off the GSTR-3B row of '
+      + 'the return the correction went through — and where it holds one the figure is exact. Where it holds '
+      + 'neither the page prints to today as an upper bound and names the reason, and it never prints a lower '
+      + 'figure it cannot support.',
     source: 'This register\'s arithmetic, not a quoted text',
     url: '',
     read: 'own',

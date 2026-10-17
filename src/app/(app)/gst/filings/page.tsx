@@ -58,7 +58,7 @@ import {
   sealFilingsPeriod, untrackedRows, varianceCsvRows, windowsFor,
   type Amendment, type AmendmentCost, type AmendmentDraft, type AmendmentKind, type AmendmentStatus,
   type BoardRow,
-  type Cadence, type FilingDraft, type FilingForm, type FilingStatus, type FilingsSettings,
+  type Cadence, type CostTotals, type FilingDraft, type FilingForm, type FilingStatus, type FilingsSettings,
   type FilingsStore, type RegisterRow, type VarianceRow,
 } from '@/lib/filings'
 import {
@@ -82,6 +82,34 @@ const money = (v: number) => {
 /** A signed rupee says its own direction in words — never a bare minus the reader decodes (Rule 28). */
 const signed = (v: number) => `${v < 0 ? 'reduces ' : 'adds '}${money(Math.abs(v))}`
 const pctOrEmpty = (v: number) => (v > 0 ? money(v) : '—')
+
+/**
+ * The card's one sentence about what the board costs. Three kinds of money live here and each keeps its
+ * own phrase (Rule 57): a figure stopped on the day the tax was paid, a figure still growing, and a
+ * ceiling over rows the register holds no payment date for. The ceiling is printed only when both unpaid
+ * kinds exist — with one of them empty it would be the same rupee standing twice under two names.
+ */
+function costSentence(t: CostTotals, total: number): string {
+  const parts = [
+    `${t.quantified} of ${plural(total, 'correction')} ${t.quantified === 1 ? 'carries' : 'carry'} a figure.`,
+  ]
+  if (t.stoppedRows > 0) {
+    parts.push(`${plural(t.stoppedRows, 'row')} stopped on the day its tax was paid and reads ${money(t.stoppedMoney)} — measured to that day, so the figure is finished.`)
+  }
+  if (t.runningRows > 0) {
+    parts.push(`${plural(t.runningRows, 'row')} still unpaid reads ${money(t.runningMoney)} so far and adds about ${money(t.perDay)} a day.`)
+  }
+  if (t.undatedRows > 0) {
+    parts.push(`${plural(t.undatedRows, 'row')} carried with no payment date on the register is read to today as ${money(t.undatedMoney)} — a ceiling, and the real figure is lower.`)
+  }
+  if (t.runningRows > 0 && t.undatedRows > 0) {
+    parts.push(`${money(t.ceiling)} is the most the unpaid rows together could cost read to today.`)
+  }
+  if (t.stoppedRows === 0) {
+    parts.push('Nothing here has a payment date yet, so no figure on this board is finished.')
+  }
+  return parts.join(' ')
+}
 
 const MONTHS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12']
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
@@ -109,7 +137,7 @@ function emptyComposer(form: FilingForm = 'gstr3b', year = ''): Composer {
 function emptyAmendComposer(period = '', kind: AmendmentKind = 'invoice_omitted', today = ''): AmendComposer {
   return {
     period, kind, docRef: '', party: '', effect: 'add', taxable: '', tax: '',
-    foundOn: today, status: 'open', carriedIn: '', notes: '',
+    foundOn: today, status: 'open', carriedIn: '', paidOn: '', notes: '',
   }
 }
 
@@ -150,6 +178,8 @@ interface AmendComposer {
   foundOn: string
   status: AmendmentStatus
   carriedIn: string
+  /** The day this tax left, as the shop states it. Blank means the clock has no stop date and reads to today. */
+  paidOn: string
   notes: string
 }
 
@@ -434,7 +464,9 @@ function FilingsPageInner() {
       doc_ref: amend.docRef, party: amend.party, effect: amend.effect,
       taxable: amend.taxable || 0, tax: amend.tax || 0,
       found_on: amend.foundOn || undefined, status: amend.status,
-      carried_in: amend.carriedIn, notes: amend.notes, actor: settings.actor,
+      // Passed as it stands, not `|| undefined`: an empty field is the shop *clearing* the day the tax
+      // left, and the engine has to see that empty to stop keeping the old date.
+      carried_in: amend.carriedIn, paid_on: amend.paidOn, notes: amend.notes, actor: settings.actor,
     }
     const result = addAmendment(orgId, draft, today)
     if (!result.ok) { setAmendErrors(result.problems); return }
@@ -450,7 +482,7 @@ function FilingsPageInner() {
     const draft: AmendmentDraft = {
       id: a.id, period: a.period, kind: a.kind, doc_ref: a.doc_ref, party: a.party,
       effect: a.effect, taxable: a.taxable, tax: a.tax, found_on: a.found_on, status,
-      carried_in: a.carried_in, notes: a.notes, actor: a.actor,
+      carried_in: a.carried_in, paid_on: a.paid_on, notes: a.notes, actor: a.actor,
     }
     if (status === 'carried' && !a.carried_in.trim()) {
       // The engine asks which return carried it; the page routes the question to the composer instead
@@ -461,7 +493,7 @@ function FilingsPageInner() {
       return
     }
     const result = addAmendment(orgId, draft, today)
-    if (!result.ok) { setAmendErrors(result.problems); setAmend({ ...emptyAmendComposer(a.period, a.kind, today), id: a.id, status }); return }
+    if (!result.ok) { setAmendErrors(result.problems); setAmend({ ...amendComposerFrom(a), status }); return }
     setStore(result.store)
     setAuditVersion(v => v + 1)
     say(`Amendment on ${periodLabel(a.period)} marked ${AMENDMENT_STATUS_META[status].label.toLowerCase()}.`)
@@ -878,7 +910,7 @@ function FilingsPageInner() {
                 <p className="fg-side-note" style={{ margin: 0 }}>
                   {costTotals.quantified === 0
                     ? 'Nothing on this board can be costed yet — every row prints its reason below.'
-                    : `${costTotals.quantified} of ${plural(costs.length, 'correction')} ${costTotals.quantified === 1 ? 'carries' : 'carry'} a figure. Interest still accruing on open rows reads ${money(costTotals.running)}, and ${money(costTotals.upperBound)} is the ceiling across every row the register can cost — the difference is rows marked carried whose payment date this register does not hold. Every open row together adds about ${money(costTotals.perDay)} a day.`}
+                    : costSentence(costTotals, costs.length)}
                 </p>
                 {costTotals.oldest && (
                   <p className="fg-side-note" style={{ margin: 0 }}>
@@ -1444,7 +1476,7 @@ function amendComposerFrom(a: Amendment): AmendComposer {
   return {
     id: a.id, period: a.period, kind: a.kind, docRef: a.doc_ref, party: a.party, effect: a.effect,
     taxable: a.taxable ? String(a.taxable) : '', tax: a.tax ? String(a.tax) : '',
-    foundOn: a.found_on, status: a.status, carriedIn: a.carried_in, notes: a.notes,
+    foundOn: a.found_on, status: a.status, carriedIn: a.carried_in, paidOn: a.paid_on, notes: a.notes,
   }
 }
 
@@ -1737,10 +1769,21 @@ function AmendRow({
                     ? `the day the tax was due (${formatDateIN(cost.dueOn)})`
                     : 'no start date the register can stand behind'}{' '}
                   till {formatDateIN(cost.readTo)} — {cost.dueBasis}.
+                  {cost.stopped
+                    ? ` The clock stops on ${formatDateIN(cost.readTo)}: ${cost.paidBasis}.`
+                    : cost.state === 'running' || cost.state === 'carried_undated'
+                      ? ` Nothing has stopped this clock, so it is read to today: ${cost.paidBasis}.`
+                      : ''}
                   {cost.state === 'running' && cost.perDay > 0
                     ? ` One more day adds about ${money(cost.perDay)}.` : ''}
                   {cost.foundDays !== null
                     ? ` Found ${plural(cost.foundDays, 'day')} ago.` : ' The day it was found is not on this row.'}
+                </p>
+              )}
+              {cost.dateConflict && (
+                <p className="is-cite">
+                  Two dates disagree about this payment, and the register prints both rather than picking one in
+                  silence. {cost.dateConflict}
                 </p>
               )}
               <p className="is-cite">{cost.citation}</p>
@@ -1763,6 +1806,7 @@ function AmendRow({
               Found on {formatDateIN(a.found_on)} · logged {a.created_at.slice(0, 10)}
               {a.actor ? ` by ${a.actor}` : ''}{a.updated_at !== a.created_at ? ` · last changed ${a.updated_at.slice(0, 10)}` : ''}.
               {a.carried_in ? ` Carried through ${a.carried_in}.` : ''}
+              {a.paid_on ? ` This row states the tax was paid on ${formatDateIN(a.paid_on)}.` : ''}
             </p>
           </div>
         </div>
@@ -2159,6 +2203,12 @@ function AmendForm({
             <small>Not the day the period ended — the day the shop noticed.</small>
           </label>
           <label className="fg-field">
+            <span>The day this tax was paid</span>
+            <input className="fg-input" type="date" value={amend.paidOn} max={today} onChange={e => set({ paidOn: e.target.value })} />
+            <small>Rule 88B(2) counts to this day. Left blank, the register looks for it on the return named
+              under <em>Carried through</em> and, finding nothing, reads to today as a ceiling.</small>
+          </label>
+          <label className="fg-field">
             <span>Status</span>
             <Segmented value={amend.status} onChange={v => set({ status: v as AmendmentStatus })}
               options={[{ value: 'open', label: 'Open' }, { value: 'carried', label: 'Carried' }, { value: 'lapsed', label: 'Lapsed' }]} />
@@ -2168,7 +2218,9 @@ function AmendForm({
               <span>Carried through</span>
               <input className="fg-input" type="text" value={amend.carriedIn} placeholder="GSTR-1A for Mar 2026, Table 9A of FY 2025-26, the 3B for Apr 2026"
                 onChange={e => set({ carriedIn: e.target.value })} />
-              <small>Which return actually took it. The engine asks for this and the trail records it.</small>
+              <small>Which return actually took it. The engine asks for this and the trail records it — and a
+                return named by its period (2026-04) lets the register read that day&apos;s own GSTR-3B row
+                for the date the tax was paid.</small>
             </label>
           )}
           <label className="fg-field" style={{ gridColumn: '1 / -1' }}>
