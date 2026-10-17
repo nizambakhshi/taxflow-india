@@ -1417,11 +1417,11 @@ export function buildView(
   if (unmatched) attention.push(`No invoice numbered ${key} in the books — the figures here are the paper's, not the ledger's.`)
   if (lut_gap) attention.push('Exported on a LUT this register cannot match to the date of export.')
   if (filed_late && lut) attention.push(`The LUT was filed on ${lut.filed_date}, after the goods left — check whether it covered the shipment from 1 April or from filing.`)
-  if (time === 'restricted') attention.push(`Proceeds are ${pastDueDays} days late — the AD bank may restrict future exports to advance payment or an irrevocable LC.`)
-  if (time === 'overdue') attention.push(`Realisation window ran out ${pastDueDays} days ago.`)
+  if (time === 'restricted') attention.push(`Proceeds are ${plural(pastDueDays, 'day')} late — the AD bank may restrict future exports to advance payment or an irrevocable LC.`)
+  if (time === 'overdue') attention.push(`Realisation window ran out ${plural(pastDueDays, 'day')} ago.`)
   if (time === 'settled_late') {
     const lateBy = daysBetween(due ?? today, lastMoneyDate)
-    attention.push(`Money arrived ${lateBy === null || lateBy < 0 ? '' : `${lateBy} days `}after the window closed.`)
+    attention.push(`Money arrived ${lateBy === null || lateBy < 0 ? '' : `${plural(lateBy, 'day')} `}after the window closed.`)
   }
   if (sources_diverge) attention.push('The FX ledger and this file both hold realisations, and they disagree — one rupee, counted once.')
   if (money === 'excess' && !unmatched) attention.push('Rupees realised exceed the invoice value: check for a duplicate or a claim that belongs to another consignment.')
@@ -1751,7 +1751,7 @@ export function watchRows(
         tone: d !== null && d < 0 ? 'red' : d !== null && d <= APPROACHING_DAYS ? 'amber' : 'blue',
         detail: v.advance.dispatched
           ? `Advance received ${v.advance.received}; goods left ${v.export_date}; the ${v.advance.window.months}-month dispatch window closed on ${v.advance.due_date}. ${v.advance.window.source}`
-          : `Advance received ${v.advance.received}; ${v.advance.window.months} months allowed to ship. ${v.advance.window.source}`,
+          : `Advance received ${v.advance.received}; ${plural(v.advance.window.months, 'month')} allowed to ship. ${v.advance.window.source}`,
         href: '/gst/exports',
       })
     }
@@ -2415,7 +2415,7 @@ export function registerCsvRows(views: ExportView[]): (string | number)[][] {
     v.window ? v.window.months : '',
     v.window ? v.window.source : 'no date of export',
     v.window?.overridden ? 'overridden on the file' : '',
-    v.window?.disputed ? `sources differ — could be ${v.window.alternative_months} months: ${v.window.dispute}` : '',
+    v.window?.disputed && v.window.alternative_months !== null ? `sources differ — could be ${plural(v.window.alternative_months, 'month')}: ${v.window.dispute}` : '',
     v.due_date || '',
     v.days_to_due === null ? '' : v.days_to_due,
     v.invoice_value,

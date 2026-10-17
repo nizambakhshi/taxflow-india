@@ -14,6 +14,8 @@
 // A lot still counts for the whole day printed on it — it is expired the day
 // after that date (daysLeft < 0), which is how an "Exp 08/2026" pack is read.
 
+import { pluralNoun } from '@/lib/format'
+
 const KEY_BATCHES = 'taxflow:batches:'
 const KEY_MOVES = 'taxflow:batchmoves:'
 
@@ -469,7 +471,7 @@ export function validateBatch(batch: Batch, batches: Batch[], moves: BatchMove[]
     }
     const floor = Math.max(0, Math.round((out - back) * 1000) / 1000)
     if (Number.isFinite(qty) && qty < floor) {
-      problems.push(`${out} units have left this lot${back ? ` (${back} returned)` : ''} — the received count cannot go below ${floor}`)
+      problems.push(`${out} ${pluralNoun(out, 'unit')} ${out === 1 ? 'has' : 'have'} left this lot${back ? ` (${back} returned)` : ''} — the received count cannot go below ${floor}`)
     }
   }
   return problems

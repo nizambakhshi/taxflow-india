@@ -816,7 +816,7 @@ export function jobView(
     problems.push('No HSN/SAC on this movement — ITC-04 is prepared HSN-wise, so it will fall under the blank code')
   }
   if (lot.category === 'moulds_tools' && lot.stipulated_months > 0) {
-    problems.push(`${lot.stipulated_months} months was written on this tooling movement — section 143 fixes no return period for moulds and dies, so nothing here is ever overdue`)
+    problems.push(`${plural(lot.stipulated_months, 'month')} was written on this tooling movement — section 143 fixes no return period for moulds and dies, so nothing here is ever overdue`)
   }
   if (!worker) {
     if (lot.worker_id) {
@@ -1300,7 +1300,7 @@ export function jobRegisterCsvRows(views: JobView[]): (string | number)[][] {
     v.lot.sent_date, v.lot.challan_number, v.lot.challan_date, v.lot.eway_bill_number,
     v.lot.item_name, v.lot.hsn_sac, CATEGORY_META[v.lot.category].label, v.sent_qty, v.lot.unit, v.sent_value,
     v.worker_name, v.worker_gstin,
-    v.period_months === null ? CATEGORY_META[v.lot.category].statutory_label : `${v.period_months} months`,
+    v.period_months === null ? CATEGORY_META[v.lot.category].statutory_label : `${plural(v.period_months, 'month')}`,
     v.deadline || '—', v.days_out ?? '—',
     v.returned_qty, v.direct_qty, v.alternate_qty, v.outstanding_qty, v.outstanding_value,
     v.status_label, v.deemed_qty || '', v.deemed_value || '', v.deemed_on || '', v.lot.notes,

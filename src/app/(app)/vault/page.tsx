@@ -277,7 +277,7 @@ function VaultPageInner() {
     downloadVault(name, serializeVault(preview))
     recordBackup(orgId, preview)
     refresh()
-    flash(`${name} — ${preview.counts.registers} registers, ${preview.counts.rows} rows, ${size(preview.counts.chars)}. Keep the copy somewhere the browser is not.`)
+    flash(`${name} — ${plural(preview.counts.registers, 'register')}, ${plural(preview.counts.rows, 'row')}, ${size(preview.counts.chars)}. Keep the copy somewhere the browser is not.`)
   }
 
   // ── restore ───────────────────────────────────────────────────────────────
@@ -325,8 +325,8 @@ function VaultPageInner() {
     setPicked([])
     setConfirm(false)
     refresh()
-    if (r.refused === 0 && r.dropped === 0) flash(`Restored ${r.restored} registers — every row read back through the page that owns it.`)
-    else if (r.restored > 0) warn(`Restored ${r.restored} registers: ${r.refused} refused and ${r.dropped} rows dropped by a register's own parser. The report says which.`)
+    if (r.refused === 0 && r.dropped === 0) flash(`Restored ${plural(r.restored, 'register')} — every row read back through the page that owns it.`)
+    else if (r.restored > 0) warn(`Restored ${plural(r.restored, 'register')}: ${r.refused} refused and ${plural(r.dropped, 'row')} dropped by a register's own parser. The report says which.`)
     else warn('Nothing was restored. Every chosen register refused the file, and the report says why.')
   }
 
@@ -432,7 +432,7 @@ function VaultPageInner() {
         <StatCard
           label="Rows in the file"
           value={String(snap.preview?.counts.rows ?? 0)}
-          sub={`across ${snap.preview?.counts.registers ?? 0} registers with content`}
+          sub={`across ${plural(snap.preview?.counts.registers ?? 0, 'register')} with content`}
           icon="list"
           tone="green"
           delay={40}
@@ -449,7 +449,7 @@ function VaultPageInner() {
         />
         <StatCard
           label="Last backup taken"
-          value={snap.lastBackupDays === null ? 'Never' : snap.lastBackupDays === 0 ? 'Today' : `${snap.lastBackupDays} days ago`}
+          value={snap.lastBackupDays === null ? 'Never' : snap.lastBackupDays === 0 ? 'Today' : `${plural(snap.lastBackupDays, 'day')} ago`}
           sub={snap.lastBackupDays === null
             ? 'a browser wipe would take the workpapers with it'
             : snap.freshness?.unrecorded
@@ -539,7 +539,7 @@ function VaultPageInner() {
                     <div key={h.id} className="tfv-heaviest-row">
                       <span className="tfv-heaviest-name">{h.label}</span>
                       <span className="tfv-heaviest-bar"><i style={{ width: `${h.share}%` }} /></span>
-                      <span className="tfv-num tfv-heaviest-size">{size(h.chars)} · {h.rows} rows</span>
+                      <span className="tfv-num tfv-heaviest-size">{size(h.chars)} · {plural(h.rows, 'row')}</span>
                     </div>
                   ))}
                 </div>
@@ -689,7 +689,7 @@ function VaultPageInner() {
                   <StatRow label="Taken" value={when(plan.vault.created_at)} />
                   <StatRow
                     label="In the file"
-                    value={`${plan.vault.counts.registers} registers · ${plan.vault.counts.rows} rows · ${size(plan.vault.counts.chars)}`}
+                    value={`${plural(plan.vault.counts.registers, 'register')} · ${plural(plan.vault.counts.rows, 'row')} · ${size(plan.vault.counts.chars)}`}
                   />
                 </div>
                 <div className="tfv-states">

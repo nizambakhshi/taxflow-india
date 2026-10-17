@@ -563,7 +563,7 @@ function RecurringPageInner() {
                   <div className="ri-progress">
                     <ProgressBar value={v.raised} max={s.end_count} color="var(--brand)" />
                     <span className="ri-share-label">
-                      {v.raised} of {s.end_count} invoices · {Math.round(v.progress * 100)}% through the term
+                      {v.raised} of {s.end_count} {pluralNoun(s.end_count, 'invoice')} · {Math.round(v.progress * 100)}% through the term
                     </span>
                   </div>
                 )}

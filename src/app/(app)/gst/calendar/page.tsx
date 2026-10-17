@@ -340,7 +340,7 @@ export default function ComplianceCalendarPage() {
       <PageHeader
         eyebrow={`Financial year ${fy}-${String(fy + 1).slice(2)}`}
         title="Compliance calendar"
-        subtitle={`${events.length} deadlines · ${filedCount} filed · ${overdue.length} overdue`}
+        subtitle={`${plural(events.length, 'deadline')} · ${filedCount} filed · ${overdue.length} overdue`}
         actions={<Button onClick={exportIcs} icon="download">Add FY to calendar</Button>}
         right={<Segmented
           value={String(fy)}
@@ -504,7 +504,7 @@ export default function ComplianceCalendarPage() {
                       </span>
                       <Badge tone={meta.tone} dot={false}>{meta.label}</Badge>
                       {!e.filed && (e.daysLeft < 0
-                        ? <Badge tone="red">{Math.abs(e.daysLeft)} days overdue</Badge>
+                        ? <Badge tone="red">{plural(Math.abs(e.daysLeft), 'day')} overdue</Badge>
                         : e.daysLeft <= 7 ? <Badge tone="amber">due in {e.daysLeft}d</Badge> : null)}
                       {e.filed && <Badge tone="green">filed {formatDateIN(statuses[e.id]?.doneOn || e.due)}</Badge>}
                     </div>

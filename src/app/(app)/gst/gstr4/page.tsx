@@ -258,7 +258,7 @@ export default function Gstr4Page() {
       <PageHeader
         eyebrow="GST compliance"
         title="GSTR-4 · composition workpaper"
-        subtitle={`Flat-slab tax you charged, the ${DEEMED_ITC_PCT}% debit in place of credit, and what CMP-08 paid. Annual statement due ${gstr4Due(fyStart)}${dueInDays > 0 ? ` (${dueInDays} days)` : ''}.`}
+        subtitle={`Flat-slab tax you charged, the ${DEEMED_ITC_PCT}% debit in place of credit, and what CMP-08 paid. Annual statement due ${gstr4Due(fyStart)}${dueInDays > 0 ? ` (${plural(dueInDays, 'day')})` : ''}.`}
         actions={
           <Button variant="subtle" size="sm" icon="download" onClick={exportWorkpaper}
             disabled={empty}>Download workpaper CSV</Button>
@@ -296,7 +296,7 @@ export default function Gstr4Page() {
         <>
           <div className="g4-metrics">
             <StatCard label="Aggregate taxable turnover" value={wp.split.slabTurnover}
-              sub={`${wp.split.documents} documents, GST excluded`} icon="chart" tone="blue" />
+              sub={`${plural(wp.split.documents, 'document')}, GST excluded`} icon="chart" tone="blue" />
             <StatCard label="Tax charged on outward supplies" value={wp.liability.tax}
               sub={`Implied ${wp.quarters.find(q => q.impliedPct)?.impliedPct ?? 0}% across the year`} icon="invoice" tone="violet" />
             <StatCard label={`Deemed debit at ${DEEMED_ITC_PCT}%`} value={wp.deemed.debit}

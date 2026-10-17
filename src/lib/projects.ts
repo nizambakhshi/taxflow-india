@@ -938,11 +938,15 @@ export function watchSentence(g: UnbilledGroup): string {
     return `${g.hours} h of internal work — no recipient, so no invoice and nothing due.`
   }
   const money = g.value > 0 ? `${g.value} worth of work` : `${g.hours} h of work with no rate recorded`
-  if (g.state === 'overdue') {
-    return `Supplied from ${g.earliest}; the invoice was due ${g.due_date} (rule 47, ${g.window} days) — ${g.days_over} days past. ${money} is still unbilled.`
+  // A group reaches these two states only when the engine named a window, so the day counts the
+  // sentences print are there. The `!== null` is not new arithmetic — it is the sentence refusing to
+  // hand `plural()` a figure it cannot see, the way the group above already refuses to call an
+  // unfixable window a day count.
+  if (g.state === 'overdue' && g.window !== null) {
+    return `Supplied from ${g.earliest}; the invoice was due ${g.due_date} (rule 47, ${plural(g.window, 'day')}) — ${plural(g.days_over, 'day')} past. ${money} is still unbilled.`
   }
-  if (g.state === 'due_soon') {
-    return `Supplied from ${g.earliest}; the invoice is due ${g.due_date} — ${g.days_left} days left. ${money} is still unbilled.`
+  if (g.state === 'due_soon' && g.days_left !== null) {
+    return `Supplied from ${g.earliest}; the invoice is due ${g.due_date} — ${plural(g.days_left, 'day')} left. ${money} is still unbilled.`
   }
   return `Supplied from ${g.earliest}; the invoice would be due ${g.due_date}. ${money} is still unbilled.`
 }

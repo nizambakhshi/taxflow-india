@@ -426,7 +426,7 @@ export default function TargetsPage() {
               <Icon name="alert" size={14} />
               <span>
                 {money(recovery.shortfall)} short of plan across {summary.monthsClosed} closed months. Clearing it needs{' '}
-                <b className="tf-num">{money(recovery.perMonth)}</b> a month over the {recovery.months} months left.
+                <b className="tf-num">{money(recovery.perMonth)}</b> a month over the {plural(recovery.months, 'month')} left.
               </span>
             </div>
           )}

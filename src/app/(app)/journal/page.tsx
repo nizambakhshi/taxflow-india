@@ -474,7 +474,7 @@ function JournalPageInner() {
               {proof.legs === 0
                 ? <>Nothing is posted on this register — <strong>no legs, so no balance to prove</strong>. An empty journal is not a broken one, but it is not a balanced one either.</>
                 : findings.length === 0
-                ? <>Every entry on this register <strong>balances to the paisa</strong> — {money(proof.debits)} debited, {money(proof.credits)} credited across {proof.legs} legs.</>
+                ? <>Every entry on this register <strong>balances to the paisa</strong> — {money(proof.debits)} debited, {money(proof.credits)} credited across {plural(proof.legs, 'leg')}.</>
                 : <>The register <strong>shows {findings.length === 1 ? 'a finding' : `${findings.length} findings`}</strong> — the statements still foot, but the arithmetic below is not what the composer wrote.</>}
             </div>
             {findings.length === 0 ? (
@@ -889,7 +889,7 @@ function JournalPageInner() {
                     : draftTotals.debitPaise === 0 && draftTotals.creditPaise === 0
                       ? 'Nothing typed yet — two empty legs balance to the paisa, but they state no movement.'
                       : draftTotals.balanced
-                        ? `Balanced to the paisa across ${draftTotals.lines} legs — posting this moves a named line and leaves the derived capital figure where it stands.`
+                        ? `Balanced to the paisa across ${plural(draftTotals.lines, 'leg')} — posting this moves a named line and leaves the derived capital figure where it stands.`
                         : `Out by ${money(Math.abs(draftTotals.difference))} — ${draftTotals.difference > 0 ? 'the debit side is heavier' : 'the credit side is heavier'}. A draft may stand unbalanced; a posting may not.`}
                 </span>
               </div>

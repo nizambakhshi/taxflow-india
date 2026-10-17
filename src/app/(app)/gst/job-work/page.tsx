@@ -87,13 +87,13 @@ function clockLine(v: JobView): { text: string; tone: 'red' | 'amber' | 'blue' |
   if (d < 0) return { text: `${plural(-d, 'day')} past the period — due back by ${back}`, tone: 'red' }
   if (d === 0) return { text: `Due back today (${back})`, tone: 'amber' }
   if (d <= APPROACHING_DAYS) return { text: `${plural(d, 'day')} left — due back ${back}`, tone: 'amber' }
-  return { text: `${d} days left — due back ${back}`, tone: 'blue' }
+  return { text: `${plural(d, 'day')} left — due back ${back}`, tone: 'blue' }
 }
 
 /** The period the lot runs, phrased for a human — statutory label when no cap is applied. */
 const lotPeriodText = (lot: JobLot): string => {
   const months = periodMonths(lot)
-  return months === null ? CATEGORY_META[lot.category].statutory_label : `${months} months`
+  return months === null ? CATEGORY_META[lot.category].statutory_label : `${plural(months, 'month')}`
 }
 
 const periodText = (v: JobView): string => lotPeriodText(v.lot)
@@ -403,13 +403,13 @@ function JobWorkPageInner() {
         />
         <StatCard
           label="Value still with job workers" value={money(totals.outstanding_value)}
-          sub={totals.openLots ? `${fmtQty(totals.outstanding_qty, '')} units across ${plural(totals.openLots, 'challan')}` : 'everything is accounted for'}
+          sub={totals.openLots ? `${fmtQty(totals.outstanding_qty, '')} ${pluralNoun(totals.outstanding_qty, 'unit')} across ${plural(totals.openLots, 'challan')}` : 'everything is accounted for'}
           icon="scale" tone="cyan" delay={40}
         />
         <StatCard
           label="Rule 45 exposure" value={money(totals.deemed_value)}
           sub={totals.deemed_qty
-            ? `${fmtQty(totals.deemed_qty, '')} units deemed supplied · indicative tax ${money(totals.indicative_tax)}`
+            ? `${fmtQty(totals.deemed_qty, '')} ${pluralNoun(totals.deemed_qty, 'unit')} deemed supplied · indicative tax ${money(totals.indicative_tax)}`
             : `${totals.overdue ? `${totals.overdue} past the period` : 'nothing past its period'}`}
           icon={totals.deemed_qty ? 'alert' : 'shield'} tone={totals.deemed_qty ? 'red' : 'green'} delay={80}
         />
@@ -767,7 +767,7 @@ function JobWorkPageInner() {
                   <span className="jw-deemed-label">Deemed supply as at today, on every lot in the register</span>
                   <span className="jw-deemed-value">
                     {statement.totals.deemed_qty
-                      ? `${fmtQty(statement.totals.deemed_qty, '')} units · ${money(statement.totals.deemed_value)}`
+                      ? `${fmtQty(statement.totals.deemed_qty, '')} ${pluralNoun(statement.totals.deemed_qty, 'unit')} · ${money(statement.totals.deemed_value)}`
                       : 'Nothing past its section 143 period'}
                   </span>
                   <span className="jw-sub">
@@ -868,7 +868,7 @@ function JobWorkPageInner() {
 
       <div className="jw-foot">
         <span>
-          {totals.lots ? `${plural(totals.lots, 'movement')} · ${totals.sent_qty} units sent · ${totals.outstanding_qty} still out` : 'Nothing on the register'}
+          {totals.lots ? `${plural(totals.lots, 'movement')} · ${totals.sent_qty} ${pluralNoun(totals.sent_qty, 'unit')} sent · ${totals.outstanding_qty} still out` : 'Nothing on the register'}
         </span>
         <span className="jw-foot-links">
           <Link href="/challans">Delivery challans</Link>
@@ -1031,7 +1031,7 @@ function JobWorkPageInner() {
                 {editor.lot.stipulated_months > 0 && CATEGORY_META[editor.lot.category].statutory_months !== null && (
                   <li>
                     <span className="jw-dot jw-dot-grey" />
-                    The challan stipulates {editor.lot.stipulated_months} months; the statutory cap is
+                    The challan stipulates {plural(editor.lot.stipulated_months, 'month')}; the statutory cap is
                     {' '}{CATEGORY_META[editor.lot.category].statutory_label} — the shorter of the two runs.
                   </li>
                 )}

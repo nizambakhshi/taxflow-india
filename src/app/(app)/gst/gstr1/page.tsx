@@ -361,7 +361,7 @@ export default function GSTR1Page() {
       <PageHeader
         eyebrow={`Outward supplies · ${periodLabel}`}
         title="GSTR-1"
-        subtitle={`${invoiceCount} invoices read from your books, split the way the outward-supplies return expects them.`}
+        subtitle={`${plural(invoiceCount, 'invoice')} read from your books, split the way the outward-supplies return expects them.`}
         actions={
           <select
             className="tf-input"

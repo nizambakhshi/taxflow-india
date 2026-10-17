@@ -33,6 +33,7 @@
 //    side is wrong.
 
 import { newId, todayISO } from '@/lib/batches'
+import { plural } from '@/lib/format'
 
 export { todayISO }
 
@@ -646,7 +647,7 @@ export function fxView(
   }
   if (settlement === 'overpaid') problems.push('Received more than invoiced — check the remittance advice')
   if (todayRate && todayRate.age_days > RATE_STALE_AFTER_DAYS) {
-    problems.push(`Revalued on a ${currency?.code || entry.currency} rate from ${todayRate.as_of} — ${todayRate.age_days} days old`)
+    problems.push(`Revalued on a ${currency?.code || entry.currency} rate from ${todayRate.as_of} — ${plural(todayRate.age_days, 'day')} old`)
   } else if (!todayRate && outstandingForeign > EPSILON) {
     problems.push(`No ${entry.currency} rate recorded up to ${today}, so the exposure cannot be revalued`)
   }

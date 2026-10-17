@@ -6,7 +6,7 @@
 
 import { formatINR } from '@/lib/gst-engine'
 import { computeProfitLoss, type LedgerJournalRow } from '@/lib/ledger'
-import { pluralNoun } from '@/lib/format'
+import { plural, pluralNoun } from '@/lib/format'
 
 type Row = Record<string, any>
 
@@ -151,7 +151,7 @@ function previousPeriod(p: Period): Period {
   const length = dayDiff(p.start, p.end) + 1
   const end = addDays(fromISO(p.start), -1)
   const start = addDays(end, -(length - 1))
-  return { start: iso(start), end: iso(end), label: `the ${length} days before it` }
+  return { start: iso(start), end: iso(end), label: `the ${plural(length, 'day')} before it` }
 }
 
 // ── Time range parsing ───────────────────────────────────
@@ -284,18 +284,18 @@ export function parsePeriod(norm: string, now: Date): Period {
     const unit = nDays[2]
     if (unit.startsWith('day')) {
       const start = addDays(today, -(n - 1))
-      return { start: iso(start), end: iso(today), label: `last ${n} days (${prettyDate(iso(start))} – ${prettyDate(iso(today))})` }
+      return { start: iso(start), end: iso(today), label: `last ${plural(n, 'day')} (${prettyDate(iso(start))} – ${prettyDate(iso(today))})` }
     }
     if (unit.startsWith('week')) {
       const start = addDays(today, -(n * 7 - 1))
-      return { start: iso(n < 5 ? start : start), end: iso(today), label: `last ${n} weeks (${prettyDate(iso(start))} – ${prettyDate(iso(today))})` }
+      return { start: iso(n < 5 ? start : start), end: iso(today), label: `last ${plural(n, 'week')} (${prettyDate(iso(start))} – ${prettyDate(iso(today))})` }
     }
     if (unit.startsWith('month')) {
       const start = new Date(today.getFullYear(), today.getMonth() - (n - 1), 1)
-      return { start: iso(start), end: iso(today), label: `last ${n} months (${MONTH_ABBR[start.getMonth()]} ${start.getFullYear()} – ${MONTH_ABBR[today.getMonth()]} ${today.getFullYear()})` }
+      return { start: iso(start), end: iso(today), label: `last ${plural(n, 'month')} (${MONTH_ABBR[start.getMonth()]} ${start.getFullYear()} – ${MONTH_ABBR[today.getMonth()]} ${today.getFullYear()})` }
     }
     const start = new Date(today.getFullYear() - n, today.getMonth(), 1)
-    return { start: iso(start), end: iso(today), label: `last ${n} years` }
+    return { start: iso(start), end: iso(today), label: `last ${plural(n, 'year')}` }
   }
 
   // Plain calendar year: "in 2025", "sales 2024"
@@ -777,9 +777,9 @@ function askCash(ctx: Ctx): AskAnswer {
     note: `In ${money(cashIn)} · Out ${money(cashOut)}`,
     sentence: `In ${ctx.period.label}, ${money(cashIn)} came in and ${money(cashOut)} went out, a net movement of ${money(net)}.`,
     rows: [
-      { label: 'Received from customers', value: cashIn, meta: `${inRows.length} payments` },
-      { label: 'Paid to vendors', value: sumBy(outRows, r => num(r.amount)), meta: `${outRows.length} payments` },
-      { label: 'Expenses marked paid', value: sumBy(expOut, r => num(r.amount)), meta: `${expOut.length} expenses` },
+      { label: 'Received from customers', value: cashIn, meta: `${plural(inRows.length, 'payment')}` },
+      { label: 'Paid to vendors', value: sumBy(outRows, r => num(r.amount)), meta: `${plural(outRows.length, 'payment')}` },
+      { label: 'Expenses marked paid', value: sumBy(expOut, r => num(r.amount)), meta: `${plural(expOut.length, 'expense')}` },
     ],
     rowsCaption: 'The movement, split',
     caveats: ['This is movement from recorded payments and paid expenses — it is not a bank balance, because the bank opening balance is not tracked here.'],
@@ -974,7 +974,7 @@ function askGstItc(ctx: Ctx): AskAnswer {
     sentence: `In ${ctx.period.label} you can claim ${money(total)} of ITC — ${money(p.onBills)} on ${p.bills.length} supplier ${pluralNoun(p.bills.length, 'bill')} and ${money(p.onExpenses)} on expenses.` + (blocked > 0 ? ` A further ${money(blocked)} sits on bills marked ITC-ineligible, so it is a cost, not a credit.` : ''),
     rows: [
       { label: 'On purchase bills', value: p.onBills, meta: `${p.bills.length} bills` },
-      { label: 'On expenses marked ITC eligible', value: p.onExpenses, meta: `${p.expenses.length} expenses` },
+      { label: 'On expenses marked ITC eligible', value: p.onExpenses, meta: `${plural(p.expenses.length, 'expense')}` },
       ...(blocked > 0 ? [{ label: 'On bills with ITC turned off', value: blocked, meta: 'not claimable' }] : []),
     ],
     rowsCaption: 'Where the credit comes from',
@@ -1154,7 +1154,7 @@ function askTopProducts(ctx: Ctx): AskAnswer {
     intent: 'top_products',
     headline: ranked.length ? `Best seller: ${ranked[0].label}` : 'Best sellers',
     value: ranked.length ? money(ranked[0].value) : money(0),
-    note: ranked.length ? `${ranked[0].meta} · ${count(lines.length)} lines billed` : '',
+    note: ranked.length ? `${ranked[0].meta} · ${count(lines.length)} ${pluralNoun(lines.length, 'line')} billed` : '',
     sentence: ranked.length
       ? `${ranked[0].label} led your sales in ${ctx.period.label} at ${money(ranked[0].value)} (${ranked[0].meta}). After it: ${ranked.slice(1, 4).map(r => `${r.label} ${money(r.value)}`).join(', ') || 'nothing else of note'}.`
       : `No line items fall in ${ctx.period.label}.`,

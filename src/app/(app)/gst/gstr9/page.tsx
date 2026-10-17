@@ -265,8 +265,8 @@ export default function Gstr9Page() {
             <div className="tf-row" style={{ gap: 6, marginTop: 10, fontSize: 12, color: 'var(--faint)' }}>
               <Icon name="calendar" size={13} />
               Due {formatDateIN(fyRange.due)}
-              {dueIn > 0 && <span>· {dueIn} days left</span>}
-              {dueIn < 0 && <span style={{ color: 'var(--red)' }}>· {Math.abs(dueIn)} days past the usual due date</span>}
+              {dueIn > 0 && <span>· {plural(dueIn, 'day')} left</span>}
+              {dueIn < 0 && <span style={{ color: 'var(--red)' }}>· {plural(Math.abs(dueIn), 'day')} past the usual due date</span>}
               <Link href="/gst/calendar" style={{ color: 'var(--brand)', textDecoration: 'none', fontWeight: 600, marginLeft: 4 }}>
                 Compliance calendar →
               </Link>
@@ -282,7 +282,7 @@ export default function Gstr9Page() {
       {/* KPIs */}
       <div className="g9-stats">
         <StatCard label="Aggregate outward turnover" value={turnover} icon="invoice" tone="blue"
-          sub={`Table 4.A, GST excluded · ${docs.filter(d => d.kind === 'invoice').length} documents`} />
+          sub={`Table 4.A, GST excluded · ${plural(docs.filter(d => d.kind === 'invoice').length, 'document')}`} />
         <StatCard label="Output tax on outward supplies" value={sumHeads(outward.map(o => o.heads)).tax} icon="percent" tone="violet"
           sub="CGST + SGST + IGST + Cess, after credit notes" delay={60} />
         <StatCard label="ITC claimed in the year" value={itc.availableTotal.tax} icon="cart" tone="green"
@@ -585,7 +585,7 @@ export default function Gstr9Page() {
             </div>
 
             <div className="g9-foot-note">
-              Totals compare the {recon.monthsDeclared} months you declared; undeclared months are excluded so the two
+              Totals compare the {plural(recon.monthsDeclared, 'month')} you declared; undeclared months are excluded so the two
               sides stay comparable. {money(recon.booksTotal.taxable)} is the full-year turnover as per books of accounts.
             </div>
           </div>

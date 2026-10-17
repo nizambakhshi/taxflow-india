@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { formatINR, getFinancialYear } from '@/lib/gst-engine'
-import { formatCompactINR, formatDateIN } from '@/lib/format'
+import { formatCompactINR, formatDateIN, plural } from '@/lib/format'
 import {
   b2bRegister, daysUntil, hsnSummary, loadEwbLog, orderFlowRows, partyWiseSales, removeEwbEntry,
   stateWiseSales, toCsv, totalsOf, upsertEwbEntry,
@@ -290,7 +290,7 @@ export default function RegistersPage() {
       <PageHeader
         eyebrow={`${orgName} · ${range.from ? `${formatDateIN(range.from)} → ${formatDateIN(range.to)}` : 'All time'}`}
         title="Statutory registers"
-        subtitle={`${docs.length} documents · ${items.length} line items read from your books`}
+        subtitle={`${plural(docs.length, 'document')} · ${plural(items.length, 'line item')} read from your books`}
         actions={
           <>
             <Button variant="subtle" icon="download" onClick={exportCsv} title="Export every row you can see, not just this screen">CSV</Button>
@@ -312,7 +312,7 @@ export default function RegistersPage() {
       />
 
       <div className="tf-g-4" style={{ marginBottom: '1rem' }}>
-        <StatCard label="Taxable value" value={formatCompactINR(grand.taxable)} sub={`${docs.length} documents`} icon="invoice" tone="blue" />
+        <StatCard label="Taxable value" value={formatCompactINR(grand.taxable)} sub={`${plural(docs.length, 'document')}`} icon="invoice" tone="blue" />
         <StatCard label="GST charged" value={formatCompactINR(grand.cgst + grand.sgst + grand.igst + grand.cess)}
           sub={`Inter-state ${formatCompactINR(grand.igst)}`} icon="percent" tone="violet" />
         <StatCard label="Invoice value" value={formatCompactINR(grand.total)} sub="Taxable plus tax" icon="wallet" tone="cyan" />

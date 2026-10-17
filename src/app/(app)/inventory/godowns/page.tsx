@@ -258,7 +258,7 @@ function GodownsPageInner() {
         />
         <StatCard
           label="Value on the register" value={money(totals.value)}
-          sub={totals.liveLots ? `${plural(totals.liveLots, 'lot')} · ${totals.units.toLocaleString('en-IN')} units` : 'nothing registered yet'}
+          sub={totals.liveLots ? `${plural(totals.liveLots, 'lot')} · ${totals.units.toLocaleString('en-IN')} ${pluralNoun(totals.units, 'unit')}` : 'nothing registered yet'}
           icon="scale" tone="cyan" delay={40}
         />
         <StatCard

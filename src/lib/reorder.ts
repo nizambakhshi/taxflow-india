@@ -1,4 +1,4 @@
-import { plural } from '@/lib/format'
+import { plural, pluralNoun } from '@/lib/format'
 // Reorder planning: how much of each stocked product to buy, and when to buy it.
 //
 // Three domain decisions worth writing down:
@@ -206,17 +206,17 @@ export function buildRows(
     if (daily <= 0) {
       if (onHand <= 0) {
         status = 'idle'
-        reason = `No sales in the last ${windowDays} days and nothing in stock — nothing to plan.`
+        reason = `No sales in the last ${plural(windowDays, 'day')} and nothing in stock — nothing to plan.`
       } else {
         status = 'idle'
-        reason = `Sold nothing in ${windowDays} days with ${fmtQty(onHand, unit)} on the shelf — this is dead stock, not a reorder.`
+        reason = `Sold nothing in ${plural(windowDays, 'day')} with ${fmtQty(onHand, unit)} on the shelf — this is dead stock, not a reorder.`
       }
     } else if (onHand <= 0) {
       status = 'out-of-stock'
       reason = `Stock is gone and it moves ${fmtQty(daily, unit)} a day — order ${fmtQty(toTarget, unit)} to get back to target.`
     } else if (daysOfCover !== null && daysOfCover <= leadDays) {
       status = 'critical'
-      reason = `${daysOfCover} days of cover left against a ${leadDays}-day lead time — it will run out before a fresh order lands.`
+      reason = `${daysOfCover} ${pluralNoun(daysOfCover, 'day')} of cover left against a ${leadDays}-day lead time — it will run out before a fresh order lands.`
     } else if (onHand <= reorderPoint) {
       status = 'reorder'
       reason = `At or below the ${fmtQty(reorderPoint, unit)} reorder point — order now to reach ${fmtQty(targetStock, unit)}.`
@@ -225,7 +225,7 @@ export function buildRows(
       reason = `Within a quarter of the reorder point — worth ordering with the next supplier call.`
     } else if (daysOfCover !== null && daysOfCover > (leadDays + settings.coverDays) * 3) {
       status = 'overstock'
-      reason = `${daysOfCover} days of cover is ${Math.round(daysOfCover / (leadDays + settings.coverDays))}x the target — buy nothing and let it drain.`
+      reason = `${daysOfCover} ${pluralNoun(daysOfCover, 'day')} of cover is ${Math.round(daysOfCover / (leadDays + settings.coverDays))}x the target — buy nothing and let it drain.`
     } else {
       status = 'ok'
       reason = `Healthy: ${daysOfCover ?? '—'} days of cover against a ${leadDays + settings.coverDays}-day target.`
@@ -363,7 +363,7 @@ export function orderText(groups: PurchaseOrderGroup[], windowDays: number): str
   return groups.map(g => {
     const lines = g.rows.map(r => `• ${fmtQty(r.orderQty, r.unit)} — ${r.name}${r.sku ? ` (${r.sku})` : ''}`)
     return `${g.vendor}\n${lines.join('\n')}\nEst. value ₹${Math.round(g.value).toLocaleString('en-IN')} · ${plural(g.rows.length, 'item')}`
-  }).join('\n\n') + `\n\n(based on the last ${windowDays} days of sales)`
+  }).join('\n\n') + `\n\n(based on the last ${plural(windowDays, 'day')} of sales)`
 }
 
 export const STATUS_LABEL: Record<ReorderStatus, string> = {

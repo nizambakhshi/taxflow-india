@@ -1672,7 +1672,7 @@ export function amendmentCost(
       + `${plural(days, 'day')} so far, read to today because nothing has been paid on this row yet. `
       + `It adds about ₹${perDay.toLocaleString('en-IN')} for every further day it stays open.`
     : `Recorded as carried${a.carried_in ? ` through ${a.carried_in}` : ''}, but this register holds no date the tax `
-      + `was paid, so the clock cannot be stopped honestly. Read to today (${days} days) as an upper figure — `
+      + `was paid, so the clock cannot be stopped honestly. Read to today (${plural(days, 'day')}) as an upper figure — `
       + `the real one is lower by however long ago it actually went in.`
   return {
     id: a.id, period: a.period, kind: a.kind, doc_ref: a.doc_ref, effect: a.effect, status: a.status,

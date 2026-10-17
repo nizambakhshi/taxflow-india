@@ -8,7 +8,7 @@ import {
   buildLedger, buildStatement, download, statementToCsv, summariseParties,
   type PartySummary,
 } from '@/lib/party-ledger'
-import {changePct, formatDateIN, formatCompactINR, pluralNoun} from '@/lib/format'
+import {changePct, formatDateIN, formatCompactINR, plural, pluralNoun} from '@/lib/format'
 import { buildPortalPayload, encodePortal, portalUrl } from '@/lib/portal'
 import { buildWhatsAppLink, loadUpiSettings, validateVpa } from '@/lib/payments'
 import {
@@ -193,7 +193,7 @@ export default function LedgerPage() {
       <PageHeader
         eyebrow={`Financial year ${getFinancialYear()}`}
         title="Account ledger"
-        subtitle={`${parties.length} parties · ${formatCompactINR(receivable)} to receive · ${formatCompactINR(payable)} to pay`}
+        subtitle={`${plural(parties.length, 'party')} · ${formatCompactINR(receivable)} to receive · ${formatCompactINR(payable)} to pay`}
         actions={<Button href="/payments" variant="ghost" icon="swap" style={{ background: 'rgba(255,255,255,.12)', color: 'white', borderColor: 'rgba(255,255,255,.25)' }}>Payments</Button>}
       />
 
@@ -246,7 +246,7 @@ export default function LedgerPage() {
                       {p.party.name}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--faint)', marginTop: 2 }}>
-                      {p.party.kind === 'customer' ? 'Customer' : 'Vendor'} · {p.activityCount} entries
+                      {p.party.kind === 'customer' ? 'Customer' : 'Vendor'} · {plural(p.activityCount, 'entry')}
                       {p.lastActivity ? ` · last ${formatDateIN(p.lastActivity)}` : ''}
                     </div>
                   </div>
@@ -377,7 +377,7 @@ export default function LedgerPage() {
                 }}>
                   <span data-label="Date">—</span>
                   <span data-label="Particulars">Period total</span>
-                  <span data-label="Document">{statement.rows.length} entries</span>
+                  <span data-label="Document">{plural(statement.rows.length, 'entry')}</span>
                   <span data-label="Debit" style={{ textAlign: 'right' }}>₹{formatINR(statement.totalDebit)}</span>
                   <span data-label="Credit" style={{ textAlign: 'right' }}>₹{formatINR(statement.totalCredit)}</span>
                   <span data-label="Balance" style={{ textAlign: 'right' }}>₹{formatINR(statement.closing)}</span>
@@ -390,7 +390,7 @@ export default function LedgerPage() {
                 <div>
                   <div className="tf-eyebrow" style={{ marginBottom: 8 }}>Position</div>
                   <StatRow label="Documents in range" value={statement.rows.length} />
-                  <StatRow label="Oldest overdue" value={selected.oldestDays ? `${selected.oldestDays} days` : '—'} tone={selected.oldestDays > 60 ? 'red' : 'grey'} />
+                  <StatRow label="Oldest overdue" value={selected.oldestDays ? `${plural(selected.oldestDays, 'day')}` : '—'} tone={selected.oldestDays > 60 ? 'red' : 'grey'} />
                   <StatRow label="Last activity" value={selected.lastActivity ? formatDateIN(selected.lastActivity) : '—'} />
                 </div>
                 <div>

@@ -10,7 +10,7 @@ import { download } from '@/lib/party-ledger'
 import { Badge, Button, Card, EmptyState, PageHeader, StatCard } from '@/components/ui'
 import type { Tone } from '@/components/ui'
 import Icon from '@/components/Icons'
-import { plural } from '@/lib/format'
+import { plural, pluralNoun } from '@/lib/format'
 import {
   BookRecord,
   CSV_TEMPLATE_EXAMPLE,
@@ -345,7 +345,7 @@ export default function Gstr2bReconciliationPage() {
         eyebrow={`ITC reconciliation · ${periodLabel(selectedPeriod)}`}
         title="GSTR-2B reconciliation"
         subtitle={portalRecords
-          ? `${books.length} bills in your books against ${portalRecords.length} records in 2B`
+          ? `${plural(books.length, 'bill')} in your books against ${plural(portalRecords.length, 'record')} in 2B`
           : `Match the ${plural(books.length, 'ITC-eligible purchase bill')} in your books against GSTR-2B`}
         actions={
           <select
@@ -442,15 +442,15 @@ export default function Gstr2bReconciliationPage() {
         <>
           <div className="rc-metrics">
             <StatCard label="ITC in your books" value={t.booksITC} tone="blue" icon="cart"
-              sub={`${books.length} purchase bills`} />
+              sub={`${plural(books.length, 'purchase bill')}`} />
             <StatCard label="ITC in GSTR-2B" value={t.portalITC} tone="violet" icon="cloud"
-              sub={`${portalRecords?.length ?? 0} portal records`} />
+              sub={`${plural(portalRecords?.length ?? 0, 'portal record')}`} />
             <StatCard label="Fully matched" value={t.matchedITC} tone="green" icon="check"
-              sub={`${result.matched.length} of ${books.length} bills`} />
+              sub={`${result.matched.length} of ${pluralNoun(books.length, 'bill')}`} />
             <StatCard label="ITC at risk" value={t.atRiskITC} tone={t.atRiskITC > 0 ? 'red' : 'green'}
               icon="alert" sub={t.atRiskITC > 0 ? 'Supplier must report it first' : 'Nothing unreported'} />
             <StatCard label="Extra credit in 2B" value={t.excessITC} tone="amber" icon="plus"
-              sub={`${result.portalOnly.length} bills not in your books`} />
+              sub={`${plural(result.portalOnly.length, 'bill')} not in your books`} />
           </div>
 
           {(expenseItc > 0 || t.cessInPortal > 0) && (

@@ -13,7 +13,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { formatDateIN, plural } from '@/lib/format'
+import { formatDateIN, plural, pluralNoun } from '@/lib/format'
 import { formatINR } from '@/lib/gst-engine'
 import { fmtQty } from '@/lib/reorder'
 import { toCsv } from '@/lib/registers'
@@ -442,7 +442,7 @@ function BatchesPageInner() {
       )}
 
       <div className="bt-foot">
-        <span>Shown: {visible.length} of {summary.lots} lots · {summary.consumed} sold out{summary.noExpiry.count ? ` · ${summary.noExpiry.count} without an expiry` : ''}</span>
+        <span>Shown: {visible.length} of {summary.lots} {pluralNoun(summary.lots, 'lot')} · {summary.consumed} sold out{summary.noExpiry.count ? ` · ${summary.noExpiry.count} without an expiry` : ''}</span>
         <span className="bt-foot-links">
           <Link href="/inventory/godowns">Godowns →</Link>
           <Link href="/products">Products →</Link>

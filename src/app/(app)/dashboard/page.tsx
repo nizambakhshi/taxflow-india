@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { formatINR, getFinancialYear } from '@/lib/gst-engine'
 import { computeAgeing } from '@/lib/reports'
-import { changePct, formatDateIN, formatCompactINR } from '@/lib/format'
+import { changePct, formatDateIN, formatCompactINR, plural } from '@/lib/format'
 import {
   BarChart, Badge, Button, Card, EmptyState, PageHeader, ProgressBar,
   SectionTitle, StatCard, StatRow, StackedBar,
@@ -218,7 +218,7 @@ export default function DashboardPage() {
       <PageHeader
         eyebrow={`Financial year ${fy}`}
         title={orgName || 'Your business'}
-        subtitle={`${monthLabel} · ${metrics.invoiceCount} invoices · ${metrics.customerCount} active customers`}
+        subtitle={`${monthLabel} · ${plural(metrics.invoiceCount, 'invoice')} · ${plural(metrics.customerCount, 'active customer')}`}
         actions={<Button href="/invoices/new" icon="plus">New invoice</Button>}
         right={<Button href="/reports" variant="ghost" icon="chart" style={{ background: 'rgba(255,255,255,.12)', color: 'white', borderColor: 'rgba(255,255,255,.25)' }}>Reports</Button>}
       />

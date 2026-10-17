@@ -95,17 +95,17 @@ function clockLine(v: ExportView): { text: string; tone: 'red' | 'amber' | 'blue
   if (v.time_state === 'settled') return { text: `Realised in full — the window closed on ${due}`, tone: 'green' }
   if (v.time_state === 'settled_late') return { text: `Realised, but after ${due} — a late credit does not undo the contravention`, tone: 'amber' }
   if (d === null) return { text: `Proceeds due ${due}`, tone: 'blue' }
-  if (d < 0 && v.time_state === 'restricted') return { text: `${-d} days past the window — the AD bank may restrict future exports`, tone: 'red' }
+  if (d < 0 && v.time_state === 'restricted') return { text: `${plural(-d, 'day')} past the window — the AD bank may restrict future exports`, tone: 'red' }
   if (d < 0) return { text: `Window ran out ${plural(-d, 'day')} ago (due ${due})`, tone: 'red' }
   if (d === 0) return { text: `Proceeds due today (${due})`, tone: 'amber' }
-  if (d <= 45) return { text: `${d} days left — proceeds due ${due}`, tone: 'amber' }
-  return { text: `${d} days left — proceeds due ${due}`, tone: 'blue' }
+  if (d <= 45) return { text: `${plural(d, 'day')} left — proceeds due ${due}`, tone: 'amber' }
+  return { text: `${plural(d, 'day')} left — proceeds due ${due}`, tone: 'blue' }
 }
 
 /** Which instrument fixed the window, in one line, with the disagreement kept visible. */
 function windowWords(w: WindowInfo | null): string {
   if (!w) return 'no window'
-  const base = `${w.months} months${w.rupee_channel ? ' (rupee contract)' : ''}`
+  const base = `${plural(w.months, 'month')}${w.rupee_channel ? ' (rupee contract)' : ''}`
   if (w.overridden) return `${base} — overridden on this file`
   if (w.disputed) return `${base} — sources differ, could be ${w.alternative_months}`
   return base
@@ -130,8 +130,8 @@ function refundLine(v: ExportView): string {
   if (!r.deadline) return 'No relevant date, so the two-year clock has not started'
   const left = r.days_left
   const tail = left === null ? '' : left < 0
-    ? ` · ${-left} days past`
-    : ` · ${left} days left`
+    ? ` · ${plural(-left, 'day')} past`
+    : ` · ${plural(left, 'day')} left`
   return `${r.label} — ${money(r.igst_paid)} · last day ${formatDateIN(r.deadline)}${tail}`
 }
 
@@ -689,7 +689,7 @@ function ExportsPageInner() {
                   RFD-11A acknowledgement; this register records it and never files it.
                   {lutCountdown === null
                     ? ` Deadline ${formatDateIN(nextLut.deadline)}.`
-                    : ` Deadline ${formatDateIN(nextLut.deadline)} — ${Math.max(0, lutCountdown)} days away.`}
+                    : ` Deadline ${formatDateIN(nextLut.deadline)} — ${plural(Math.max(0, lutCountdown), 'day')} away.`}
                 </p>
               </div>
               <Button size="sm" icon="plus" onClick={() => openLut(newLut(nextLut.from_date), true)}>Record undertaking</Button>
@@ -922,7 +922,7 @@ function ExportsPageInner() {
                   {b.disputed && (
                     <span className="ex-dispute">
                       <Icon name="compare" size={12} strokeWidth={2.2} />
-                      Exports on {formatDateIN(b.disputed.from)}: the register says {b.months} months, the other reading says
+                      Exports on {formatDateIN(b.disputed.from)}: the register says {plural(b.months, 'month')}, the other reading says
                       {' '}{b.disputed.instead_months} — {b.disputed.why}
                     </span>
                   )}
@@ -1165,20 +1165,20 @@ function ExportsPageInner() {
                 <li>
                   <span className={`ex-dot ex-dot-${editorWindow ? (editorWindow.disputed ? 'amber' : 'blue') : 'grey'}`} />
                   {editorWindow
-                    ? `${editorWindow.months} months from ${editorDate?.date ? formatDateIN(editorDate.date) : 'the date of export'} — ${editorWindow.source}`
+                    ? `${plural(editorWindow.months, 'month')} from ${editorDate?.date ? formatDateIN(editorDate.date) : 'the date of export'} — ${editorWindow.source}`
                     : 'No date of export: the window cannot be fixed until the paper is recorded'}
                 </li>
-                {editorWindow?.disputed && (
+                {editorWindow?.disputed && editorWindow.alternative_months !== null && (
                   <li>
                     <span className="ex-dot ex-dot-amber" />
-                    The sources split for this date: it may be {editorWindow.alternative_months} months instead. {editorWindow.dispute}
+                    The sources split for this date: it may be {plural(editorWindow.alternative_months, 'month')} instead. {editorWindow.dispute}
                   </li>
                 )}
                 {editorWindow?.overridden && (
                   <li><span className="ex-dot ex-dot-violet" />This file overrides the band table — the register prints the override, it does not hide it.</li>
                 )}
                 {editorWindow?.rupee_channel && (
-                  <li><span className="ex-dot ex-dot-blue" />Rupee-contract channel: {editorWindow.months} months, per the band&apos;s rupee carve-out.</li>
+                  <li><span className="ex-dot ex-dot-blue" />Rupee-contract channel: {plural(editorWindow.months, 'month')}, per the band&apos;s rupee carve-out.</li>
                 )}
                 {editor.file.kind === 'service' && (
                   <li><span className="ex-dot ex-dot-grey" />A service export has no shipping bill — the invoice, the payment and the foreign recipient are the paper.</li>
@@ -1763,7 +1763,7 @@ function FileCard({ v, onEdit, onReceipt, onClaim, onDelete, onRemoveReceipt }: 
           <StatRow label={`Advance ${formatDateIN(v.advance.received)}`} tone={v.advance.late ? 'red' : 'grey'}
             value={v.advance.dispatched
               ? `goods out ${formatDateIN(v.file.export_date || v.file.shipping_bill_date)} · window closed ${formatDateIN(v.advance.due_date)}`
-              : `dispatch by ${formatDateIN(v.advance.due_date)}${v.advance.days_left !== null ? ` · ${v.advance.days_left} days` : ''}`} />
+              : `dispatch by ${formatDateIN(v.advance.due_date)}${v.advance.days_left !== null ? ` · ${plural(v.advance.days_left, 'day')}` : ''}`} />
         )}
       </div>
 

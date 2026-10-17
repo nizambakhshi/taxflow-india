@@ -534,7 +534,7 @@ function PaymentsPageInner() {
         {tab === 'receivables' && summary.drafts > 0 && (
           <span>{summary.drafts} of these {summary.drafts === 1 ? 'is a draft' : 'are drafts'} — collecting against a draft settles a document you have not issued yet.</span>
         )}
-        {tab === 'history' && <span>Showing the last {Math.min(payments.length, 500)} payments.</span>}
+        {tab === 'history' && <span>Showing the last {plural(Math.min(payments.length, 500), 'payment')}.</span>}
         <span>A payment recorded here updates the balance on the document it is attached to; the invoice and bill lists stay the record of what is owed.</span>
       </div>
 

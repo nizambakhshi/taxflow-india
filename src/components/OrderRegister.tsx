@@ -8,6 +8,7 @@
 
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { plural } from '@/lib/format'
 import { createClient } from '@/lib/supabase'
 import {
   determineGSTType, calculateLineItem, getFinancialYear, formatINR,
@@ -429,7 +430,7 @@ function OrderRegisterInner({ kind }: { kind: OrderKind }) {
             <StatCard key={s.label}
               label={s.label}
               value={s.pick === 'value' ? money(summary.openValue) : String(count)}
-              sub={s.pick === 'value' ? `${summary.openCount} open orders ${s.sub}` : s.sub}
+              sub={s.pick === 'value' ? `${plural(summary.openCount, 'open order')} ${s.sub}` : s.sub}
               icon={s.icon}
               tone={s.pick !== 'value' && count === 0 ? 'grey' : s.tone}
               delay={i * 40}

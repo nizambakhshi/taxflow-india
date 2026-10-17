@@ -7,6 +7,7 @@
 
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { plural } from '@/lib/format'
 import { createClient } from '@/lib/supabase'
 import {
   determineGSTType, calculateLineItem, getFinancialYear, formatINR,
@@ -357,7 +358,7 @@ function ChallansPageInner() {
         <StatCard label={META.statusLabels.draft} value={String(summary.draft)}
           sub="not dispatched yet" icon="clipboard" tone="grey" delay={80} />
         <StatCard label="Value on the road" value={money(summary.movingValue)}
-          sub={`${summary.movingCount} challans in transit or delivered`}
+          sub={`${plural(summary.movingCount, 'challan')} in transit or delivered`}
           icon="wallet" tone="cyan" delay={120} />
       </div>
 

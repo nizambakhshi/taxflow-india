@@ -1412,7 +1412,7 @@ export function planAttendance(store: PayrollStore, month: string, text: string)
     if (named >= 1 || days >= 3) { headerAt = i; roles = r; break }
   }
   if (headerAt < 0) {
-    plan.blockers.push(`No header row was found in the first ${Math.min(6, cells.length)} lines. A column of bare numbers is refused, because “26” could be days present or days lost and the two give opposite salaries — name the column, or paste the blank sheet this register prints below.`)
+    plan.blockers.push(`No header row was found in the first ${plural(Math.min(6, cells.length), 'line')}. A column of bare numbers is refused, because “26” could be days present or days lost and the two give opposite salaries — name the column, or paste the blank sheet this register prints below.`)
     return plan
   }
 
@@ -1613,7 +1613,7 @@ export function planAttendance(store: PayrollStore, month: string, text: string)
       const stated = (hasPresent && presentNums.length >= 2) ? presentNums[1]
         : (hasLoss && lossNums.length >= 2 ? lossNums[1] : null)
       if (stated !== null && stated >= 1 && stated <= 31) {
-        useBasis = { kind: 'sheet', days: round2(stated), why: `The sheet states its own month length (${stated} days) beside the count, so that is the basis rather than the setting.` }
+        useBasis = { kind: 'sheet', days: round2(stated), why: `The sheet states its own month length (${plural(stated, 'day')} beside the count), so that is the basis rather than the setting.` }
       }
       if (hasLoss && hasPresent) {
         const implied = round2(useBasis.days - presentNums[0])

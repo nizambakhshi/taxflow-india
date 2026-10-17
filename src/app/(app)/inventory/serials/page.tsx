@@ -23,7 +23,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { formatDateIN, plural } from '@/lib/format'
+import { formatDateIN, plural, pluralNoun } from '@/lib/format'
 import { toCsv } from '@/lib/registers'
 import { download } from '@/lib/party-ledger'
 import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
@@ -555,7 +555,7 @@ function SerialsPageInner() {
 
       <div className="sr-foot">
         <span>
-          Shown: {visible.length} of {summary.units} units
+          Shown: {visible.length} of {summary.units} {pluralNoun(summary.units, 'unit')}
           {summary.sold ? ` · ${summary.sold} with customers` : ''}
           {summary.onWarranty ? ` · ${summary.onWarranty} on warranty` : ''}
         </span>

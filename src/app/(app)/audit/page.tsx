@@ -133,7 +133,7 @@ const doorsPage = GUARDED.filter(d => d.by === 'this page').length
  *  a coverage the wiring has not earned, and a new door changes the count by itself. */
 function sealedDoors(): string {
   if (doorsAsking === 0) return 'no path yet'
-  return `the ${doorsAsking} paths listed on the seals page`
+  return `the ${plural(doorsAsking, 'path')} listed on the seals page`
 }
 
 function stamp(isoStr: string): string {

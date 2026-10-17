@@ -5,6 +5,7 @@ import type { ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { formatINR } from '@/lib/gst-engine'
+import { plural } from '@/lib/format'
 import { csvFromRows } from '@/lib/gstr9'
 import { download } from '@/lib/party-ledger'
 import {
@@ -307,7 +308,7 @@ export default function GSTR3BPage() {
             what can be used against what, and what remains in cash.{' '}
             {data.counts.invoices + data.counts.bills + data.counts.expenses === 0
               ? 'No documents fall in this period.'
-              : `Built from ${data.counts.invoices} invoices, ${data.counts.bills} bills and ${data.counts.expenses} expenses.`}
+              : `Built from ${plural(data.counts.invoices, 'invoice')}, ${plural(data.counts.bills, 'bill')} and ${plural(data.counts.expenses, 'expense')}.`}
           </>
         }
         actions={

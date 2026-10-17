@@ -2705,7 +2705,7 @@ function RecipesPageInner() {
               <div className="rc-note is-hot">
                 <Icon name="alert" size={13} strokeWidth={2.2} />
                 <span>
-                  At {fmtQty(candidate?.units || 0, '')} units the shelf is short of{' '}
+                  At {fmtQty(candidate?.units || 0, '')} {pluralNoun(candidate?.units || 0, 'unit')} the shelf is short of{' '}
                   {draftPlanRows.filter(r => r.tone === 'short').slice(0, 3).map(r => `${r.name} (${fmtQty(r.short, r.unit)})`).join(', ')}
                   {draftPlanRows.filter(r => r.tone === 'short').length > 3 ? ' and more' : ''}. Recording the run anyway would take out
                   material the count does not have.

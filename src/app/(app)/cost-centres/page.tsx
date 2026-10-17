@@ -427,7 +427,7 @@ function CostCentresPageInner() {
         <StatCard
           label="Things to check" value={String(attention.centres.length + attention.sheets.length + attention.orphans.length)}
           sub={attention.orphans.length
-            ? `${attention.centres.length + attention.sheets.length} findings · ${plural(attention.orphans.length, 'orphan tag')}`
+            ? `${plural(attention.centres.length + attention.sheets.length, 'finding')} · ${plural(attention.orphans.length, 'orphan tag')}`
             : `${plural(attention.centres.length + attention.sheets.length, 'finding')}`}
           icon={attention.centres.length + attention.sheets.length ? 'shield' : 'check'}
           tone={attention.centres.length + attention.sheets.length ? 'red' : 'green'} delay={120}

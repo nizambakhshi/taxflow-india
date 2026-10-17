@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { plural } from '@/lib/format'
 import { createClient } from '@/lib/supabase'
 import { formatINR } from '@/lib/gst-engine'
 import { Badge, Button, Card, PageHeader, ProgressBar } from '@/components/ui'
@@ -178,8 +179,8 @@ export default function AskMyBooksPage() {
         )}
         {!loading && docCount > 0 && (
           <p className="ask-note is-faint" style={{ marginTop: 12 }}>
-            Reading {data.invoices.length} invoices, {data.bills.length} bills, {data.expenses.length} expenses
-            and {data.payments.length} payments.
+            Reading {plural(data.invoices.length, 'invoice')}, {plural(data.bills.length, 'bill')}, {plural(data.expenses.length, 'expense')}
+            and {plural(data.payments.length, 'payment')}.
           </p>
         )}
       </Card>

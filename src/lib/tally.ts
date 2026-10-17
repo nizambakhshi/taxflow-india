@@ -1622,7 +1622,7 @@ function documentItem(
     if (party) requires.push({ key: party.key, what: `${party.title} as a ${isSale ? 'customer' : 'vendor'}` })
   } else {
     reasons.push(v.partyHow === 'no party in the file'
-      ? `The voucher names no party ledger, and none of its ${v.entries.length} entries is flagged as one — whose ${isSale ? 'invoice' : 'bill'} is this?`
+      ? `The voucher names no party ledger, and ${v.entries.length === 1 ? 'its single entry is not' : `none of its ${v.entries.length} entries are`} flagged as one — whose ${isSale ? 'invoice' : 'bill'} is this?`
       : `The party could not be found on this voucher (${v.partyHow})`)
   }
 
@@ -1897,7 +1897,7 @@ function noteItem(
     if (party) requires.push({ key: party.key, what: `${party.title} as a ${isCredit ? 'customer' : 'vendor'}` })
   } else {
     reasons.push(v.partyHow === 'no party in the file'
-      ? `The voucher names no party ledger, and none of its ${v.entries.length} entries is flagged as one — whose ${isCredit ? 'credit' : 'debit'} note is this?`
+      ? `The voucher names no party ledger, and ${v.entries.length === 1 ? 'its single entry is not' : `none of its ${v.entries.length} entries are`} flagged as one — whose ${isCredit ? 'credit' : 'debit'} note is this?`
       : `The party could not be found on this voucher (${v.partyHow})`)
   }
 
@@ -2314,7 +2314,7 @@ function challanItem(
       reasons.push(`“${v.party}” is neither a master this file introduces nor a customer or vendor on the register — a challan moves goods toward someone, and this one names nobody the books know`)
     }
   } else {
-    reasons.push(`The voucher names no party ledger, and none of its ${v.entries.length} entries is flagged as one — to whom were these goods delivered?`)
+    reasons.push(`The voucher names no party ledger, and ${v.entries.length === 1 ? 'its single entry is not' : `none of its ${v.entries.length} entries are`} flagged as one — to whom were these goods delivered?`)
   }
 
   const gstinOfParty = matched?.gstin || (party?.fields.gstin as string) || ''

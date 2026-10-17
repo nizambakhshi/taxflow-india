@@ -971,7 +971,7 @@ function TallyPageInner() {
             <>
               <div className="tb-stats">
                 <StatCard label="Objects read" value={String(plan.summary.objects)}
-                  sub={`${plan.summary.ledgers} ledgers · ${plan.summary.stockItems} items · ${plan.summary.vouchers} vouchers`}
+                  sub={`${plural(plan.summary.ledgers, 'ledger')} · ${plural(plan.summary.stockItems, 'item')} · ${plural(plan.summary.vouchers, 'voucher')}`}
                   icon="book" tone="blue" />
                 <StatCard label="Ready to write" value={String(plan.summary.ready)}
                   sub={`${plural(plan.summary.byTarget.invoice.count + plan.summary.byTarget.purchase_bill.count + plan.summary.byTarget.credit_note.count + plan.summary.byTarget.debit_note.count, 'document')} · ${money(plan.summary.byTarget.invoice.rupees + plan.summary.byTarget.purchase_bill.rupees + plan.summary.byTarget.credit_note.rupees + plan.summary.byTarget.debit_note.rupees)}`}
