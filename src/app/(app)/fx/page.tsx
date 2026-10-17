@@ -37,6 +37,7 @@ import {
 import {
   Badge, Button, Card, EmptyState, PageHeader, ProgressBar, SearchInput, SectionTitle, Segmented,
   StatCard, StatRow,
+  useDialog,
 } from '@/components/ui'
 import Icon from '@/components/Icons'
 
@@ -123,9 +124,11 @@ function FxPageInner() {
   const [feed, setFeed] = useState<{ written: string[]; missing: string[]; failed: string[] } | null>(null)
 
   const [editor, setEditor] = useState<EditorState | null>(null)
+  const editorDialog = useDialog(() => setEditor(null))
   const [editorError, setEditorError] = useState('')
 
   const [receiptFor, setReceiptFor] = useState('')
+  const receiptDialog = useDialog(() => setReceiptFor(''))
   const [draft, setDraft] = useState<ReceiptDraft>({ date: '', foreign: '', inr: '', reference: '' })
   const [recError, setRecError] = useState('')
 
@@ -816,7 +819,7 @@ function FxPageInner() {
 
       {/* ── the deal editor ─────────────────────────────────────────────────────── */}
       {editor && draftEntry && (
-        <div className="fx-scrim" role="dialog" aria-modal="true"
+        <div ref={editorDialog} className="fx-scrim" role="dialog" aria-modal="true"
           aria-label={editor.isNew ? 'New foreign-currency deal' : `Edit ${editor.e.invoice_number}`}>
           <div className="fx-modal" style={{ maxWidth: 720 }}>
             <div className="fx-modal-head">
@@ -957,7 +960,7 @@ function FxPageInner() {
 
       {/* ── the remittance form ─────────────────────────────────────────────────── */}
       {receiptEntry && (
-        <div className="fx-scrim" role="dialog" aria-modal="true"
+        <div ref={receiptDialog} className="fx-scrim" role="dialog" aria-modal="true"
           aria-label={`Record a receipt against ${receiptEntry.invoice_number}`}>
           <div className="fx-modal" style={{ maxWidth: 520 }}>
             <div className="fx-modal-head">

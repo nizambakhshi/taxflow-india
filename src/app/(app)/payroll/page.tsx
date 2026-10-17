@@ -37,7 +37,7 @@ import { toCsv } from '@/lib/registers'
 import { formatINR } from '@/lib/gst-engine'
 import { formatDateIN, plural, pluralNoun } from '@/lib/format'
 import { INDIAN_STATES } from '@/lib/constants'
-import { Badge, Button, Card, EmptyState, PageHeader, SearchInput, Segmented, StatCard, StatRow } from '@/components/ui'
+import { Badge, Button, Card, EmptyState, PageHeader, SearchInput, Segmented, StatCard, StatRow, useDialog } from '@/components/ui'
 import Icon from '@/components/Icons'
 import {
   AGE_BANDS, AGE_META, ANNUAL_CSV_HEADERS, ATTENDANCE_MARKS, COMPONENT_LABELS, DEFAULT_SETTINGS, DUE_DAYS, ESI_BANDS,
@@ -841,6 +841,7 @@ function EmployeeEditor({ draft, month, existing, onSave, onClose }: {
   onClose: () => void
 }) {
   const [form, setForm] = useState<Employee>(draft)
+  const dialogRef = useDialog(onClose)
   const findings = validateEmployee(form)
   const blockers = findings.filter(f => f.level === 'block')
   const warnings = findings.filter(f => f.level === 'warn')
@@ -852,7 +853,7 @@ function EmployeeEditor({ draft, month, existing, onSave, onClose }: {
   const dupe = existing.some(e => e.code.trim() && e.code === form.code && e.id !== form.id)
 
   return (
-    <div className="pr-modal" role="dialog" aria-modal="true" aria-label="Salary card">
+    <div className="pr-modal" role="dialog" aria-modal="true" aria-label="Salary card" ref={dialogRef}>
       <div className="pr-modal-card">
         <div className="pr-modal-head">
           <div style={{ minWidth: 0, flex: 1 }}>
@@ -2201,6 +2202,7 @@ function RowEditor({ draft, employee, onSave, onClose, onDelete }: {
   onDelete?: () => void
 }) {
   const [form, setForm] = useState<PayInput>(draft)
+  const dialogRef = useDialog(onClose)
   const findings = validateInput(form, employee, form.month)
   const blockers = findings.filter(f => f.level === 'block')
   const set = <K extends keyof PayInput>(key: K, value: PayInput[K]) => setForm(f => ({ ...f, [key]: value }))
@@ -2215,7 +2217,7 @@ function RowEditor({ draft, employee, onSave, onClose, onDelete }: {
   )
 
   return (
-    <div className="pr-modal" role="dialog" aria-modal="true" aria-label="Month row">
+    <div className="pr-modal" role="dialog" aria-modal="true" aria-label="Month row" ref={dialogRef}>
       <div className="pr-modal-card" style={{ width: 'min(620px, 100%)' }}>
         <div className="pr-modal-head">
           <div style={{ minWidth: 0, flex: 1 }}>

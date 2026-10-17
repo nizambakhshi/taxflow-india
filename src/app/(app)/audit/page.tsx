@@ -65,6 +65,7 @@ import { loadAllDocs, type FlowDoc } from '@/lib/orderflow'
 import type { LedgerBill, LedgerExpense, LedgerInvoice, LedgerPayment } from '@/lib/ledger'
 import {
   Badge, Button, Card, EmptyState, PageHeader, SearchInput, SectionTitle, Segmented, StatCard, StatRow,
+  useDialog,
 } from '@/components/ui'
 import Icon from '@/components/Icons'
 
@@ -180,6 +181,9 @@ function AuditPageInner() {
   const [release, setRelease] = useState<ReleaseDraft | null>(null)
   const [releaseError, setReleaseError] = useState('')
   const [noteOpen, setNoteOpen] = useState(false)
+  const sealDialog = useDialog(() => setSeal(null))
+  const releaseDialog = useDialog(() => setRelease(null))
+  const noteDialog = useDialog(() => setNoteOpen(false))
   const [noteText, setNoteText] = useState('')
 
   useEffect(() => {
@@ -567,7 +571,7 @@ function AuditPageInner() {
 
       {/* ── Seal a period ─────────────────────────────────────────────────────── */}
       {seal && (
-        <div className="au-scrim" role="dialog" aria-modal="true" aria-label="Seal a period">
+        <div ref={sealDialog} className="au-scrim" role="dialog" aria-modal="true" aria-label="Seal a period">
           <div className="au-modal">
             <div className="au-modal-head">
               <div>
@@ -650,7 +654,7 @@ function AuditPageInner() {
 
       {/* ── Release a seal ────────────────────────────────────────────────────── */}
       {release && (
-        <div className="au-scrim" role="dialog" aria-modal="true" aria-label={`Release ${release.seal.label}`}>
+        <div ref={releaseDialog} className="au-scrim" role="dialog" aria-modal="true" aria-label={`Release ${release.seal.label}`}>
           <div className="au-modal" style={{ maxWidth: 500 }}>
             <div className="au-modal-head">
               <div>
@@ -688,7 +692,7 @@ function AuditPageInner() {
 
       {/* ── Add a note ────────────────────────────────────────────────────────── */}
       {noteOpen && (
-        <div className="au-scrim" role="dialog" aria-modal="true" aria-label="Add a note to the trail">
+        <div ref={noteDialog} className="au-scrim" role="dialog" aria-modal="true" aria-label="Add a note to the trail">
           <div className="au-modal" style={{ maxWidth: 480 }}>
             <div className="au-modal-head">
               <div>

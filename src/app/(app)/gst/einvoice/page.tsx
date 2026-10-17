@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { formatINR } from '@/lib/gst-engine'
-import { Badge, Button, Card, EmptyState, PageHeader, SearchInput, Segmented, StatCard } from '@/components/ui'
+import { Badge, Button, Card, EmptyState, PageHeader, SearchInput, Segmented, StatCard, useDialog } from '@/components/ui'
 import Icon from '@/components/Icons'
 import {
   EiInvoiceInput, EiSeller, EwbInput,
@@ -120,6 +120,9 @@ export default function EInvoicePage() {
   const [jsonModal, setJsonModal] = useState<{ title: string; data: Record<string, unknown>; issues: string[]; filename: string } | null>(null)
   const [inspect, setInspect] = useState<DocRow | null>(null)
   const [ewbFor, setEwbFor] = useState<InvoiceRow | null>(null)
+  const inspectDialog = useDialog(() => setInspect(null))
+  const jsonDialog = useDialog(closeModal)
+  const ewbDialog = useDialog(() => setEwbFor(null))
   const [gspProvider, setGspProvider] = useState('mock')
   const [ewbSubmitting, setEwbSubmitting] = useState(false)
   const [ewbResult, setEwbResult] = useState<{ ewbNo: string; validityEndDate: string; mock: boolean } | null>(null)
@@ -589,7 +592,7 @@ export default function EInvoicePage() {
       )}
 
       {inspect && (
-        <div className="ef-scrim" role="dialog" aria-modal="true" aria-label={`Fixes needed on ${inspect.inv.invoice_number}`}
+        <div ref={inspectDialog} className="ef-scrim" role="dialog" aria-modal="true" aria-label={`Fixes needed on ${inspect.inv.invoice_number}`}
           onClick={() => setInspect(null)}>
           <div className="ef-modal ef-modal-narrow" onClick={e => e.stopPropagation()}>
             <div className="ef-modal-head">
@@ -622,7 +625,7 @@ export default function EInvoicePage() {
       )}
 
       {jsonModal && (
-        <div className="ef-scrim" role="dialog" aria-modal="true" aria-label={jsonModal.title} onClick={closeModal}>
+        <div ref={jsonDialog} className="ef-scrim" role="dialog" aria-modal="true" aria-label={jsonModal.title} onClick={closeModal}>
           <div className="ef-modal" onClick={e => e.stopPropagation()}>
             <div className="ef-modal-head">
               <h2>{jsonModal.title}</h2>
@@ -666,7 +669,7 @@ export default function EInvoicePage() {
       )}
 
       {ewbFor && (
-        <div className="ef-scrim" role="dialog" aria-modal="true"
+        <div ref={ewbDialog} className="ef-scrim" role="dialog" aria-modal="true"
           aria-label={`E-way bill for ${ewbFor.invoice_number}`} onClick={() => setEwbFor(null)}>
           <div className="ef-modal ef-modal-narrow" onClick={e => e.stopPropagation()}>
             <div className="ef-modal-head">

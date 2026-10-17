@@ -52,6 +52,7 @@ import {
 import {
   Badge, Button, Card, EmptyState, PageHeader, ProgressBar, SearchInput, SectionTitle, Segmented,
   StatCard, StatRow,
+  useDialog,
 } from '@/components/ui'
 import Icon from '@/components/Icons'
 
@@ -252,6 +253,11 @@ function ExportsPageInner() {
   const [lutEditor, setLutEditor] = useState<{ lut: LutRecord; isNew: boolean } | null>(null)
   const [receipt, setReceipt] = useState<{ fileId: string; draft: Realisation } | null>(null)
   const [claim, setClaim] = useState<{ fileId: string; draft: RefundClaim } | null>(null)
+
+  const editorDialog = useDialog(() => setEditor(null))
+  const lutDialog = useDialog(() => setLutEditor(null))
+  const receiptDialog = useDialog(() => setReceipt(null))
+  const claimDialog = useDialog(() => setClaim(null))
 
   useEffect(() => {
     async function load() {
@@ -1019,6 +1025,7 @@ function ExportsPageInner() {
 
       {editor && (
         <div className="ex-scrim" role="dialog" aria-modal="true" aria-label={editor.isNew ? 'Record an export file' : 'Edit the export file'}
+          ref={editorDialog}
           onClick={e => { if (e.target === e.currentTarget) setEditor(null) }}>
           <div className="ex-modal" style={{ maxWidth: 760 }}>
             <div className="ex-modal-head">
@@ -1217,6 +1224,7 @@ function ExportsPageInner() {
 
       {lutEditor && (
         <div className="ex-scrim" role="dialog" aria-modal="true" aria-label={lutEditor.isNew ? 'Record a Letter of Undertaking' : 'Edit the undertaking'}
+          ref={lutDialog}
           onClick={e => { if (e.target === e.currentTarget) setLutEditor(null) }}>
           <div className="ex-modal" style={{ maxWidth: 620 }}>
             <div className="ex-modal-head">
@@ -1296,6 +1304,7 @@ function ExportsPageInner() {
         const countedElsewhere = v.realisation_source === 'fx'
         return (
           <div className="ex-scrim" role="dialog" aria-modal="true" aria-label="Record a realisation"
+            ref={receiptDialog}
             onClick={e => { if (e.target === e.currentTarget) setReceipt(null) }}>
             <div className="ex-modal" style={{ maxWidth: 560 }}>
               <div className="ex-modal-head">
@@ -1371,6 +1380,7 @@ function ExportsPageInner() {
         const onGoodsBill = v.kind === 'goods' && v.route === 'igst_paid'
         return (
           <div className="ex-scrim" role="dialog" aria-modal="true" aria-label="Record the refund claim"
+            ref={claimDialog}
             onClick={e => { if (e.target === e.currentTarget) setClaim(null) }}>
             <div className="ex-modal" style={{ maxWidth: 560 }}>
               <div className="ex-modal-head">

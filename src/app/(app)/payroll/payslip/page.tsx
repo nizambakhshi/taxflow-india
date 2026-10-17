@@ -32,7 +32,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { formatDateIN, plural } from '@/lib/format'
 import { downloadElementAsPdf, downloadElementsAsPdf } from '@/lib/pdf-export'
-import { Badge, Button, Card, EmptyState, PageHeader, Segmented } from '@/components/ui'
+import { Badge, Button, Card, EmptyState, PageHeader, Segmented, useDialog } from '@/components/ui'
 import Icon from '@/components/Icons'
 import {
   LETTERHEAD_IDENTIFIERS, currentMonth, emptyPayroll, fyMonths, fyStartOfMonth, letterheadIsEmpty, loadPayroll,
@@ -823,11 +823,12 @@ function LetterheadEditor({ initial, onSave, onClose }: {
   onClose: () => void
 }) {
   const [draft, setDraft] = useState<Letterhead>({ ...initial })
+  const dialogRef = useDialog(onClose)
   const blank = letterheadIsEmpty(draft)
   const set = (key: keyof Letterhead, value: string) => setDraft(d => ({ ...d, [key]: value }))
 
   return (
-    <div className="ps-modal" role="dialog" aria-modal="true" aria-label="Payslip letterhead">
+    <div className="ps-modal" role="dialog" aria-modal="true" aria-label="Payslip letterhead" ref={dialogRef}>
       <div className="ps-modal-card">
         <div className="ps-modal-head">
           <div>

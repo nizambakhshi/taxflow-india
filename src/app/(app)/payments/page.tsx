@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { formatINR } from '@/lib/gst-engine'
 import { formatDateIN, plural } from '@/lib/format'
-import { Badge, Button, Card, EmptyState, PageHeader, SearchInput, Segmented, StatCard } from '@/components/ui'
+import { Badge, Button, Card, EmptyState, PageHeader, SearchInput, Segmented, StatCard, useDialog } from '@/components/ui'
 import SealNotice from '@/components/SealNotice'
 import { askSeal } from '@/lib/audit'
 import Icon from '@/components/Icons'
@@ -129,6 +129,7 @@ function PaymentsPageInner() {
 
   // Payment form
   const [showPaymentForm, setShowPaymentForm] = useState(false)
+  const payDialog = useDialog(() => setShowPaymentForm(false))
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceRow | null>(null)
   const [selectedBill, setSelectedBill] = useState<BillRow | null>(null)
   const [paymentAmount, setPaymentAmount] = useState('')
@@ -539,7 +540,7 @@ function PaymentsPageInner() {
       </div>
 
       {showPaymentForm && docBox && (
-        <div className="pm-scrim" role="dialog" aria-modal="true" aria-label="Record payment">
+        <div ref={payDialog} className="pm-scrim" role="dialog" aria-modal="true" aria-label="Record payment">
           <div className="pm-modal">
             <div className="pm-modal-head">
               <h2>Record payment</h2>

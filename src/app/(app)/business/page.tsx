@@ -38,6 +38,7 @@ import {
 } from '@/lib/setup'
 import {
   Badge, Button, Card, EmptyState, PageHeader, SearchInput, SectionTitle, Segmented, StatCard,
+  useDialog,
 } from '@/components/ui'
 import Icon from '@/components/Icons'
 
@@ -111,10 +112,12 @@ function BusinessPageInner() {
 
   // Branch editor — `draft` non-null means the modal is open.
   const [draft, setDraft] = useState<Branch | null>(null)
+  const branchDialog = useDialog(() => setDraft(null))
   const [branchProblems, setBranchProblems] = useState<string[]>([])
 
   // Series editor — `editRow` is the working copy of one kind's format.
   const [editRow, setEditRow] = useState<SeriesRow | null>(null)
+  const seriesDialog = useDialog(() => setEditRow(null))
   const [seriesProblems, setSeriesProblems] = useState<string[]>([])
 
   const fy = getFinancialYear()
@@ -402,7 +405,7 @@ function BusinessPageInner() {
 
       {/* ── Branch editor ─────────────────────────────────────────────────── */}
       {draft && (
-        <div className="bu-scrim" role="dialog" aria-modal="true" aria-label="Branch details">
+        <div ref={branchDialog} className="bu-scrim" role="dialog" aria-modal="true" aria-label="Branch details">
           <div className="bu-modal">
             <div className="bu-modal-head">
               <div>
@@ -491,7 +494,7 @@ function BusinessPageInner() {
 
       {/* ── Series editor ─────────────────────────────────────────────────── */}
       {editRow && (
-        <div className="bu-scrim" role="dialog" aria-modal="true" aria-label={`Series for ${SERIES_KIND_LABEL[editRow.kind].label}`}>
+        <div ref={seriesDialog} className="bu-scrim" role="dialog" aria-modal="true" aria-label={`Series for ${SERIES_KIND_LABEL[editRow.kind].label}`}>
           <div className="bu-modal" style={{ maxWidth: 500 }}>
             <div className="bu-modal-head">
               <div>

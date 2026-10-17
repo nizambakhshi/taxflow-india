@@ -48,6 +48,7 @@ import { costPerHourFor, employeeById, isMonth, loadPayroll, monthLabel, offRost
 import { dayBook, markWork } from '@/lib/attendance'
 import {
   Badge, BarChart, Button, Card, EmptyState, PageHeader, ProgressBar, SearchInput, Segmented, StatCard, StatRow,
+  useDialog,
 } from '@/components/ui'
 import Icon from '@/components/Icons'
 
@@ -156,6 +157,11 @@ function ProjectsPageInner() {
   const [attachFor, setAttachFor] = useState<string>('')
   const [drawForm, setDrawForm] = useState<DrawState | null>(null)
   const [drawError, setDrawError] = useState('')
+
+  const editorDialog = useDialog(() => setEditor(null))
+  const entryDialog = useDialog(() => setEntryForm(null))
+  const billDialog = useDialog(() => setBillFor(null))
+  const drawDialog = useDialog(() => setDrawForm(null))
 
   useEffect(() => {
     async function load() {
@@ -1189,7 +1195,7 @@ function ProjectsPageInner() {
 
       {/* ── modals ───────────────────────────────────────────────────────────── */}
       {editor && (
-        <div className="pj-scrim" role="dialog" aria-modal="true" aria-label={editor.isNew ? 'New project' : 'Edit project'} onClick={() => setEditor(null)}>
+        <div className="pj-scrim" role="dialog" aria-modal="true" aria-label={editor.isNew ? 'New project' : 'Edit project'} ref={editorDialog} onClick={() => setEditor(null)}>
           <div className="pj-modal" onClick={e => e.stopPropagation()}>
             <div className="pj-modal-head">
               <h2>{editor.isNew ? 'New project' : editor.project.name || 'Edit project'}</h2>
@@ -1252,7 +1258,7 @@ function ProjectsPageInner() {
       )}
 
       {entryForm && (
-        <div className="pj-scrim" role="dialog" aria-modal="true" aria-label="Log time" onClick={() => setEntryForm(null)}>
+        <div className="pj-scrim" role="dialog" aria-modal="true" aria-label="Log time" ref={entryDialog} onClick={() => setEntryForm(null)}>
           <div className="pj-modal pj-modal-sm" onClick={e => e.stopPropagation()}>
             <div className="pj-modal-head">
               <h2>{entryForm.isNew ? 'Log time' : 'Edit the day'}</h2>
@@ -1333,7 +1339,7 @@ function ProjectsPageInner() {
       )}
 
       {billFor && (
-        <div className="pj-scrim" role="dialog" aria-modal="true" aria-label="Mark billed" onClick={() => setBillFor(null)}>
+        <div className="pj-scrim" role="dialog" aria-modal="true" aria-label="Mark billed" ref={billDialog} onClick={() => setBillFor(null)}>
           <div className="pj-modal pj-modal-sm" onClick={e => e.stopPropagation()}>
             <div className="pj-modal-head">
               <h2>Which invoice carries these hours?</h2>
@@ -1366,7 +1372,7 @@ function ProjectsPageInner() {
       )}
 
       {drawForm && (
-        <div className="pj-scrim" role="dialog" aria-modal="true" aria-label="Draw hours from the day book" onClick={() => setDrawForm(null)}>
+        <div className="pj-scrim" role="dialog" aria-modal="true" aria-label="Draw hours from the day book" ref={drawDialog} onClick={() => setDrawForm(null)}>
           <div className="pj-modal" onClick={e => e.stopPropagation()}>
             <div className="pj-modal-head">
               <h2>Draw hours from the day book</h2>

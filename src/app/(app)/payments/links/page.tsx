@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { formatINR } from '@/lib/gst-engine'
 import { formatDateIN } from '@/lib/format'
-import { Badge, Button, Card, EmptyState, PageHeader, SearchInput, Segmented, StatCard } from '@/components/ui'
+import { Badge, Button, Card, EmptyState, PageHeader, SearchInput, Segmented, StatCard, useDialog } from '@/components/ui'
 import Icon from '@/components/Icons'
 import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
 import {
@@ -58,6 +58,7 @@ function PaymentLinksPageInner() {
 
   // Reminder modal
   const [reminderFor, setReminderFor] = useState<Row | null>(null)
+  const reminderDialog = useDialog(() => setReminderFor(null))
   const [reminderText, setReminderText] = useState('')
   const [reminderPayLink, setReminderPayLink] = useState('')
   const [reminderError, setReminderError] = useState('')
@@ -369,7 +370,7 @@ function PaymentLinksPageInner() {
       </div>
 
       {reminderFor && (
-        <div className="pl-scrim" role="dialog" aria-modal="true" aria-label={`Payment reminder for ${reminderFor.invoiceNumber}`}
+        <div ref={reminderDialog} className="pl-scrim" role="dialog" aria-modal="true" aria-label={`Payment reminder for ${reminderFor.invoiceNumber}`}
           onClick={() => setReminderFor(null)}>
           <div className="pl-modal" onClick={e => e.stopPropagation()}>
             <div className="pl-modal-head">

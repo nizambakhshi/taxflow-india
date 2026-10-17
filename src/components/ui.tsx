@@ -1,5 +1,6 @@
 'use client'
 
+import { useCallback, useEffect, useRef } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import Link from 'next/link'
 import Icon from '@/components/Icons'
@@ -8,6 +9,130 @@ import { formatCompactINR } from '@/lib/format'
 /** Lets us set CSS custom properties from inline styles without fighting TS. */
 function vars(defs: Record<string, string>): CSSProperties {
   return defs as CSSProperties
+}
+
+const DIALOG_FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+// Where the reader has been — focused or clicked — most recent last. Neither
+// obvious way to find a dialog's opener works: a hook declared in an
+// always-mounted page reads <body> on its first render, and the dialog's ref
+// callback runs after a field's autoFocus has already moved focus inside. So the
+// page keeps this trail, and a dialog walks it back at mount to the last control
+// outside itself. Clicks are recorded too, because a pointer can open a modal
+// before any focus event lands; the click's nearest focusable ancestor is the
+// element worth handing focus back to. Nested dialogs stay honest: a trigger
+// inside another dialog was the last thing touched, so it is found before
+// anything in the page behind.
+const OPENER_TRAIL: HTMLElement[] = []
+const OPENER_TRAIL_MAX = 8
+
+function rememberOpener(candidate: Element | null) {
+  if (!(candidate instanceof HTMLElement) || candidate === document.body) return
+  OPENER_TRAIL.push(candidate)
+  if (OPENER_TRAIL.length > OPENER_TRAIL_MAX) OPENER_TRAIL.shift()
+}
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('focusin', (event) => {
+    rememberOpener(event.target instanceof Element ? event.target : null)
+  }, true)
+  document.addEventListener('click', (event) => {
+    const target = event.target
+    if (target instanceof Element) rememberOpener(target.closest(DIALOG_FOCUSABLE))
+  }, true)
+}
+
+/**
+ * Every modal is a door, and the keyboard can use it (R3-28). Give the element
+ * that carries `role="dialog"` the returned ref and the dialog then takes focus
+ * on open (unless one of its fields already did), closes on Escape through the
+ * caller's own close function, cycles Tab inside its own controls instead of
+ * leaking to the page behind, and hands focus back to whatever opened it.
+ *
+ * The ref callback is React 19's cleanup form, so a conditionally rendered
+ * modal needs nothing but the ref — there is no `open` flag to pass and no
+ * effect to keep in step with the markup. The command palette keeps its own
+ * keys: it is a listbox, Tab is deliberately cancelled there, and it is the
+ * one dialog with no shared ref.
+ */
+export function useDialog(onClose: () => void) {
+  // The callback is kept fresh through an effect, not written during render:
+  // the ref callback must keep one identity for the dialog's whole life, or
+  // React would detach and reattach it on every render and focus would bounce
+  // back to the opener each time.
+  const closeRef = useRef(onClose)
+  useEffect(() => { closeRef.current = onClose })
+
+  return useCallback((node: HTMLDivElement | null) => {
+    if (!node) return
+    const el = node
+    el.setAttribute('tabindex', '-1')
+    let alive = true
+
+    // The trigger is the most recent control outside this dialog. Walking the
+    // trail (rather than reading activeElement) is what makes autoFocus safe:
+    // React attaches this ref only after the mount has already moved focus to
+    // the composer's first field, and that field is skipped because it is
+    // inside `el`. A page-level hook has no useful render-time focus either,
+    // so the trail is the only point that is right in both cases.
+    const opener = [...OPENER_TRAIL].reverse().find((candidate) =>
+      candidate !== el && !el.contains(candidate) && candidate.isConnected) ?? null
+
+    const topmost = () => {
+      const open = document.querySelectorAll<HTMLElement>('[role="dialog"]')
+      return open.length === 0 || open[open.length - 1] === el
+    }
+    const focusables = () => Array.from(el.querySelectorAll<HTMLElement>(DIALOG_FOCUSABLE))
+      .filter(item => item.tabIndex !== -1 && item.getClientRects().length > 0)
+
+    function onKey(e: KeyboardEvent) {
+      if (!alive || !el.isConnected || !topmost()) return
+      // Escape ends an IME composition before it means "close"; typing a
+      // Devanagari or Tamil name must never shut the form.
+      if (e.isComposing) return
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        closeRef.current()
+        return
+      }
+      if (e.key !== 'Tab') return
+      const items = focusables()
+      if (items.length === 0) {
+        e.preventDefault()
+        el.focus()
+        return
+      }
+      const first = items[0]
+      const last = items[items.length - 1]
+      const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      const outside = !active || active === el || !el.contains(active)
+      if (e.shiftKey) {
+        if (active === first || outside) {
+          e.preventDefault()
+          last.focus()
+        }
+      } else if (active === last || outside) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener('keydown', onKey, true)
+    // Let React's own autoFocus land first; only take focus if the dialog is
+    // still holding none of it. Focusing the dialog (not its first field) keeps
+    // a phone from throwing a keyboard up before the reader has chosen a field.
+    const frame = window.requestAnimationFrame(() => {
+      if (alive && !el.contains(document.activeElement)) el.focus()
+    })
+
+    return () => {
+      alive = false
+      window.cancelAnimationFrame(frame)
+      document.removeEventListener('keydown', onKey, true)
+      if (opener && opener.isConnected) opener.focus()
+    }
+  }, [])
 }
 
 export type Tone = 'blue' | 'green' | 'red' | 'amber' | 'violet' | 'cyan' | 'grey'

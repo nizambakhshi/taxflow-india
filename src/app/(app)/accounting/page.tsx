@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import {formatDateIN, plural, pluralNoun} from '@/lib/format'
-import { Button, Card, PageHeader, Segmented, StatCard } from '@/components/ui'
+import { Button, Card, PageHeader, Segmented, StatCard, useDialog } from '@/components/ui'
 import Icon from '@/components/Icons'
 import {
   computeProfitLoss, computeBalanceSheet,
@@ -106,6 +106,7 @@ export default function FinancialStatementsPage() {
     { cash: 0, bank: 0, receivables: 0, payables: 0, fixedAssets: 0, loans: 0, capital: 0, as_of: '' }
   )
   const [showOpening, setShowOpening] = useState(false)
+  const openingDialog = useDialog(() => setShowOpening(false))
   const [draftOpening, setDraftOpening] = useState<OpeningBalances>(opening)
   const [openingSaved, setOpeningSaved] = useState(false)
 
@@ -459,7 +460,7 @@ export default function FinancialStatementsPage() {
       </p>
 
       {showOpening && (
-        <div className="ac-scrim" role="dialog" aria-modal="true" aria-label="Opening balances"
+        <div ref={openingDialog} className="ac-scrim" role="dialog" aria-modal="true" aria-label="Opening balances"
           onClick={() => setShowOpening(false)}>
           <div className="ac-modal" onClick={e => e.stopPropagation()}>
             <div className="ac-modal-head">

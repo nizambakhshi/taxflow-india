@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { INDIAN_STATES, validateGSTIN } from '@/lib/constants'
-import { Badge, Button, Card, EmptyState, PageHeader, SearchInput, Segmented, StatCard } from '@/components/ui'
+import { Badge, Button, Card, EmptyState, PageHeader, SearchInput, Segmented, StatCard, useDialog } from '@/components/ui'
 import Icon from '@/components/Icons'
 import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
 
@@ -58,6 +58,7 @@ function CustomersPageInner() {
   const [orgId, setOrgId] = useState('')
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const formDialog = useDialog(() => { setShowForm(false); resetForm() })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [loadError, setLoadError] = useState('')
@@ -311,7 +312,7 @@ function CustomersPageInner() {
       )}
 
       {showForm && (
-        <div className="cu-scrim" role="dialog" aria-modal="true" aria-label={editingId ? 'Edit customer' : 'Add customer'}>
+        <div ref={formDialog} className="cu-scrim" role="dialog" aria-modal="true" aria-label={editingId ? 'Edit customer' : 'Add customer'}>
           <div className="cu-modal">
             <div className="cu-modal-head">
               <h2>{editingId ? 'Edit customer' : 'Add customer'}</h2>

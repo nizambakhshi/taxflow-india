@@ -17,6 +17,7 @@ import { INDIAN_STATES } from '@/lib/constants'
 import { GST_RATES } from '@/lib/gst-rates'
 import {
   Badge, Button, Card, EmptyState, PageHeader, SearchInput, Segmented, StatCard,
+  useDialog,
 } from '@/components/ui'
 import Icon from '@/components/Icons'
 import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
@@ -138,6 +139,7 @@ function ChallansPageInner() {
 
   // Modal state — `modalDoc` non-null means the editor is open.
   const [modalDoc, setModalDoc] = useState<FlowDoc | null>(null)
+  const editorDialog = useDialog(closeEditor)
   const [modalLines, setModalLines] = useState<DraftLine[]>([])
   const [isNewDoc, setIsNewDoc] = useState(true)
   const [modalError, setModalError] = useState('')
@@ -439,7 +441,7 @@ function ChallansPageInner() {
       </div>
 
       {modalDoc && (
-        <div className="dc-scrim" role="dialog" aria-modal="true"
+        <div ref={editorDialog} className="dc-scrim" role="dialog" aria-modal="true"
           aria-label={isNewDoc ? 'New delivery challan' : `Edit ${modalDoc.number}`}>
           <div className="dc-modal">
             <div className="dc-modal-head">

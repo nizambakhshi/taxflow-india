@@ -31,6 +31,7 @@ import {
 } from '@/lib/godowns'
 import {
   Badge, Button, Card, EmptyState, PageHeader, ProgressBar, SearchInput, Segmented, StatCard, StatRow,
+  useDialog,
 } from '@/components/ui'
 import Icon from '@/components/Icons'
 
@@ -81,6 +82,9 @@ function GodownsPageInner() {
   const [editorError, setEditorError] = useState('')
   const [transfer, setTransfer] = useState<TransferState | null>(null)
   const [transferError, setTransferError] = useState('')
+
+  const editorDialog = useDialog(() => setEditor(null))
+  const transferDialog = useDialog(() => setTransfer(null))
 
   useEffect(() => {
     async function load() {
@@ -485,7 +489,8 @@ function GodownsPageInner() {
       {/* ── Godown editor ──────────────────────────────────────────────────── */}
       {editor && (
         <div className="gd-scrim" role="dialog" aria-modal="true"
-          aria-label={editor.isNew ? 'Add godown' : `Edit ${editor.godown.name}`}>
+          aria-label={editor.isNew ? 'Add godown' : `Edit ${editor.godown.name}`}
+          ref={editorDialog}>
           <div className="gd-modal" style={{ maxWidth: 560 }}>
             <div className="gd-modal-head">
               <div>
@@ -550,7 +555,7 @@ function GodownsPageInner() {
 
       {/* ── Move stock ─────────────────────────────────────────────────────── */}
       {transfer && (
-        <div className="gd-scrim" role="dialog" aria-modal="true" aria-label="Move stock between godowns">
+        <div className="gd-scrim" role="dialog" aria-modal="true" aria-label="Move stock between godowns" ref={transferDialog}>
           <div className="gd-modal" style={{ maxWidth: 620 }}>
             <div className="gd-modal-head">
               <div>

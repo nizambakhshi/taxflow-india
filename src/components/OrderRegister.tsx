@@ -18,6 +18,7 @@ import { INDIAN_STATES } from '@/lib/constants'
 import { GST_RATES } from '@/lib/gst-rates'
 import {
   Badge, Button, Card, EmptyState, PageHeader, SearchInput, Segmented, StatCard,
+  useDialog,
 } from '@/components/ui'
 import Icon from '@/components/Icons'
 import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
@@ -200,6 +201,8 @@ function OrderRegisterInner({ kind }: { kind: OrderKind }) {
   const [isNewDoc, setIsNewDoc] = useState(true)
   const [modalError, setModalError] = useState('')
   const [saving, setSaving] = useState(false)
+
+  const modalDialog = useDialog(closeEditor)
 
   const fy = getFinancialYear()
 
@@ -516,7 +519,8 @@ function OrderRegisterInner({ kind }: { kind: OrderKind }) {
 
       {modalDoc && (
         <div className="ob-scrim" role="dialog" aria-modal="true"
-          aria-label={isNewDoc ? `New ${meta.label.toLowerCase()}` : `Edit ${modalDoc.number}`}>
+          aria-label={isNewDoc ? `New ${meta.label.toLowerCase()}` : `Edit ${modalDoc.number}`}
+          ref={modalDialog}>
           <div className="ob-modal">
             <div className="ob-modal-head">
               <div>

@@ -13,7 +13,7 @@ import { createClient } from '@/lib/supabase'
 import { determineGSTType, formatINR, numberToWords } from '@/lib/gst-engine'
 import { stateNameFor } from '@/lib/einvoice'
 import { downloadElementAsPdf } from '@/lib/pdf-export'
-import { Button } from '@/components/ui'
+import { Button, useDialog } from '@/components/ui'
 import Icon from '@/components/Icons'
 import {
   KIND_META, loadStore, saveStore,
@@ -75,6 +75,8 @@ export default function OrderDocument({ kind }: { kind: OrderKind }) {
   const [billNumber, setBillNumber] = useState('')
   const [billDate, setBillDate] = useState(todayISO())
   const [billError, setBillError] = useState('')
+
+  const billDialog = useDialog(() => setBillModal(false))
 
   useEffect(() => {
     if (!id) return
@@ -699,7 +701,8 @@ export default function OrderDocument({ kind }: { kind: OrderKind }) {
       {/* ── PO → BILL CONVERSION MODAL ── */}
       {billModal && (
         <div className="od-scrim" role="dialog" aria-modal="true"
-          aria-label={`Record the vendor bill for ${doc.number}`}>
+          aria-label={`Record the vendor bill for ${doc.number}`}
+          ref={billDialog}>
           <div className="od-modal">
             <div className="od-modal-head">
               <div>

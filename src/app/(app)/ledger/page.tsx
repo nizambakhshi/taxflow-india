@@ -13,6 +13,7 @@ import { buildPortalPayload, encodePortal, portalUrl } from '@/lib/portal'
 import { buildWhatsAppLink, loadUpiSettings, validateVpa } from '@/lib/payments'
 import {
   Badge, Button, Card, EmptyState, PageHeader, Segmented, StatCard, StatRow,
+  useDialog,
 } from '@/components/ui'
 import Icon from '@/components/Icons'
 import Link from 'next/link'
@@ -53,6 +54,7 @@ export default function LedgerPage() {
   const [preset, setPreset] = useState('fy')
   const [range, setRange] = useState(() => presetRange('fy'))
   const [share, setShare] = useState<ShareState | null>(null)
+  const shareDialog = useDialog(() => setShare(null))
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
@@ -408,6 +410,7 @@ export default function LedgerPage() {
       {/* ── Share statement (portal link) ── */}
       {share && (
         <div
+          ref={shareDialog}
           className="pt-share-scrim no-print" role="dialog" aria-modal="true" aria-label="Share statement"
           onClick={e => { if (e.target === e.currentTarget) setShare(null) }}
         >

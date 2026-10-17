@@ -37,6 +37,7 @@ import {
 } from '@/lib/recurring'
 import {
   Badge, Button, Card, EmptyState, PageHeader, ProgressBar, SearchInput, Segmented, StatCard, StatRow,
+  useDialog,
 } from '@/components/ui'
 import Icon from '@/components/Icons'
 
@@ -165,6 +166,9 @@ function RecurringPageInner() {
   const [gen, setGen] = useState<GenerateState | null>(null)
   const [genError, setGenError] = useState('')
   const [generating, setGenerating] = useState(false)
+
+  const editorDialog = useDialog(() => setEditor(null))
+  const genDialog = useDialog(() => setGen(null))
 
   useEffect(() => {
     async function load() {
@@ -663,7 +667,8 @@ function RecurringPageInner() {
       {/* ── the schedule editor ─────────────────────────────────────────────── */}
       {editor && (
         <div className="ri-scrim" role="dialog" aria-modal="true"
-          aria-label={editor.isNew ? 'New recurring invoice' : `Edit ${editor.s.name}`}>
+          aria-label={editor.isNew ? 'New recurring invoice' : `Edit ${editor.s.name}`}
+          ref={editorDialog}>
           <div className="ri-modal" style={{ maxWidth: 880 }}>
             <div className="ri-modal-head">
               <div>
@@ -913,7 +918,7 @@ function RecurringPageInner() {
 
       {/* ── the catch-up run ───────────────────────────────────────────────── */}
       {gen && genView && (
-        <div className="ri-scrim" role="dialog" aria-modal="true" aria-label={`Raise ${genView.s.name}`}>
+        <div className="ri-scrim" role="dialog" aria-modal="true" aria-label={`Raise ${genView.s.name}`} ref={genDialog}>
           <div className="ri-modal" style={{ maxWidth: 560 }}>
             <div className="ri-modal-head">
               <div>

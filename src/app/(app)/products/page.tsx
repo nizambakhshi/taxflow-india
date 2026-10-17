@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import BarcodeScanner from '@/components/BarcodeScanner'
 import { cameraScanSupported, validateBarcode } from '@/lib/barcode'
-import { Badge, Button, Card, EmptyState, PageHeader, SearchInput, Segmented, StatCard } from '@/components/ui'
+import { Badge, Button, Card, EmptyState, PageHeader, SearchInput, Segmented, StatCard, useDialog } from '@/components/ui'
 import Icon from '@/components/Icons'
 import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
 import { GST_RATES } from '@/lib/gst-rates'
@@ -61,6 +61,7 @@ function ProductsPageInner() {
   const [orgId, setOrgId] = useState('')
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const formDialog = useDialog(() => { setShowForm(false); resetForm() })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [loadError, setLoadError] = useState('')
@@ -307,7 +308,7 @@ function ProductsPageInner() {
       )}
 
       {showForm && (
-        <div className="pr-scrim" role="dialog" aria-modal="true" aria-label={editingId ? 'Edit item' : 'Add item'}>
+        <div ref={formDialog} className="pr-scrim" role="dialog" aria-modal="true" aria-label={editingId ? 'Edit item' : 'Add item'}>
           <div className="pr-modal">
             <div className="pr-modal-head">
               <h2>{editingId ? 'Edit item' : 'Add product or service'}</h2>

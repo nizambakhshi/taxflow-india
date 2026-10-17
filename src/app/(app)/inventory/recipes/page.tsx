@@ -105,6 +105,7 @@ import {
 } from '@/lib/wip'
 import {
   Badge, Button, Card, EmptyState, PageHeader, ProgressBar, SearchInput, Segmented, StatCard, StatRow,
+  useDialog,
 } from '@/components/ui'
 import Icon from '@/components/Icons'
 
@@ -239,6 +240,10 @@ function RecipesPageInner() {
   const [draftError, setDraftError] = useState('')
   const [rateEdit, setRateEdit] = useState<CostRate | null>(null)
   const [rateError, setRateError] = useState('')
+
+  const editorDialog = useDialog(() => { setEditor(null); setEditorError('') })
+  const draftDialog = useDialog(() => { setDraft(null); setDraftError('') })
+  const rateDialog = useDialog(() => { setRateEdit(null); setRateError('') })
 
   async function loadProducts(oid: string) {
     // Every product, not only the stock-tracked ones: a recipe's output may be a service line and a
@@ -1201,18 +1206,6 @@ function RecipesPageInner() {
       toCsv(['Component', 'Unit', 'Recipe', 'Recipe status', 'Drawn per finished unit', 'Makes', 'Components in recipe', `Consumed in ${period === 'all' ? 'all time' : `FY ${fyLabel(fyStartYear(new Date(`${win.from}T00:00:00`)))}`}`],
         rows.length ? rows : [[picked.name, picked.unit, '', '', '', '', 0, 0]]))
   }
-
-  // A modal closes on Escape — the register is typed in, and the keyboard should never feel trapped.
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key !== 'Escape') return
-      if (editor) { setEditor(null); setEditorError('') }
-      else if (draft) { setDraft(null); setDraftError('') }
-      else if (rateEdit) { setRateEdit(null); setRateError('') }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [editor, draft, rateEdit])
 
   if (loading) {
     return <div className="page-container rc"><p className="rc-load">Reading your catalogue and this browser’s recipe book…</p></div>
@@ -2276,7 +2269,8 @@ function RecipesPageInner() {
         const chosen = new Set(editor.recipe.components.map(c => c.product_id))
         return (
           <div className="rc-scrim" role="dialog" aria-modal="true"
-            aria-label={editor.isNew ? 'New recipe' : `Edit ${editor.recipe.name}`}>
+            aria-label={editor.isNew ? 'New recipe' : `Edit ${editor.recipe.name}`}
+            ref={editorDialog}>
             <div className="rc-modal" style={{ maxWidth: 720 }}>
               <div className="rc-modal-head">
                 <div>
@@ -2469,7 +2463,7 @@ function RecipesPageInner() {
 
       {/* ── rate editor ──────────────────────────────────────────────────────── */}
       {rateEdit && (
-        <div className="rc-scrim" role="dialog" aria-modal="true" aria-label="Shop rate row">
+        <div className="rc-scrim" role="dialog" aria-modal="true" aria-label="Shop rate row" ref={rateDialog}>
           <div className="rc-modal" style={{ maxWidth: 560 }}>
             <div className="rc-modal-head">
               <div>
@@ -2530,7 +2524,7 @@ function RecipesPageInner() {
 
       {/* ── build editor ─────────────────────────────────────────────────────── */}
       {draft && (
-        <div className="rc-scrim" role="dialog" aria-modal="true" aria-label="Record a build">
+        <div className="rc-scrim" role="dialog" aria-modal="true" aria-label="Record a build" ref={draftDialog}>
           <div className="rc-modal" style={{ maxWidth: 760 }}>
             <div className="rc-modal-head">
               <div>

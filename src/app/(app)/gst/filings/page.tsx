@@ -63,6 +63,7 @@ import {
 } from '@/lib/filings'
 import {
   Badge, Button, Card, EmptyState, PageHeader, SearchInput, SectionTitle, Segmented, StatCard, StatRow,
+  useDialog,
 } from '@/components/ui'
 import Icon from '@/components/Icons'
 
@@ -252,6 +253,7 @@ function FilingsPageInner() {
   const [focusPeriod, setFocusPeriod] = useState('')
 
   const [removing, setRemoving] = useState<{ row: RegisterRow; mode: 'withdraw' | 'delete'; reason: string } | null>(null)
+  const removeDialog = useDialog(() => setRemoving(null))
 
   /* ── load: the shop, the register, the year's documents ── */
 
@@ -1123,7 +1125,7 @@ function FilingsPageInner() {
 
       {/* ── withdrawal / removal ── */}
       {removing && (
-        <div className="fg-scrim" role="dialog" aria-modal="true" aria-label="Remove a row from the register" onClick={() => setRemoving(null)}>
+        <div className="fg-scrim" role="dialog" aria-modal="true" aria-label="Remove a row from the register" ref={removeDialog} onClick={() => setRemoving(null)}>
           <div className="fg-modal" onClick={e => e.stopPropagation()}>
             <div className="fg-modal-head">
               <h3>{FORM_META[removing.row.form].label} · {periodLabel(removing.row.period)}</h3>
@@ -1889,6 +1891,7 @@ function ComposerForm({
   onClose: () => void
 }) {
   const meta = FORM_META[composer.form]
+  const dialogRef = useDialog(onClose)
   const kinds = meta.cadence
   const existing = period
     ? store.filings.find(f => f.form === composer.form && f.period === period) ?? null
@@ -1915,7 +1918,7 @@ function ComposerForm({
   const set = (patch: Partial<Composer>) => setComposer({ ...composer, ...patch })
 
   return (
-    <div className="fg-scrim" role="dialog" aria-modal="true" aria-label="Record a return" onClick={onClose}>
+    <div className="fg-scrim" role="dialog" aria-modal="true" aria-label="Record a return" ref={dialogRef} onClick={onClose}>
       <div className="fg-modal" onClick={e => e.stopPropagation()}>
         <div className="fg-modal-head">
           <h3>{existing ? `Correct ${meta.label} for ${periodLabel(period)}` : `Record ${meta.label}`}</h3>
@@ -2120,6 +2123,7 @@ function AmendForm({
   onClose: () => void
 }) {
   const meta = AMENDMENT_META[amend.kind]
+  const dialogRef = useDialog(onClose)
   const windows = amend.period ? windowsFor(store, amend.period, today) : null
   const governing = windows ? (meta.clock === 'gstr1a' ? windows.gstr1a : meta.clock === 'table9a' ? windows.table9a : windows.itc) : null
   const set = (patch: Partial<AmendComposer>) => setAmend({ ...amend, ...patch })
@@ -2130,7 +2134,7 @@ function AmendForm({
   if (amend.period && !periodChoicesLocal.includes(amend.period)) periodChoicesLocal.unshift(amend.period)
 
   return (
-    <div className="fg-scrim" role="dialog" aria-modal="true" aria-label="Log an amendment" onClick={onClose}>
+    <div className="fg-scrim" role="dialog" aria-modal="true" aria-label="Log an amendment" ref={dialogRef} onClick={onClose}>
       <div className="fg-modal" onClick={e => e.stopPropagation()}>
         <div className="fg-modal-head">
           <h3>{amend.id ? 'Change the correction' : 'Log a correction'}</h3>

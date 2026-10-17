@@ -41,6 +41,7 @@ import {
 } from '@/lib/jobwork'
 import {
   Badge, Button, Card, EmptyState, PageHeader, ProgressBar, SearchInput, Segmented, StatCard, StatRow,
+  useDialog,
 } from '@/components/ui'
 import Icon from '@/components/Icons'
 
@@ -149,6 +150,10 @@ function JobWorkPageInner() {
   const [editor, setEditor] = useState<{ lot: JobLot; isNew: boolean } | null>(null)
   const [disp, setDisp] = useState<DispState | null>(null)
   const [workerEditor, setWorkerEditor] = useState<{ worker: JobWorker; isNew: boolean } | null>(null)
+
+  const editorDialog = useDialog(() => setEditor(null))
+  const dispDialog = useDialog(() => setDisp(null))
+  const workerDialog = useDialog(() => setWorkerEditor(null))
 
   useEffect(() => {
     async function load() {
@@ -881,6 +886,7 @@ function JobWorkPageInner() {
       {/* ── movement editor ─────────────────────────────────────────────────── */}
       {editor && (
         <div className="jw-scrim" role="dialog" aria-modal="true" aria-label={editor.isNew ? 'Record a job-work movement' : 'Edit the movement'}
+          ref={editorDialog}
           onClick={e => { if (e.target === e.currentTarget) setEditor(null) }}>
           <div className="jw-modal" style={{ maxWidth: 720 }}>
             <div className="jw-modal-head">
@@ -1059,6 +1065,7 @@ function JobWorkPageInner() {
       {/* ── movement-back editor ────────────────────────────────────────────── */}
       {disp && dispLot && dispView && (
         <div className="jw-scrim" role="dialog" aria-modal="true" aria-label="Record what happened to the goods"
+          ref={dispDialog}
           onClick={e => { if (e.target === e.currentTarget) setDisp(null) }}>
           <div className="jw-modal" style={{ maxWidth: 620 }}>
             <div className="jw-modal-head">
@@ -1173,6 +1180,7 @@ function JobWorkPageInner() {
       {/* ── job-worker editor ───────────────────────────────────────────────── */}
       {workerEditor && (
         <div className="jw-scrim" role="dialog" aria-modal="true" aria-label={workerEditor.isNew ? 'Add a job worker' : 'Edit the job worker'}
+          ref={workerDialog}
           onClick={e => { if (e.target === e.currentTarget) setWorkerEditor(null) }}>
           <div className="jw-modal" style={{ maxWidth: 560 }}>
             <div className="jw-modal-head">

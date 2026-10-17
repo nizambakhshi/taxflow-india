@@ -36,6 +36,7 @@ import {
 } from '@/lib/serials'
 import {
   Badge, Button, Card, EmptyState, PageHeader, SearchInput, Segmented, StatCard,
+  useDialog,
 } from '@/components/ui'
 import Icon from '@/components/Icons'
 
@@ -195,6 +196,10 @@ function SerialsPageInner() {
   const [editorError, setEditorError] = useState('')
   const [move, setMove] = useState<MoveState | null>(null)
   const [moveError, setMoveError] = useState('')
+
+  const receiveDialog = useDialog(closeReceive)
+  const editorDialog = useDialog(closeEditor)
+  const moveDialog = useDialog(() => setMove(null))
 
   useEffect(() => {
     async function load() {
@@ -568,7 +573,7 @@ function SerialsPageInner() {
 
       {/* ── Receive (bulk) ─────────────────────────────────────────────────── */}
       {receive && (
-        <div className="sr-scrim" role="dialog" aria-modal="true" aria-label="Receive units">
+        <div className="sr-scrim" role="dialog" aria-modal="true" aria-label="Receive units" ref={receiveDialog}>
           <div className="sr-modal" style={{ maxWidth: 640 }}>
             <div className="sr-modal-head">
               <div>
@@ -679,7 +684,8 @@ function SerialsPageInner() {
       {/* ── Editor (single unit) ───────────────────────────────────────────── */}
       {editor && (
         <div className="sr-scrim" role="dialog" aria-modal="true"
-          aria-label={`Edit unit ${editor.unit.serial_no}`}>
+          aria-label={`Edit unit ${editor.unit.serial_no}`}
+          ref={editorDialog}>
           <div className="sr-modal" style={{ maxWidth: 640 }}>
             <div className="sr-modal-head">
               <div>
@@ -780,7 +786,7 @@ function SerialsPageInner() {
 
       {/* ── Movement (issue / return / scrap) ──────────────────────────────── */}
       {move && moveView && (
-        <div className="sr-scrim" role="dialog" aria-modal="true" aria-label={MOVE_TITLE[move.kind]}>
+        <div className="sr-scrim" role="dialog" aria-modal="true" aria-label={MOVE_TITLE[move.kind]} ref={moveDialog}>
           <div className="sr-modal" style={{ maxWidth: 520 }}>
             <div className="sr-modal-head">
               <div>

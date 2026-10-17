@@ -36,6 +36,7 @@ import {
 } from '@/lib/costcentres'
 import {
   Badge, Button, Card, EmptyState, PageHeader, ProgressBar, SearchInput, Segmented, StatCard, StatRow,
+  useDialog,
 } from '@/components/ui'
 import Icon from '@/components/Icons'
 
@@ -143,8 +144,10 @@ function CostCentresPageInner() {
   const [error, setError] = useState('')
 
   const [editor, setEditor] = useState<EditorState | null>(null)
+  const editorDialog = useDialog(() => setEditor(null))
   const [editorError, setEditorError] = useState('')
   const [split, setSplit] = useState<SplitState | null>(null)
+  const splitDialog = useDialog(() => setSplit(null))
 
   useEffect(() => {
     async function load() {
@@ -909,7 +912,7 @@ function CostCentresPageInner() {
 
       {/* ── Centre editor ─────────────────────────────────────────────────────── */}
       {editor && (
-        <div className="cc-scrim" role="dialog" aria-modal="true"
+        <div ref={editorDialog} className="cc-scrim" role="dialog" aria-modal="true"
           aria-label={editor.isNew ? 'Add cost centre' : `Edit ${editor.centre.name}`}>
           <div className="cc-modal" style={{ maxWidth: 560 }}>
             <div className="cc-modal-head">
@@ -1011,7 +1014,7 @@ function CostCentresPageInner() {
 
       {/* ── Split a document ─────────────────────────────────────────────────── */}
       {split && splitPreview && (
-        <div className="cc-scrim" role="dialog" aria-modal="true" aria-label={`Split ${split.doc.number || 'document'}`}>
+        <div ref={splitDialog} className="cc-scrim" role="dialog" aria-modal="true" aria-label={`Split ${split.doc.number || 'document'}`}>
           <div className="cc-modal" style={{ maxWidth: 620 }}>
             <div className="cc-modal-head">
               <div>

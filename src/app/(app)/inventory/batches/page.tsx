@@ -30,6 +30,7 @@ import {
 } from '@/lib/godowns'
 import {
   Badge, Button, Card, EmptyState, PageHeader, SearchInput, Segmented, StatCard,
+  useDialog,
 } from '@/components/ui'
 import Icon from '@/components/Icons'
 
@@ -100,6 +101,10 @@ function BatchesPageInner() {
   const [allocError, setAllocError] = useState('')
   const [adjust, setAdjust] = useState<AdjustState | null>(null)
   const [adjustError, setAdjustError] = useState('')
+
+  const editorDialog = useDialog(closeEditor)
+  const allocDialog = useDialog(() => setAlloc(null))
+  const adjustDialog = useDialog(() => setAdjust(null))
 
   useEffect(() => {
     async function load() {
@@ -454,7 +459,8 @@ function BatchesPageInner() {
       {/* ── Editor ─────────────────────────────────────────────────────────── */}
       {editor && (
         <div className="bt-scrim" role="dialog" aria-modal="true"
-          aria-label={editor.isNew ? 'Add batch' : `Edit lot ${editor.batch.batch_no}`}>
+          aria-label={editor.isNew ? 'Add batch' : `Edit lot ${editor.batch.batch_no}`}
+          ref={editorDialog}>
           <div className="bt-modal" style={{ maxWidth: 640 }}>
             <div className="bt-modal-head">
               <div>
@@ -580,7 +586,7 @@ function BatchesPageInner() {
 
       {/* ── FEFO allocation ────────────────────────────────────────────────── */}
       {alloc && (
-        <div className="bt-scrim" role="dialog" aria-modal="true" aria-label="Sell from stock">
+        <div className="bt-scrim" role="dialog" aria-modal="true" aria-label="Sell from stock" ref={allocDialog}>
           <div className="bt-modal" style={{ maxWidth: 620 }}>
             <div className="bt-modal-head">
               <div>
@@ -694,7 +700,7 @@ function BatchesPageInner() {
 
       {/* ── Manual adjustment ──────────────────────────────────────────────── */}
       {adjust && adjustView && (
-        <div className="bt-scrim" role="dialog" aria-modal="true" aria-label={`Adjust lot ${adjustView.batch_no}`}>
+        <div className="bt-scrim" role="dialog" aria-modal="true" aria-label={`Adjust lot ${adjustView.batch_no}`} ref={adjustDialog}>
           <div className="bt-modal" style={{ maxWidth: 520 }}>
             <div className="bt-modal-head">
               <div>

@@ -4,7 +4,7 @@ import { Suspense, useMemo, useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { INDIAN_STATES, validateGSTIN } from '@/lib/constants'
-import { Badge, Button, Card, EmptyState, PageHeader, SearchInput, Segmented, StatCard } from '@/components/ui'
+import { Badge, Button, Card, EmptyState, PageHeader, SearchInput, Segmented, StatCard, useDialog } from '@/components/ui'
 import Icon from '@/components/Icons'
 import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
 
@@ -51,6 +51,7 @@ function VendorsPageInner() {
   const [orgId, setOrgId] = useState('')
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const formDialog = useDialog(() => { setShowForm(false); resetForm() })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [loadError, setLoadError] = useState('')
@@ -295,7 +296,7 @@ function VendorsPageInner() {
       )}
 
       {showForm && (
-        <div className="vd-scrim" role="dialog" aria-modal="true" aria-label={editingId ? 'Edit vendor' : 'Add vendor'}>
+        <div ref={formDialog} className="vd-scrim" role="dialog" aria-modal="true" aria-label={editingId ? 'Edit vendor' : 'Add vendor'}>
           <div className="vd-modal">
             <div className="vd-modal-head">
               <h2>{editingId ? 'Edit vendor' : 'Add vendor'}</h2>

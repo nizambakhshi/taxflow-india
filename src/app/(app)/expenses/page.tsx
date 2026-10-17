@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { formatDateIN, plural } from '@/lib/format'
 import { GST_RATES } from '@/lib/gst-rates'
-import { Badge, Button, Card, EmptyState, PageHeader, SearchInput, StatCard } from '@/components/ui'
+import { Badge, Button, Card, EmptyState, PageHeader, SearchInput, StatCard, useDialog } from '@/components/ui'
 import SealNotice from '@/components/SealNotice'
 import { askSeal } from '@/lib/audit'
 import Icon from '@/components/Icons'
@@ -67,6 +67,7 @@ export default function ExpensesPage() {
   const [orgId, setOrgId] = useState('')
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const formDialog = useDialog(() => { setShowForm(false); resetForm() })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [loadError, setLoadError] = useState('')
@@ -326,7 +327,7 @@ export default function ExpensesPage() {
       )}
 
       {showForm && (
-        <div className="ex-scrim" role="dialog" aria-modal="true" aria-label="Add expense">
+        <div ref={formDialog} className="ex-scrim" role="dialog" aria-modal="true" aria-label="Add expense">
           <div className="ex-modal">
             <div className="ex-modal-head">
               <h2>Add expense</h2>

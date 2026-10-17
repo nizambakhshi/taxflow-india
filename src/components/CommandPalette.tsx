@@ -73,7 +73,8 @@ export default function CommandPalette({ orgId, pathname, open, setOpen }: Props
         e.preventDefault()
         setOpen(!openRef.current)
       } else if (e.key === 'Escape' && openRef.current) {
-        // Page modals below do not listen for Escape; stop it reaching them.
+        // The palette is the last [role="dialog"] in the DOM, so the shared
+        // useDialog ref on the page modals below stands down and this closes it.
         e.stopPropagation()
         setOpen(false)
       }

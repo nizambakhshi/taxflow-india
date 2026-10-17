@@ -51,6 +51,7 @@ import {
 } from '@/lib/journal'
 import {
   Badge, Button, Card, EmptyState, PageHeader, SearchInput, SectionTitle, Segmented, StatCard, StatRow,
+  useDialog,
 } from '@/components/ui'
 import Icon from '@/components/Icons'
 
@@ -121,6 +122,10 @@ function JournalPageInner() {
 
   const [head, setHead] = useState<JournalHead | null>(null)
   const [headError, setHeadError] = useState<string[]>([])
+
+  const draftDialog = useDialog(closeDraft)
+  const reversalDialog = useDialog(() => setReversal(null))
+  const headDialog = useDialog(() => setHead(null))
 
   useEffect(() => {
     async function load() {
@@ -751,7 +756,7 @@ function JournalPageInner() {
 
       {/* ── The composer ──────────────────────────────────────────────────────── */}
       {draft && (
-        <div className="jn-scrim" role="dialog" aria-modal="true" aria-label={saving === 'post' ? 'Post a journal entry' : 'Compose a journal entry'}>
+        <div className="jn-scrim" role="dialog" aria-modal="true" aria-label={saving === 'post' ? 'Post a journal entry' : 'Compose a journal entry'} ref={draftDialog}>
           <div className="jn-modal">
             <div className="jn-modal-head">
               <div>
@@ -915,7 +920,7 @@ function JournalPageInner() {
 
       {/* ── Reverse an entry ──────────────────────────────────────────────────── */}
       {reversal && (
-        <div className="jn-scrim" role="dialog" aria-modal="true" aria-label={`Reverse ${reversal.entry.number}`}>
+        <div className="jn-scrim" role="dialog" aria-modal="true" aria-label={`Reverse ${reversal.entry.number}`} ref={reversalDialog}>
           <div className="jn-modal" style={{ maxWidth: 520 }}>
             <div className="jn-modal-head">
               <div>
@@ -990,7 +995,7 @@ function JournalPageInner() {
 
       {/* ── A head ────────────────────────────────────────────────────────────── */}
       {head && (
-        <div className="jn-scrim" role="dialog" aria-modal="true" aria-label="Name a head">
+        <div className="jn-scrim" role="dialog" aria-modal="true" aria-label="Name a head" ref={headDialog}>
           <div className="jn-modal" style={{ maxWidth: 480 }}>
             <div className="jn-modal-head">
               <div>
