@@ -9,9 +9,12 @@
 //
 // It rides on localStorage (ADR-013) as `taxflow:audit:<orgId>` at version 1, alongside the
 // other judgement registers, and it joins the vault in the same round it is created (Rule 31).
-// Like the cost centres, the projects and the day book, **it holds no rupee** — a seal is a
+// Like the cost centres, the projects and the day book, **it moves no money** — a seal is a
 // window, an event is a sentence; the money stays in the documents, and this file only records
-// decisions about them.
+// decisions about them. Since R3-21 a seal may also carry `snapshot`: a **photograph** of numbers
+// some other register printed on the day the window closed. That does not bend the rule above —
+// the snapshot owns no money, it repeats what a reading already computed, `ledger.ts` reads none
+// of it, and a seal without one is a seal that simply never had its picture taken.
 //
 // The three decisions that make it trustworthy rather than decorative:
 //
@@ -45,6 +48,50 @@ const AUDIT_VERSION = 1
 
 export type SealKind = 'month' | 'year'
 
+/**
+ * The photograph a seal may carry — the figures one close reading printed on the day the window
+ * fell (R3-21, ADR-055). **Its key names are `period-close.ts`'s `CloseMoney` / `CloseCounts`
+ * names verbatim**, because the snapshot is drawn by spreading those objects, not by restating a
+ * field list a second register could forget to update. This file computes nothing: a seal with a
+ * snapshot is a seal whose shop was looking at the period's own reading when it closed it, and a
+ * seal without one never had its picture taken. `ledger.ts` reads none of it.
+ */
+export interface SealSnapshot {
+  /** The month the reading actually looked at — the engine refuses to let a picture caption a different window. */
+  month: string
+  /** The day the reading was taken — printed, because a photograph is dated or it is nothing. */
+  taken_on: string
+  /** The reading's own verdict word ('ready' · 'unfinished' · …), kept so a later reader knows what kind of close was photographed. */
+  state: string
+  headline: string
+  money: {
+    loaded: boolean
+    revenue: number
+    purchases: number
+    expenses: number
+    netProfit: number
+    received: number
+    paid: number
+    outstanding: number
+    journalEntries: number
+    journalLegs: number
+    journalTouched: number
+  }
+  counts: {
+    invoices: number
+    cancelledInvoices: number
+    bills: number
+    expenses: number
+    postedEntries: number
+    draftEntries: number
+    unconvertedPapers: number
+  }
+  /** What the reading said was still moving, in the reading's own words. */
+  findings: { key: string; label: string; count: number; amount: number }[]
+  /** Registers the photograph itself was taken without — a picture of a partial book says so. */
+  unread: string[]
+}
+
 /** A window the shop has closed. `released_at` null means it stands. */
 export interface PeriodSeal {
   id: string
@@ -61,6 +108,10 @@ export interface PeriodSeal {
   sealed_by: string
   released_at: string | null
   release_reason: string
+  /** The period's figures as the close reading held them when the seal fell. Null is not a zero. */
+  snapshot: SealSnapshot | null
+  /** A snapshot rode the row but this register could not read it — printed as unread, never folded into `null`. */
+  snapshot_unreadable: boolean
 }
 
 export type AuditKind = 'sealed' | 'released' | 'refused' | 'note'
@@ -173,12 +224,79 @@ function emptyAudit(orgId = ''): AuditStore {
   return { version: AUDIT_VERSION, updatedAt: todayISO(), orgId, seals: [], events: [] }
 }
 
+function num(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) ? v : null
+}
+
+/**
+ * Read a seal's photograph back, or say it is not there. A snapshot the register cannot read is
+ * **not** folded into "no snapshot": the row keeps `snapshot_unreadable`, because a period whose
+ * picture is damaged and a period that was never photographed are different sentences (Rule 27 —
+ * an unread thing prints as unread, never as an empty one).
+ */
+function parseSnapshot(v: unknown): { snapshot: SealSnapshot | null; unreadable: boolean } {
+  if (!v || typeof v !== 'object') return { snapshot: null, unreadable: false }
+  const s = v as Record<string, unknown>
+  const m = (s.money && typeof s.money === 'object' ? s.money : null) as Record<string, unknown> | null
+  const c = (s.counts && typeof s.counts === 'object' ? s.counts : null) as Record<string, unknown> | null
+  if (!m || !c) return { snapshot: null, unreadable: true }
+  if (typeof s.taken_on !== 'string' || !Array.isArray(s.findings) || !Array.isArray(s.unread)) {
+    return { snapshot: null, unreadable: true }
+  }
+  const money: Record<string, number | boolean> = {}
+  for (const k of ['revenue', 'purchases', 'expenses', 'netProfit', 'received', 'paid', 'outstanding',
+    'journalEntries', 'journalLegs', 'journalTouched'] as const) {
+    const n = num(m[k])
+    if (n === null) return { snapshot: null, unreadable: true }
+    money[k] = n
+  }
+  if (typeof m.loaded !== 'boolean') return { snapshot: null, unreadable: true }
+  money.loaded = m.loaded
+  const counts: Record<string, number> = {}
+  for (const k of ['invoices', 'cancelledInvoices', 'bills', 'expenses', 'postedEntries', 'draftEntries',
+    'unconvertedPapers'] as const) {
+    const n = num(c[k])
+    if (n === null) return { snapshot: null, unreadable: true }
+    counts[k] = n
+  }
+  const findings: SealSnapshot['findings'] = []
+  for (const f of s.findings as unknown[]) {
+    if (!f || typeof f !== 'object') return { snapshot: null, unreadable: true }
+    const x = f as Record<string, unknown>
+    const count = num(x.count)
+    const amount = num(x.amount)
+    if (typeof x.key !== 'string' || typeof x.label !== 'string' || count === null || amount === null) {
+      return { snapshot: null, unreadable: true }
+    }
+    findings.push({ key: x.key, label: x.label, count, amount })
+  }
+  if (typeof s.month !== 'string' || typeof s.state !== 'string' || typeof s.headline !== 'string') {
+    return { snapshot: null, unreadable: true }
+  }
+  return {
+    snapshot: {
+      month: s.month,
+      taken_on: s.taken_on,
+      state: s.state,
+      headline: s.headline,
+      money: money as unknown as SealSnapshot['money'],
+      counts: counts as unknown as SealSnapshot['counts'],
+      findings,
+      unread: (s.unread as unknown[]).filter((u): u is string => typeof u === 'string'),
+    },
+    unreadable: false,
+  }
+}
+
 function parseSeal(v: unknown): PeriodSeal | null {
   if (!v || typeof v !== 'object') return null
   const s = v as Record<string, unknown>
   const id = typeof s.id === 'string' ? s.id : ''
   const kind = s.kind === 'year' ? 'year' : s.kind === 'month' ? 'month' : null
   if (!id || !kind || !isDate(s.from) || !isDate(s.to)) return null
+  const photo = parseSnapshot(s.snapshot)
+  // A photograph this register cannot read is dropped from the figures but keeps its `unreadable`
+  // stamp through a save — so the seal never degrades into "this window was never photographed".
   return {
     id,
     kind,
@@ -191,6 +309,12 @@ function parseSeal(v: unknown): PeriodSeal | null {
     sealed_by: typeof s.sealed_by === 'string' ? s.sealed_by : '',
     released_at: typeof s.released_at === 'string' ? s.released_at : null,
     release_reason: typeof s.release_reason === 'string' ? s.release_reason : '',
+    snapshot: photo.snapshot,
+    // The stamp is read off the row as well as recomputed. A damaged photograph has no figures left
+    // to parse, so `parseSnapshot` answers `{ null, false }` the second time this file is read — and
+    // without the row's own flag a damaged picture would quietly decay into "never photographed"
+    // (Rule 27: an unread thing keeps saying it was unread).
+    snapshot_unreadable: photo.unreadable || s.snapshot_unreadable === true,
   }
 }
 
@@ -352,6 +476,13 @@ export interface SealSpec {
   year?: number
   note?: string
   actor?: string
+  /**
+   * The window's figures as a close reading held them at the moment of sealing, drawn by the page
+   * that was looking at them (`period-close.ts`'s `sealSnapshotOf`). Optional by design: a seal
+   * put on a period from the Seals tab has read nothing, and this register will not photograph a
+   * window it has not looked at.
+   */
+  snapshot?: SealSnapshot | null
 }
 
 /**
@@ -391,6 +522,24 @@ export function sealPeriod(orgId: string, spec: SealSpec, today: string = todayI
     )
   }
 
+  // A photograph is allowed only for the window it was taken of. The page that seals from the close
+  // tab holds a reading of one month; handing it to a year seal, or to a month the shop just picked
+  // out of the picker, would caption a figure with the wrong period.
+  if (spec.snapshot) {
+    if (spec.kind !== 'month') {
+      return refused(
+        store,
+        `${label} would be sealed with a close reading of ${spec.snapshot.month || 'another window'} carried onto it. A photograph of one month cannot caption a year — seal the month, or seal the year with no picture.`,
+      )
+    }
+    if (spec.snapshot.month !== period) {
+      return refused(
+        store,
+        `The reading this dialog holds is of ${spec.snapshot.month}, and ${label} is ${period}. A figure must not be sealed under a period it did not read.`,
+      )
+    }
+  }
+
   const seal: PeriodSeal = {
     id: newId(),
     kind: spec.kind,
@@ -403,9 +552,12 @@ export function sealPeriod(orgId: string, spec: SealSpec, today: string = todayI
     sealed_by: (spec.actor ?? '').trim(),
     released_at: null,
     release_reason: '',
+    snapshot: spec.snapshot ?? null,
+    snapshot_unreadable: false,
   }
   const note = `${seal.sealed_by ? seal.sealed_by + ' sealed ' : 'Sealed '}${label}` +
-    (seal.note ? ` — ${seal.note}` : '')
+    (seal.note ? ` — ${seal.note}` : '') +
+    (seal.snapshot ? ` · the period's figures were kept as they stood on ${seal.snapshot.taken_on}` : '')
   const next = mutate(orgId, s => ({
     ...s,
     seals: [...s.seals, seal],
@@ -661,6 +813,7 @@ export function trailCsvRows(store: AuditStore): (string | number)[][] {
 
 export const SEAL_CSV_HEADERS = [
   'kind', 'period', 'label', 'from', 'to', 'status', 'sealed_on', 'sealed_by', 'note', 'released_on', 'release_reason',
+  'photo_taken_on', 'photo_revenue', 'photo_net_profit', 'photo_findings', 'photo_unread',
 ]
 
 export function sealCsvRows(store: AuditStore): (string | number)[][] {
@@ -669,5 +822,13 @@ export function sealCsvRows(store: AuditStore): (string | number)[][] {
     s.released_at ? 'released' : 'sealed',
     (s.sealed_at || '').slice(0, 10), s.sealed_by, s.note,
     s.released_at ? s.released_at.slice(0, 10) : '', s.release_reason,
+    // A seal with no photograph leaves these blank — a blank is not a zero, and the CA reading the
+    // file should be able to tell the two apart. The same discipline holds inside a photograph that
+    // was taken before its documents were read: it says `not photographed`, never a ₹0 (Rule 27).
+    s.snapshot ? s.snapshot.taken_on : s.snapshot_unreadable ? 'unreadable' : '',
+    s.snapshot ? (s.snapshot.money.loaded ? s.snapshot.money.revenue : 'not photographed') : '',
+    s.snapshot ? (s.snapshot.money.loaded ? s.snapshot.money.netProfit : 'not photographed') : '',
+    s.snapshot ? s.snapshot.findings.length : '',
+    s.snapshot ? s.snapshot.unread.join(' ') : '',
   ])
 }

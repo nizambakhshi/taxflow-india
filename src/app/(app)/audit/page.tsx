@@ -11,8 +11,10 @@
 // This page holds three answers, and three boundaries are printed on the screen rather than left to
 // the reader to assume, because each one is where an "audit log" feature elsewhere quietly overreaches:
 //
-//  * **The seals and the trail hold no rupee.** A seal is a window, an event is a sentence. The money
-//    stays in the invoices and bills; nothing here charges, debits or files anything.
+//  * **The seals and the trail hold no money of their own.** A seal is a window, an event is a sentence.
+//    The money stays in the invoices and bills; nothing here charges, debits or files anything. A month
+//    sealed from the close tab may carry the figures that reading printed as a photograph — a copy of
+//    what another register already said, which `ledger.ts` never reads and no derivation folds.
 //  * **The trail is a checksum, not a signature.** The page says "the trail is unbroken" —
 //    that the `seq` numbers run 1..n with no gap, duplicate or reorder. That is what a
 //    hand-edit leaves behind. It cannot say *who* held the keyboard; only the actor each
@@ -32,12 +34,18 @@
 // what the window still holds. It is a reading, not a door: it seals nothing itself, and its one button
 // hands the month to the dialog below, which keeps its own date check and its own note (Rule 54: a
 // reading reaches paper only through the register that owns the paper).
+//
+// Since R3-21 the handover carries one more thing, and it is still the dialog that decides: when a month
+// is sealed *from this tab*, the reading's figures go with it as a **photograph** stored on the seal, and
+// the tab then prints what was sealed against what the same derivation reads today. A seal put on from
+// the Seals tab keeps none — that dialog has looked at nothing, and this register will not photograph a
+// window it has not read.
 
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { formatDateIN } from '@/lib/format'
+import { formatDateIN, plural } from '@/lib/format'
 import { formatINR } from '@/lib/gst-engine'
 import { toCsv } from '@/lib/registers'
 import { download } from '@/lib/party-ledger'
@@ -48,8 +56,8 @@ import {
   type SealKind, trailCsvRows, trailStats, TRAIL_CSV_HEADERS, releaseSeal, recordNote, todayISO, verifyChain,
 } from '@/lib/audit'
 import {
-  CLOSE_CSV_HEADERS, CLOSE_STATE_META, closeCsvRows, closeMonthOptions, closeReading, closeWindowOf,
-  defaultCloseMonth, SEAL_VIEW_META, type CloseReading,
+  CLOSE_CSV_HEADERS, CLOSE_STATE_META, closeCsvRows, closeDrift, closeMonthOptions, closeReading,
+  closeWindowOf, defaultCloseMonth, SEAL_VIEW_META, sealSnapshotOf, type CloseReading,
 } from '@/lib/period-close'
 import { loadFilings } from '@/lib/filings'
 import { loadJournal } from '@/lib/journal'
@@ -274,7 +282,7 @@ function AuditPageInner() {
 
   const visibleSeals = useMemo(
     () => orderedSeals.filter(s => matchesView(s, tab) && matchesAny(search,
-      [s.label, s.note, s.sealed_by, s.release_reason, s.from, s.to])),
+      [s.label, s.note, s.sealed_by, s.release_reason, s.from, s.to, s.snapshot?.taken_on ?? '', s.snapshot?.month ?? ''])),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [orderedSeals, search],
   )
@@ -303,21 +311,36 @@ function AuditPageInner() {
     setSealError('')
   }
 
+  /**
+   * The photograph this dialog would hand the seal, or `null` for none. Three conditions, all of them
+   * the engine's own refusal made visible before the click: the reading has to be open, the seal has to
+   * be a month, and the month the dialog holds has to be the month the reading read (Rule 54 — the
+   * reading reaches the record only as a figure handed over, and the seal stays `sealPeriod`'s to build).
+   */
+  const photoInHand = useMemo(() => {
+    if (!seal || tab !== 'close' || seal.kind !== 'month' || !closeReadingNow) return null
+    if (closeReadingNow.window.month !== seal.month) return null
+    return sealSnapshotOf(closeReadingNow)
+  }, [seal, tab, closeReadingNow])
+
   function runSeal() {
     if (!seal || !orgId) return
+    const photo = photoInHand ?? undefined
     const result = sealPeriod(orgId, {
       kind: seal.kind,
       month: seal.kind === 'month' ? seal.month : undefined,
       year: seal.kind === 'year' ? seal.year : undefined,
       note: seal.note,
       actor: orgName,
+      snapshot: photo,
     })
     if (!result.ok) { setSealError(result.why); return }
     setStore(result.store)
     setSeal(null)
     setSealError('')
     if (tab !== 'close') setTab('seals')
-    setNotice({ msg: `The period is sealed. A write dated inside it is now refused at ${sealedDoors()}, and each refusal lands on the trail.`, bad: false })
+    setNotice({ msg: `The period is sealed. A write dated inside it is now refused at ${sealedDoors()}, and each refusal lands on the trail.${
+      photo ? ` The window’s figures were kept as they stood on ${photo.taken_on}; the close tab will print them against today’s reading.` : ' No photograph of the window was kept with it — the close tab will print today’s reading of it.'}`, bad: false })
   }
 
   function runRelease() {
@@ -363,7 +386,7 @@ function AuditPageInner() {
       <PageHeader
         eyebrow="Evidence & locks"
         title="Audit trail and period seals"
-        subtitle="Who closed what, whether a filed period can still be typed over, and — on the close tab — what one month still holds. The seals and the trail keep decisions and no rupee; the close reads the documents' money and moves none of it."
+        subtitle="Who closed what, whether a filed period can still be typed over, and — on the close tab — what one month still holds. The seals and the trail keep decisions; a month sealed from the close tab also keeps the figures that reading printed, as a photograph. The close reads the documents' money and moves none of it."
         actions={
           <>
             <Button variant="ghost" icon="edit" onClick={() => setNoteOpen(true)}>Add a note</Button>
@@ -383,8 +406,8 @@ function AuditPageInner() {
       )}
 
       {/* ── The four numbers, and the verdict on the trail ────────────────────── */}
-      {/* A count, never a rupee: this register keeps decisions, not money (so the
-          StatCard value is a string, bypassing its default formatCompactINR). */}
+      {/* These four cards count seals and events, never rupees, so each value goes to `StatCard` as a
+          string — bypassing its default `formatCompactINR` (Rule 52: a count prints as a count). */}
       <div className="au-stats">
         <StatCard label="Standing seals" value={String(stats.active)} icon="lock" tone="green"
           sub={stats.active ? 'closed to edits' : 'nothing locked'} delay={0} />
@@ -451,9 +474,10 @@ function AuditPageInner() {
         </div>
         <div className="au-bounds-col">
           <SectionTitle icon="alert">What this register is not</SectionTitle>
-          <div className="au-fact"><Icon name="x" size={13} strokeWidth={2.2} /><span>The seals and the trail hold no rupee — a seal is a window, an event is a sentence.</span></div>
+          <div className="au-fact"><Icon name="x" size={13} strokeWidth={2.2} /><span>The seals and the trail move no money — a seal is a window, an event is a sentence. A month sealed from the close tab may carry a photograph of its figures; it repeats what that reading printed, and the statements read none of it.</span></div>
           <div className="au-fact"><Icon name="x" size={13} strokeWidth={2.2} /><span>Nothing here files anything. The seals are your shop’s decision, not the portal’s.</span></div>
           <div className="au-fact"><Icon name="x" size={13} strokeWidth={2.2} /><span>The close tab prints figures, but it closes nothing: it reads the period so the seal dialog can be decided, and never instead of it.</span></div>
+          <div className="au-fact"><Icon name="x" size={13} strokeWidth={2.2} /><span>A photograph is taken once, on the day the seal falls. It is not refreshed when the books move — the point of it is that it stopped moving.</span></div>
           <div className="au-fact"><Icon name="x" size={13} strokeWidth={2.2} /><span>It lives in this browser (ADR-013). It travels only inside the books vault, never on its own.</span></div>
           <div className="au-fact"><Icon name="x" size={13} strokeWidth={2.2} /><span>Releasing a seal keeps it — a silent unlock is exactly what an auditor looks for, so a reason is required.</span></div>
         </div>
@@ -610,6 +634,9 @@ function AuditPageInner() {
                 <li>A standing seal on the period<span className="au-preview-take">a locked window</span></li>
                 <li>A write dated inside it is refused at {sealedDoors()}<span className="au-preview-take">lock</span></li>
                 <li>A line on the trail<span className="au-preview-take">+1 event</span></li>
+                {photoInHand
+                  ? <li>A photograph of the close reading — the figures this tab printed today, kept on the seal<span className="au-preview-take">as at {photoInHand.taken_on}</span></li>
+                  : <li>No photograph: this dialog has read no window, so the seal keeps only the decision{seal.kind === 'year' ? ' — a year cannot carry a month’s figures' : ''}<span className="au-preview-take">none</span></li>}
               </ul>
             </div>
 
@@ -828,11 +855,49 @@ function AuditPageInner() {
         .au-preview-take { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 650; color: var(--ink); }
         .au-save { display: flex; gap: 10px; justify-content: flex-end; }
 
+        /* A seal's photograph, and the pair it makes against today's reading. */
+        .au-photo { display: flex; align-items: flex-start; gap: 8px; font-size: 11.5px; color: var(--muted);
+          line-height: 1.55; background: var(--surface-2); border-radius: 9px; padding: 8px 10px; }
+        .au-photo svg { flex-shrink: 0; margin-top: 2px; color: var(--brand); }
+        .au-photo.is-bad svg { color: var(--red); }
+        .au-photo.is-none svg { color: var(--faint); }
+        .au-photo.is-none { color: var(--faint); }
+        .au-photo strong { color: var(--ink-2); }
+
+        .au-drift-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+          padding: 13px 16px; flex-wrap: wrap; }
+        .au-drift-title { display: flex; align-items: flex-start; gap: 9px; min-width: 0; }
+        .au-drift-title svg { color: var(--brand); flex-shrink: 0; margin-top: 1px; }
+        .au-drift-name { font-size: 14px; font-weight: 650; color: var(--ink); }
+        .au-drift-tally { font-size: 12px; font-weight: 600; color: var(--ink-2); }
+        .au-drift-row { display: grid; gap: 10px; align-items: center; padding: 9px 16px;
+          grid-template-columns: minmax(0, 1.8fr) minmax(90px, 1fr) minmax(90px, 1fr) minmax(90px, 1fr);
+          border-top: 1px solid var(--line-soft); font-size: 12.5px; color: var(--ink-2); }
+        .au-drift-row.is-head { font-size: 11px; font-weight: 650; color: var(--faint); background: var(--surface-2); }
+        .au-drift-what { overflow-wrap: anywhere; }
+        .au-drift-num { font-variant-numeric: tabular-nums; text-align: right; }
+        .au-drift-delta.is-up { color: var(--green); font-weight: 650; }
+        .au-drift-delta.is-down { color: var(--red); font-weight: 650; }
+        .au-drift-delta.is-same { color: var(--faint); }
+        .au-drift-find { padding: 11px 16px 4px; border-top: 1px solid var(--line-soft); }
+        .au-drift-find-head { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+          color: var(--faint); margin-bottom: 6px; }
+        .au-drift-find-row { display: grid; gap: 10px; align-items: baseline; font-size: 12px; color: var(--muted);
+          grid-template-columns: minmax(0, 1.8fr) minmax(90px, 1fr) minmax(90px, 1fr); padding: 4px 0; }
+        .au-drift-withheld { display: flex; align-items: flex-start; gap: 8px; padding: 10px 16px; font-size: 11.5px;
+          color: var(--muted); line-height: 1.6; border-top: 1px dashed var(--line); background: var(--surface-2); }
+        .au-drift-withheld svg { flex-shrink: 0; margin-top: 2px; color: var(--amber); }
+
         @media (max-width: 1100px) { .au-stats { grid-template-columns: 1fr 1fr; } .au-bounds { grid-template-columns: 1fr; } }
         @media (max-width: 768px) {
           .au-grid { grid-template-columns: 1fr; }
           .au-months { grid-template-columns: 1fr 1fr; }
           .au-event-row { grid-template-columns: 1fr; gap: 6px; }
+          .au-drift-row { grid-template-columns: 1fr 1fr; gap: 4px 10px; }
+          .au-drift-row > .au-drift-what { grid-column: 1 / -1; }
+          .au-drift-row.is-head { display: none; }
+          .au-drift-find-row { grid-template-columns: 1fr 1fr; }
+          .au-drift-find-row > span:first-child { grid-column: 1 / -1; }
           .au-head { display: none; }
           .au-export { margin-left: 0; }
           .au-scrim { align-items: flex-end; padding: 0; }
@@ -972,6 +1037,8 @@ function PeriodClose({ month, fy, onMonth, reading, loading, search, onSeal }: {
         </div>
       )}
 
+      <SealDrift reading={reading} search={search} />
+
       <div className="au-bounds">
         <div className="au-bounds-col">
           <SectionTitle icon="alert">What is still moving in it</SectionTitle>
@@ -1050,6 +1117,92 @@ function PeriodClose({ month, fy, onMonth, reading, loading, search, onSeal }: {
   )
 }
 
+/**
+ * The seal's photograph set beside today's reading of the same window. This is the whole reason a
+ * picture is kept: a live fold says what the books say *now*, and only a photograph can say whether
+ * they said it on the day the period fell. Everything here is a pair — never one side dressed up as
+ * the other, and never an absent side drawn as a zero (Rules 27/56). A comparison the engine refuses
+ * to make is printed as its own withheld sentence, not left as a blank row.
+ */
+function SealDrift({ reading, search }: { reading: CloseReading; search: string }) {
+  const seal = reading.seal.seal
+  if (!seal) return null
+
+  const drift = closeDrift(reading)
+  if (!drift) {
+    return (
+      <div className="au-note-box" style={{ marginBottom: '1rem' }}>
+        <Icon name={seal.snapshot_unreadable ? 'alert' : 'clock'} size={14} />
+        <span>{seal.snapshot_unreadable
+          ? <><strong>The seal carries a photograph this register cannot read.</strong> Nothing below compares the two: the picture stays on the record, its figures are not shown, and an unreadable photograph prints as unreadable rather than as a seal that never had one.</>
+          : <>No photograph stands on this seal — it fell before photographs were kept, or it was put on from the <strong>Period seals</strong> tab, where no reading was open. What is printed above is <strong>today’s reading</strong> of {reading.window.label}; nothing here can say what that window held on the day it closed.</>}</span>
+      </div>
+    )
+  }
+
+  const fmt = (l: { kind: 'money' | 'paper' }, v: number) => (l.kind === 'money' ? `₹${formatINR(v)}` : String(v))
+  const lines = drift.lines.filter(l => matchesAny(search, [l.label]))
+  const changed = drift.lines.filter(l => l.delta !== 0)
+  const movedFindings = drift.findings.filter(f => f.sealed !== f.now)
+
+  return (
+    <Card pad={false} style={{ marginBottom: '1rem' }}>
+      <div className="au-drift-head">
+        <div className="au-drift-title">
+          <Icon name="compare" size={15} />
+          <div>
+            <div className="au-drift-name">As sealed, against as read today</div>
+            <div className="au-card-sub">
+              Photograph taken <span className="au-mono">{drift.snapshot.taken_on}</span> · the reading said{' '}
+              <em>{drift.snapshot.headline}</em>
+            </div>
+          </div>
+        </div>
+        <div className="au-drift-tally">
+          {changed.length === 0
+            ? 'Nothing has moved since the seal fell.'
+            : `${plural(changed.length, 'figure')} ${changed.length === 1 ? 'has' : 'have'} moved.`}
+        </div>
+      </div>
+
+      <div className="au-drift-row is-head">
+        <span>Figure</span><span className="au-drift-num">As sealed</span><span className="au-drift-num">Read today</span><span className="au-drift-num">Moved</span>
+      </div>
+
+      {lines.map(l => (
+        <div key={l.key} className="au-drift-row">
+          <span className="au-drift-what">{l.label}</span>
+          <span className="au-drift-num">{fmt(l, l.sealed)}</span>
+          <span className="au-drift-num">{fmt(l, l.now)}</span>
+          <span className={`au-drift-num au-drift-delta ${l.delta === 0 ? 'is-same' : l.delta > 0 ? 'is-up' : 'is-down'}`}>
+            {l.delta === 0 ? '—' : `${l.delta > 0 ? '+' : '−'}${l.kind === 'money' ? `₹${formatINR(Math.abs(l.delta))}` : Math.abs(l.delta)}`}
+          </span>
+        </div>
+      ))}
+      {lines.length === 0 && (
+        <div className="au-drift-row"><span className="au-drift-what">No figure matches this search.</span></div>
+      )}
+
+      {movedFindings.length > 0 && (
+        <div className="au-drift-find">
+          <div className="au-drift-find-head">What was unfinished then, beside what is unfinished now</div>
+          {movedFindings.map(f => (
+            <div key={f.key} className="au-drift-find-row">
+              <span>{f.label}</span>
+              <span className="au-drift-num">{f.sealed === 0 ? 'not open then' : plural(f.sealed, 'item')}</span>
+              <span className="au-drift-num">{f.now === 0 ? 'now closed' : plural(f.now, 'item')}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {drift.withheld.map(w => (
+        <div key={w} className="au-drift-withheld"><Icon name="alert" size={13} /><span>{w}</span></div>
+      ))}
+    </Card>
+  )
+}
+
 function matchesView(s: PeriodSeal, tab: Tab): boolean {  // The seals tab shows every seal (standing first, released after); the trail tab has no seal rows.
   return tab === 'seals' ? true : s.released_at === null
 }
@@ -1070,6 +1223,32 @@ function SealCard({ seal, onRelease }: { seal: PeriodSeal; onRelease: () => void
       </div>
 
       {seal.note && <div className="au-card-note">{seal.note}</div>}
+
+      {/* Every photograph state named, including the absence: a seal that kept no picture must not read
+          as a seal whose picture was lost. Rule 27 again — an unreadable thing prints as unreadable. */}
+      {seal.snapshot ? (
+        <div className="au-photo">
+          <Icon name="clock" size={12} />
+          <span>Photograph kept from the close reading on <span className="au-mono">{seal.snapshot.taken_on}</span>{' '}
+            ({monthLabel(seal.snapshot.month)}): {seal.snapshot.money.loaded
+              ? <>revenue ₹{formatINR(seal.snapshot.money.revenue)}, net ₹{formatINR(seal.snapshot.money.netProfit)},{' '}
+                {plural(seal.snapshot.findings.length, 'finding')} still open</>
+              : <>the documents were never fetched that day, so no rupee figure was photographed</>}{''}
+            {seal.snapshot.unread.length > 0 ? ` · read without ${seal.snapshot.unread.join(', ')}` : ''}.</span>
+        </div>
+      ) : seal.snapshot_unreadable ? (
+        <div className="au-photo is-bad">
+          <Icon name="alert" size={12} />
+          <span><strong>A photograph is on this seal but this register cannot read it.</strong> The figures are not
+            shown; the seal itself stands, and the window is still locked.</span>
+        </div>
+      ) : (
+        <div className="au-photo is-none">
+          <Icon name="x" size={12} strokeWidth={2.2} />
+          <span>No photograph kept — this seal carries the decision, not the window’s figures. On the close tab
+            they are today’s reading of the period.</span>
+        </div>
+      )}
 
       <div className="au-card-foot">
         <span className="au-card-sub">

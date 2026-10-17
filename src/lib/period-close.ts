@@ -37,10 +37,12 @@
 //
 // What this library deliberately is NOT:
 //
-//   * **Not a photograph.** Nothing in this app stores what a period contained at the moment it was
-//     sealed, so a sealed window's figures are *today's* reading of that window. The boundary is
-//     printed on the card rather than smoothed over — a close reading is a live fold, and an auditor
-//     comparing it to a file taken at the time should expect it to have moved.
+//   * **Not a ledger, and never was the photograph either — though since R3-21 it can be handed to
+//     one.** Nothing here *decides* to store a period's figures: `sealSnapshotOf` copies a reading
+//     into the shape a seal may carry, and the seal that closes the window is the paper that keeps it.
+//     A window sealed before that, or sealed from the Seals tab where no reading was open, has no
+//     photograph — and its figures stay *today's* reading of it, which is the sentence the card prints
+//     rather than one it smooths over.
 //   * **Not a closer.** The act of sealing stays `sealPeriod`'s, on `/audit`'s seal dialog, under the
 //     note and the date check that already govern it. This reading may be used *before* that dialog
 //     and is never used instead of it.
@@ -57,7 +59,7 @@
 
 import {
   activeSeals, EVENT_META, fyStartOf, monthLabel, todayISO,
-  type AuditEvent, type AuditStore, type PeriodSeal,
+  type AuditEvent, type AuditStore, type PeriodSeal, type SealSnapshot,
 } from '@/lib/audit'
 import { quarterOfMonth, periodLabel, type FilingForm, type FilingRecord, type FilingStatus } from '@/lib/filings'
 import { canConvert, docValue, KIND_META, type FlowDoc } from '@/lib/orderflow'
@@ -570,10 +572,152 @@ function verdict(
   }
 }
 
+// ── the photograph a seal keeps, and the drift read off it (R3-21) ─────────────
+
+/**
+ * Draw this reading into the shape a seal carries. **The two objects are spread, not restated** —
+ * `CloseMoney` and `CloseCounts` keep their own key names, so a field added to the reading cannot
+ * quietly go missing from the picture, and this file never re-computes a rupee to draw it (Rule 56).
+ * A snapshot of a window whose documents were never fetched is still legal: it stores `loaded:
+ * false`, and the comparison the next function makes refuses to set an absence beside a figure.
+ */
+export function sealSnapshotOf(r: CloseReading): SealSnapshot {
+  return {
+    month: r.window.month,
+    taken_on: r.window.today,
+    state: r.state,
+    headline: r.headline,
+    money: { ...r.money },
+    counts: { ...r.counts },
+    findings: r.findings.map(f => ({ key: f.key, label: f.label, count: f.count, amount: f.amount })),
+    unread: [...r.unread],
+  }
+}
+
+export interface CloseDriftLine {
+  key: string
+  label: string
+  /** What the photograph held the day the seal fell. */
+  sealed: number
+  /** What the same derivation prints today. */
+  now: number
+  delta: number
+  kind: 'money' | 'paper'
+}
+
+export interface CloseDriftFinding {
+  key: string
+  label: string
+  sealed: number
+  now: number
+}
+
+export interface CloseDrift {
+  /** The photograph itself — the page prints its date, its verdict and its own words. */
+  snapshot: SealSnapshot
+  lines: CloseDriftLine[]
+  /** What was unfinished then, beside what is unfinished now — matched by finding key. */
+  findings: CloseDriftFinding[]
+  /**
+   * Sentences for the pairs this comparison refuses to make. A figure beside an absence is not a
+   * delta, and a photograph taken with a register unread cannot be blamed on the register that
+   * moved (Rule 27 again: an unread thing prints as unread, never as zero).
+   */
+  withheld: string[]
+  /** True when at least one comparable line moved. */
+  moved: boolean
+  /** The registers the *photograph* was taken without. */
+  photo_unread: string[]
+}
+
+const MONEY_LINES = [
+  ['revenue', 'Revenue billed'],
+  ['purchases', 'Purchases'],
+  ['expenses', 'Expenses'],
+  ['netProfit', 'Net for the window'],
+  ['received', 'Received in the window'],
+  ['paid', 'Paid in the window'],
+  ['outstanding', 'Still outstanding'],
+] as const
+
+const PAPER_LINES = [
+  ['invoices', 'Invoices dated here'],
+  ['cancelledInvoices', 'Cancelled invoices'],
+  ['bills', 'Bills dated here'],
+  ['expenses', 'Expenses dated here'],
+  ['postedEntries', 'Posted journal entries'],
+  ['draftEntries', 'Draft journal entries'],
+  ['unconvertedPapers', 'Papers never converted'],
+] as const
+
+/**
+ * Set the seal's photograph beside today's reading of the same window. Returns `null` when there is
+ * nothing to compare — an open period, a seal that carried no picture, or a seal whose picture this
+ * register could not read (the last of those is the page's own sentence to print, not this one's
+ * silence).
+ */
+export function closeDrift(r: CloseReading): CloseDrift | null {
+  const seal: PeriodSeal | null = r.seal.seal
+  if (!seal || !seal.snapshot) return null
+  const snap = seal.snapshot
+  // A picture of a different window would be a caption error, not a comparison. The seal engine
+  // refuses to store one; reading a hand-edited file is not a licence to print one either.
+  if (snap.month && snap.month !== r.window.month) return null
+
+  const lines: CloseDriftLine[] = []
+  const withheld: string[] = []
+
+  const moneyComparable = snap.money.loaded && r.money.loaded
+  if (moneyComparable) {
+    for (const [k, label] of MONEY_LINES) {
+      const sealed = snap.money[k]
+      const now = r.money[k]
+      lines.push({ key: `money:${k}`, label, sealed, now, delta: now - sealed, kind: 'money' })
+    }
+  } else if (snap.money.loaded && !r.money.loaded) {
+    withheld.push('The seal\'s photograph has rupees in it and today\'s reading does not — this page has no document rows for the window loaded right now, so the money lines are not comparable, and a blank is being kept rather than drawn as ₹0.')
+  } else if (!snap.money.loaded && r.money.loaded) {
+    withheld.push('The seal was put on this window before its documents were read — the photograph holds no money figure, so there is nothing on the sealed side to set today\'s against.')
+  } else {
+    withheld.push('Neither the photograph nor today\'s reading holds a document figure for this window, so no money line is drawn.')
+  }
+
+  for (const [k, label] of PAPER_LINES) {
+    const sealed = snap.counts[k]
+    const now = r.counts[k]
+    lines.push({ key: `paper:${k}`, label, sealed, now, delta: now - sealed, kind: 'paper' })
+  }
+
+  // Findings are matched by their own key, so a finding that has gone prints as it went rather than
+  // as a number the two columns never named.
+  const keys: string[] = []
+  for (const f of snap.findings) if (!keys.includes(f.key)) keys.push(f.key)
+  for (const f of r.findings) if (!keys.includes(f.key)) keys.push(f.key)
+  const findings = keys.map(key => {
+    const was = snap.findings.find(f => f.key === key)
+    const is = r.findings.find(f => f.key === key)
+    const label = is?.label ?? was?.label ?? key
+    return { key, label, sealed: was?.count ?? 0, now: is?.count ?? 0 }
+  })
+
+  if (snap.unread.length > 0) {
+    withheld.push(`The photograph itself was taken without ${snap.unread.join(', ')} — those figures are a picture of a partial book, and a difference in them is not proof that the shop moved.`)
+  }
+
+  return {
+    snapshot: snap,
+    lines,
+    findings,
+    withheld,
+    moved: lines.some(l => l.delta !== 0),
+    photo_unread: snap.unread,
+  }
+}
+
 // ── the boundaries this reading prints rather than smooths over ───────────────
 
 export const CLOSE_BOUNDARIES: string[] = [
-  'This is today\'s reading of the period, not a photograph taken the day it was closed — nothing in this app stores what a window contained at seal time, so a figure here may have moved since the seal fell.',
+  'A seal closed from *this* tab keeps a photograph — the figures this reading printed the day the window fell, stored on the seal and compared against today below. A seal that fell before that, or one put on from the Seals tab where no reading was open, keeps none: where no photograph stands, the rupees above are today\'s reading of the period and may have moved since the seal fell.',
   'Nothing on this page closes anything. The act of sealing stays the seal dialog\'s, under its own rule that a period is sealed only once its last day has passed, and under the note the shop leaves with it.',
   'The filings register reads the seal and guards no door (Rule 41): a return covering this period can still be transcribed after the close — what the close stops is the paper behind it.',
   'A payment or a note dated after this window settles what this window raised without touching it, so the outstanding figure is read as the books hold it today, not as it stood on the last day of the period.',
@@ -588,9 +732,10 @@ export const CLOSE_CSV_HEADERS = [
 ]
 
 /**
- * One flat table, three kinds of row: the summary, each finding, each return the register holds for
- * the period, and each event the trail holds about it. A shop taking this to a CA gets the reading
- * and the window it was read in, in the same file.
+ * One flat table, five kinds of row: the summary, each finding, each figure the seal photographed (when
+ * the seal carries one), each return the register holds for the period, and each event the trail holds
+ * about it. A shop taking this to a CA gets the reading, the picture the seal kept, and the window each
+ * was read in, in the same file.
  */
 export function closeCsvRows(r: CloseReading): (string | number)[][] {
   const rows: (string | number)[][] = [[
@@ -602,6 +747,15 @@ export function closeCsvRows(r: CloseReading): (string | number)[][] {
   ]]
   for (const f of r.findings) {
     rows.push(['finding', r.window.month, r.window.label, f.label, f.count, f.amount, f.detail, f.href])
+  }
+  // The photograph, when the seal carries one: the same lines the card prints, in the same file, so a
+  // CA comparing this month to a file taken at the time does not have to ask whether it moved.
+  const drift = closeDrift(r)
+  if (drift) {
+    for (const l of drift.lines) {
+      rows.push(['sealed_figure', r.window.month, r.window.label, l.label, 1, l.now,
+        `as sealed ${drift.snapshot.taken_on}: ${l.sealed} · moved ${l.delta}`, `photograph taken ${drift.snapshot.taken_on}`])
+    }
   }
   for (const t of r.returns) {
     rows.push(['return', r.window.month, r.window.label, `${t.form} · ${t.label}`, 1, t.statedTax,

@@ -131,7 +131,10 @@ ok('no hedged month, form or head name is left in prose',
 eq('format.ts is the only home for plural', ALL.filter(([, t]) => /export function plural\(/.test(t)).map(([f]) => f).join(), 'lib/format.ts')
 ok('vault.ts no longer defines its own', !/function plural\(/.test(FILES['lib/vault.ts']))
 ok('vault.ts imports the kit one', /import \{[^}]*\bplural\b[^}]*\} from '@\/lib\/format'/.test(FILES['lib/vault.ts']))
-eq('files that import plural from the kit', ALL.filter(([, t]) => /import \{[^}]*\bplural\b[^}]*\} from '@\/lib\/format'/.test(t)).length, 15)
+// R3-21 moved this count from 15 to 16, and it is the round's own doing rather than a drift: the
+// seal-drift card on `/audit` counts moved figures with `plural()`, which is exactly where R3-16 said
+// a count like that belongs. A kit that gains an importer when a new card is built is a kit in use.
+eq('files that import plural from the kit', ALL.filter(([, t]) => /import \{[^}]*\bplural\b[^}]*\} from '@\/lib\/format'/.test(t)).length, 16)
 
 // ── D. one action, one offer ─────────────────────────────────────────────────
 

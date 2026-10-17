@@ -430,7 +430,7 @@ export const REGISTERS: RegisterSpec[] = [
     id: 'audit',
     prefix: 'taxflow:audit:',
     label: 'Audit trail and period seals',
-    what: 'The append-only record of every period sealed, seal released, refused write and note — who decided, and whether a closed period can still be typed over',
+    what: 'The append-only record of every period sealed, seal released, refused write and note — who decided, whether a closed period can still be typed over, and the close figures a sealed month kept',
     unit: 'record',
     group: 'workpapers',
     module: 'src/lib/audit.ts',

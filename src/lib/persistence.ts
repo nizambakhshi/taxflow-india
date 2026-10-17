@@ -261,7 +261,7 @@ const JUDGEMENTS: Record<string, Judgement> = {
   },
   audit: {
     cls: 'authoritative',
-    why: 'the append-only trail and the period seals themselves. A client-side checksum trail is this app’s evidence, not a tamper-proof server log — the review’s own distinction, and the reason this row is P0.',
+    why: 'the append-only trail and the period seals themselves, and since R3-21 the close figures a sealed month photographed — a client-side checksum trail is this app’s evidence, not a tamper-proof server log; the review’s own distinction, and the reason this row is P0. A wipe here loses the picture with the decision, and nothing regenerates either.',
     destination: 'a server-controlled `audit_events` table + `period_seals` — protected, permission-readable, never hand-editable',
     seal: 'opens-no-door',
   },

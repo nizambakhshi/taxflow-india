@@ -356,7 +356,10 @@ eq('the drafts figure from an unread journal is 0, and said to be unread', `${dr
 
 eq('six boundaries', CLOSE_BOUNDARIES.length, 6)
 eq('the reading hands them out as its own copy', base.boundaries === CLOSE_BOUNDARIES, false)
-ok('they own the live fold', CLOSE_BOUNDARIES[0].includes('not a photograph'))
+ok('they own the live fold', CLOSE_BOUNDARIES[0].includes('compared against today'))
+  // R3-21 amended this pin: the sentence that used to disclaim a photograph now names the one the
+  // seal keeps, and the seal that keeps none. Rule 57's last clause — a copy repair amends the pin.
+  ok('and it still prints the seal that carries none', CLOSE_BOUNDARIES[0].includes('keeps none'))
 ok('they disclaim the act of sealing', CLOSE_BOUNDARIES[1].includes('Nothing on this page closes anything'))
 ok('they keep Rule 41 for the returns', CLOSE_BOUNDARIES[2].includes('guards no door'))
 ok('they label the outstanding figure as today’s reading', CLOSE_BOUNDARIES[3].includes('as the books hold it today'))
@@ -429,7 +432,9 @@ ok('the boundaries are printed, not hidden', page.includes('reading.boundaries.m
 ok('the returns table reads the register’s own tax', page.includes('₹{formatINR(t.statedTax)}'))
 ok('a return row deep-links the register', page.includes('/gst/filings?q=${encodeURIComponent(t.period)}'))
 ok('the trail rows are the same rows the trail tab draws', page.includes('{visibleEvents.map(e => <EventRow key={e.id} e={e} />)}'))
-ok('the header admits the exception', page.includes('The seals and the trail hold no rupee'))
+ok('the header admits the exception', page.includes('hold no money of their own'))
+  // R3-21: the claim was true until a seal could carry a photograph; it is now narrower, not crossed.
+  ok('and says plainly what a photograph is', page.includes('it repeats what that reading printed'))
 ok('and the old absolute claim is gone', !page.includes('It holds no rupee —'))
 ok('the close header disclaims the act', page.includes('it closes nothing'))
 ok('the month picker cannot strand a bad period', page.includes('is not a month this register can read'))
