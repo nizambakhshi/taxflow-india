@@ -9,11 +9,12 @@ import { download } from '@/lib/party-ledger'
 import { toCsv } from '@/lib/registers'
 import { fyLabel, fyStartYear } from '@/lib/targets'
 import {
-  SAMPLE_TDS_NOTE, SECTIONS, TDS_CSV_HEADERS, TDS_DEPOSIT_CSV_HEADERS, buildWorkpaper,
-  effectiveRate, emptyTds, loadTds, noPanRateOf, saveTds, sectionOf, setBillSection,
-  setChallan, setVendorSection, tdsBase, tdsCsvRows, tdsDepositCsvRows, vendorKey,
-  type Challan, type DeductionRow, type PayerType, type SectionId, type TdsBill, type TdsPayment,
-  type TdsState, type TdsVendor,
+  SAMPLE_TDS_NOTE, SECTIONS, TDS_CSV_HEADERS, TDS_DEPOSIT_CSV_HEADERS, TDS_STATEMENT_CSV_HEADERS,
+  buildWorkpaper, effectiveRate, emptyTds, loadTds, noPanRateOf, saveTds, sectionOf, setBillSection,
+  setChallan, setStatementFiling, setVendorSection, tdsBase, tdsCsvRows, tdsDepositCsvRows,
+  tdsStatementCsvRows, validateStatementFiling, vendorKey,
+  type Challan, type DeductionRow, type PayerType, type SectionId, type StatementFiling, type TdsBill,
+  type TdsPayment, type TdsState, type TdsVendor,
 } from '@/lib/tds'
 import { Badge, Button, Card, EmptyState, PageHeader, Segmented, StatCard } from '@/components/ui'
 import Icon from '@/components/Icons'
@@ -66,6 +67,7 @@ export default function TdsPage() {
   const [tab, setTab] = useState<Tab>('workpaper')
   const [savedAt, setSavedAt] = useState('')
   const [draft, setDraft] = useState<Record<string, string>>({})
+  const [stmtProblems, setStmtProblems] = useState<Record<string, string[]>>({})
   const [openVendors, setOpenVendors] = useState<Record<string, boolean>>({})
   const [showRates, setShowRates] = useState(false)
 
@@ -151,6 +153,8 @@ export default function TdsPage() {
   const nextDeposit = wp.months.find(m => m.status === 'pending') || wp.months.find(m => m.status === 'not-yet-due')
   const untaggedCount = wp.totals.untaggedBills
   const interestAtStake = wp.totals.interest + wp.totals.statementFee
+  /** The register's own day, so a filing dated tomorrow is refused against the same clock the fee reads. */
+  const todayISO = isoDay(asOf)
 
   const commit = useCallback((next: TdsState) => {
     setState(next)
@@ -183,6 +187,33 @@ export default function TdsPage() {
     commit(setChallan(state, month, challan.depositDate ? challan : null))
   }
 
+  /**
+   * A quarter's filing day is a transcript, so it is held to the same two rules the engine reads by:
+   * it cannot predate the quarter's close and it cannot be a day that has not come. A refused day is
+   * never saved — the sentence stays beside the field and the quarter keeps reading to today.
+   */
+  function setStatementField(q: { due: string; periodTo: string }, field: keyof StatementFiling, raw: string) {
+    const nextDraft = { ...draft, [`${q.due}:${field}`]: raw }
+    setDraft(nextDraft)
+    const stored = state.statementFilings[q.due]
+    const filing: StatementFiling = {
+      filedOn: nextDraft[`${q.due}:filedOn`] ?? stored?.filedOn ?? '',
+      reference: nextDraft[`${q.due}:reference`] ?? stored?.reference ?? '',
+    }
+    const problems = validateStatementFiling(q.periodTo, filing.filedOn, todayISO)
+    if (problems.length) {
+      setStmtProblems(p => ({ ...p, [q.due]: problems }))
+      return
+    }
+    setStmtProblems(p => {
+      const next = { ...p }
+      delete next[q.due]
+      return next
+    })
+    // An empty day clears the row whole, exactly as an undated challan is not a deposit.
+    commit(setStatementFiling(state, q.due, filing.filedOn ? filing : null))
+  }
+
   function changeFy(year: number) {
     setFyStart(year)
     setDraft({})
@@ -196,6 +227,10 @@ export default function TdsPage() {
 
   function exportDeposits() {
     download(`TDS-deposit-sheet-${fyLabel(fyStart)}.csv`, toCsv(TDS_DEPOSIT_CSV_HEADERS, tdsDepositCsvRows(wp)))
+  }
+
+  function exportStatements() {
+    download(`TDS-26Q-statements-${fyLabel(fyStart)}.csv`, toCsv(TDS_STATEMENT_CSV_HEADERS, tdsStatementCsvRows(wp)))
   }
 
   if (loading) {
@@ -245,7 +280,9 @@ export default function TdsPage() {
           sub={wp.totals.overdue > 0 ? `${lakh(wp.totals.overdue)} of it already past the due date` : 'Nothing outstanding'} delay={180} />
         <StatCard label="Interest & late fee at stake" value={interestAtStake} icon="clock"
           tone={interestAtStake > 0 ? 'amber' : 'grey'}
-          sub="1.5% a month on the deposit, ₹100 a day on a late 26Q" delay={240} />
+          sub={wp.totals.statementFeeCeiling > 0
+            ? `1.5% a month on the deposit · the 26Q fee includes ${money(wp.totals.statementFeeCeiling)} read only to today`
+            : '1.5% a month on the deposit, ₹100 a day on a late 26Q'} delay={240} />
         <StatCard label="Value with no section chosen" value={wp.totals.untaggedValue} icon="factory"
           tone={untaggedCount ? 'amber' : 'grey'}
           sub={untaggedCount ? `${plural(untaggedCount, 'bill')} — tag the supplier to include them` : 'Every supplier is tagged'}
@@ -633,33 +670,141 @@ export default function TdsPage() {
           <div className="td-body">
             <Headline
               title="Form 24Q or 26Q, quarter by quarter"
-              note="Statements are filed on the income-tax portal, so this page cannot see whether you filed one. It totals the tax for each quarter and what a late statement costs under section 271H."
+              note="The statement itself is filed on the income-tax portal, so this page cannot confirm a filing. Record the day the shop says it went in and the 271H fee stops there — a transcript, not proof. A quarter with no filing day keeps reading to today, and its fee is printed as a ceiling."
             />
-            <div className="table-scroll">
-              <div className="td-grid">
-                <div className="td-cols td-head" style={{ gridTemplateColumns: STMT_GRID }}>
-                  {STMT_COLS.map(c => <span key={c} className={c === 'Quarter' ? '' : 'is-right'}>{c}</span>)}
-                </div>
-                {wp.statements.map(q => (
-                  <div key={q.quarter} className={`td-cols td-row ${q.fee > 0 ? 'is-late' : ''}`} style={{ gridTemplateColumns: STMT_GRID }}>
-                    <span className="td-doc" data-label="Quarter">
-                      <b>{q.quarter} · {q.label}</b>
-                      <em>{formatDateIN(q.periodFrom)} to {formatDateIN(q.periodTo)}</em>
-                    </span>
-                    <span data-label="Due">{formatDateIN(q.due)}</span>
-                    <span className="is-right tf-num" data-label="Tax in the quarter">{money(q.tax)}</span>
-                    <span className="is-right tf-num" data-label="Days late">{q.daysLate || '—'}</span>
-                    <span className="is-right td-fee tf-num" data-label="Fee at stake">{q.fee ? money(q.fee) : '—'}</span>
+            <div className="td-tools no-print">
+              <span className="td-saved">
+                {savedAt ? `Saved on this device at ${savedAt}` : 'Nothing saved yet'}
+                {' '}· {wp.statements.filter(q => q.filedOn).length} of {wp.statements.length} quarters have a filing day
+              </span>
+              <Button size="sm" variant="ghost" icon="download" onClick={exportStatements}>Statement sheet CSV</Button>
+            </div>
+
+            <div className="td-stmts">
+              {wp.statements.map(q => {
+                // The engine filters a day it cannot read; the field shows the reading, not the store.
+                const shownDate = textFor(draft, q.due, 'filedOn', q.filedOn)
+                const shownRef = textFor(draft, q.due, 'reference', q.reference)
+                const badge = q.ceiling
+                  ? { tone: 'red' as const, label: 'Ceiling — no filing day' }
+                  : q.stopped
+                    ? { tone: 'amber' as const, label: 'Filed late — clock stopped' }
+                    : q.filedOn
+                      ? { tone: 'green' as const, label: 'Filed on time' }
+                      : q.due > todayISO
+                        ? { tone: 'grey' as const, label: 'Not due yet' }
+                        : { tone: 'grey' as const, label: 'No filing day' }
+                return (
+                  <div key={q.quarter} className={`td-stmt ${q.ceiling ? 'is-ceiling' : q.stopped ? 'is-late' : q.filedOn ? 'is-filed' : ''}`}>
+                    <div className="td-dep-head">
+                      <div>
+                        <div className="td-dep-month">{q.quarter} · {q.label}</div>
+                        <div className="td-dep-sub">
+                          {formatDateIN(q.periodFrom)} to {formatDateIN(q.periodTo)} · due {formatDateIN(q.due)}
+                        </div>
+                      </div>
+                      <div className="td-dep-right">
+                        <div className="td-dep-tax">{money(q.tax)}</div>
+                        <Badge tone={badge.tone}>{badge.label}</Badge>
+                      </div>
+                    </div>
+
+                    <div className="td-stmt-figures">
+                      <span>
+                        <em>Days late</em>
+                        <b className="tf-num">{q.daysLate || '—'}</b>
+                      </span>
+                      <span>
+                        <em>271H fee</em>
+                        <b className="tf-num">{q.fee ? money(q.fee) : '—'}</b>
+                      </span>
+                      <span>
+                        <em>Per day</em>
+                        <b className="tf-num">
+                          {q.ceiling
+                            ? q.capped ? '₹0, at the cap' : '₹100, still running'
+                            : q.stopped ? '₹0, stopped' : '—'}
+                        </b>
+                      </span>
+                    </div>
+
+                    <div className="td-dep-form td-stmt-form">
+                      <label className="td-in">
+                        <span>Statement filed on</span>
+                        <input className="tf-input" type="date" max={todayISO}
+                          value={shownDate}
+                          onChange={e => setStatementField(q, 'filedOn', e.target.value)}
+                          aria-label={`${q.quarter} ${q.label} statement filing date`} />
+                      </label>
+                      <label className="td-in">
+                        <span>Acknowledgement</span>
+                        <input className="tf-input" maxLength={20} placeholder="portal acknowledgement"
+                          value={shownRef}
+                          onChange={e => setStatementField(q, 'reference', e.target.value)}
+                          aria-label={`${q.quarter} ${q.label} statement acknowledgement`} />
+                      </label>
+                    </div>
+
+                    {!shownDate && shownRef.trim() !== '' && (
+                      <div className="td-dep-hint">
+                        The acknowledgement is held until a filing day is added — a reference alone does not stop the clock.
+                      </div>
+                    )}
+
+                    {stmtProblems[q.due] && (
+                      <div className="td-dep-hint">
+                        {stmtProblems[q.due].map(msg => <div key={msg}>{msg}</div>)}
+                      </div>
+                    )}
+
+                    <div className="td-dep-foot">
+                      <span className={q.ceiling || q.stopped ? 'td-dep-warn' : 'td-dep-ok'}>
+                        {q.ceiling
+                          ? q.capped
+                            ? `No filing day is recorded, but the fee has reached ${money(q.fee)} — the tax for the quarter — so another late day adds nothing.`
+                            : `No filing day is recorded, so the clock still runs: ${money(q.fee)} to ${formatDateIN(todayISO)}, and it keeps growing.`
+                          : q.stopped
+                            ? `The register holds ${formatDateIN(q.filedOn)}: ${plural(q.daysLate, 'day')} late, ${money(q.fee)}.`
+                            : q.filedOn
+                              ? `Filed ${formatDateIN(q.filedOn)}, on or before the due date — nothing is at stake.`
+                              : q.tax > 0 && q.due > todayISO
+                                ? `The statement falls due ${formatDateIN(q.due)}; nothing has run yet.`
+                                : 'Nothing was withheld in this quarter, so the fee reads nil.'}
+                      </span>
+                      {q.filedOn && (
+                        <button type="button" className="td-clear" onClick={() => {
+                          commit(setStatementFiling(state, q.due, null))
+                          setDraft(d => {
+                            const next = { ...d }
+                            for (const k of ['filedOn', 'reference']) delete next[`${q.due}:${k}`]
+                            return next
+                          })
+                          setStmtProblems(p => {
+                            const next = { ...p }
+                            delete next[q.due]
+                            return next
+                          })
+                        }}>
+                          <Icon name="x" size={12} /> Clear this filing
+                        </button>
+                      )}
+                    </div>
                   </div>
-                ))}
-                <div className="td-cols td-foot" style={{ gridTemplateColumns: STMT_GRID }}>
-                  <span className="td-doc">Year</span>
-                  <span>{fyLabel(fyStart)}</span>
-                  <span className="is-right tf-num">{money(wp.totals.tax)}</span>
-                  <span />
-                  <span className="is-right td-fee tf-num">{money(wp.totals.statementFee)}</span>
-                </div>
-              </div>
+                )
+              })}
+            </div>
+
+            <div className="td-stmt-total">
+              <span>{fyLabel(fyStart)} · tax across the four quarters</span>
+              <b className="tf-num">{money(wp.totals.tax)}</b>
+              <span>Fee at stake</span>
+              <b className="tf-num">{money(wp.totals.statementFee)}</b>
+              {wp.totals.statementFeeCeiling > 0 && (
+                <em>
+                  {money(wp.totals.statementFeeCeiling)} of that fee is a ceiling —{' '}
+                  {plural(wp.statements.filter(q => q.ceiling).length, 'quarter')} with no filing day.
+                </em>
+              )}
             </div>
 
             <div className="td-links">
@@ -679,7 +824,9 @@ export default function TdsPage() {
 
             <div className="td-foot-note">
               ₹100 a day under 271H for a late statement, capped at the tax involved, and a separate ₹200 a day under
-              285(2A) for the return of the deduction itself. {SAMPLE_TDS_NOTE}
+              285(2A) for the return of the deduction itself. The day recorded above is the shop&apos;s own transcript —
+              the portal is still invisible, so a quarter with no day on it is printed as a ceiling, never as the final demand.
+              {' '}{SAMPLE_TDS_NOTE}
             </div>
           </div>
         )}
@@ -789,6 +936,30 @@ export default function TdsPage() {
         }
         .td-clear:hover { color: var(--red); border-color: var(--red); }
 
+        .td-stmts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+        .td-stmt { border: 1px solid var(--line); border-radius: 13px; padding: 13px 14px; background: var(--surface); }
+        .td-stmt.is-ceiling { border-color: rgba(231, 76, 60, .45); }
+        .td-stmt.is-late { border-color: rgba(240, 138, 0, .45); }
+        .td-stmt.is-filed { border-color: rgba(39, 174, 96, .4); }
+        .td-stmt-figures {
+          display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-top: 11px;
+          padding: 9px 10px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line);
+        }
+        .td-stmt-figures span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+        .td-stmt-figures em {
+          font-style: normal; font-size: 10.5px; font-weight: 700; letter-spacing: .05em;
+          text-transform: uppercase; color: var(--faint);
+        }
+        .td-stmt-figures b { font-size: 12.5px; font-weight: 680; color: var(--ink); }
+        .td-stmt-form { grid-template-columns: 1fr 1.2fr; }
+        .td-stmt-total {
+          display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-top: 14px;
+          padding: 11px 13px; border: 1px solid var(--line); border-radius: 11px;
+          background: var(--surface-2); font-size: 12px; color: var(--muted);
+        }
+        .td-stmt-total b { color: var(--ink); font-variant-numeric: tabular-nums; }
+        .td-stmt-total em { font-style: normal; flex-basis: 100%; color: var(--amber); }
+
         .td-vrow.is-untagged { background: var(--amber-soft); }
         .td-vname {
           display: inline-flex; align-items: center; gap: 6px; padding: 0; border: none; background: none;
@@ -813,8 +984,6 @@ export default function TdsPage() {
         .td-bill-date { font-size: 11.5px; color: var(--faint); }
         .td-bill-base { font-size: 12px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
         .td-bill select { width: 100%; }
-        .td-row.is-late { background: var(--amber-soft); }
-        .td-fee { color: var(--amber); font-weight: 640; }
         .td-links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 16px 0 4px; }
         .td-link {
           display: flex; align-items: center; gap: 8px; padding: 11px 13px; border-radius: 11px;
@@ -830,6 +999,7 @@ export default function TdsPage() {
         }
         @media (max-width: 900px) {
           .td-deps { grid-template-columns: 1fr; }
+          .td-stmts { grid-template-columns: 1fr; }
         }
         @media (max-width: 768px) {
           .td-stats { grid-template-columns: 1fr; }
@@ -847,12 +1017,13 @@ export default function TdsPage() {
           .td-band { grid-template-columns: 1fr; gap: 3px; }
           .td-band-count, .td-band-tax, .td-band-total { text-align: left; }
           .td-dep-form { grid-template-columns: 1fr 1fr; }
+          .td-stmt-form { grid-template-columns: 1fr; }
           .td-bill { grid-template-columns: 1fr; gap: 4px; }
           .td-bill-base { text-align: left; }
           .td-links { grid-template-columns: 1fr; }
         }
         @media print {
-          .td-tabs, .td-tools, .td-select, .td-toggle, .td-dep-form, .td-clear, .td-links, .no-print { display: none !important; }
+          .td-tabs, .td-tools, .td-select, .td-toggle, .td-dep-form, .td-stmt-form, .td-clear, .td-links, .no-print { display: none !important; }
           .td-stats { grid-template-columns: repeat(3, 1fr); }
           .td-grid { min-width: 0; }
           .td-body { padding: 0; }
@@ -870,12 +1041,14 @@ const ROWS_GRID = '1.25fr 1.35fr .85fr .9fr .5fr .8fr 1fr 1.5fr'
 const VENDOR_COLS = ['Supplier', 'Section', 'Value in the year', 'TDS so far', 'Against the limit']
 const VENDOR_GRID = '1.5fr 1.4fr .95fr .9fr 1.15fr'
 
-const STMT_COLS = ['Quarter', 'Due date', 'Tax in the quarter', 'Days late', 'Fee at stake']
-const STMT_GRID = '1.5fr 1fr 1fr .7fr .9fr'
-
 function yearOptions(): number[] {
   const now = fyStartYear(new Date())
   return [now, now - 1, now - 2, now - 3]
+}
+
+/** The page's own day, in the same 'YYYY-MM-DD' shape the register stores. */
+function isoDay(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 function draftFor(draft: Record<string, string>, month: string, field: string, value: number | undefined): string {
@@ -884,7 +1057,7 @@ function draftFor(draft: Record<string, string>, month: string, field: string, v
   return value ? String(value) : ''
 }
 
-/** Challan text fields keep whatever was typed, even before the month has a date. */
+/** Challan and statement text fields keep whatever was typed, even before the row has a date. */
 function textFor(draft: Record<string, string>, month: string, field: string, value: string | undefined): string {
   const d = draft[`${month}:${field}`]
   return d !== undefined ? d : value ?? ''

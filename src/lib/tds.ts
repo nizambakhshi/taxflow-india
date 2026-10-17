@@ -181,6 +181,18 @@ export interface Challan {
   amount: number
 }
 
+/**
+ * The day the shop says a quarter's statement went in — a transcript, not proof. The portal is
+ * elsewhere, exactly as it is for the GST filings' *challan the department holds*: what this row
+ * keeps is the shop's own day, and the page prints whose date it is reading.
+ */
+export interface StatementFiling {
+  /** 'YYYY-MM-DD' the statement went in, as the shop states it. */
+  filedOn: string
+  /** The acknowledgement number the shop writes down — printed beside the date, never parsed. */
+  reference: string
+}
+
 export interface TdsState {
   version: number
   updatedAt: string
@@ -191,13 +203,21 @@ export interface TdsState {
   billSection: Record<string, SectionId>
   /** deposits recorded against a month, keyed 'YYYY-MM'. */
   challans: Record<string, Challan>
+  /**
+   * A quarter's statement filing, keyed by that quarter's due date ('YYYY-MM-DD') because the
+   * due date is the one string that names a quarter without a fiscal year's arithmetic.
+   * R3-25's field: a register written before this round loads with none, and its quarters read
+   * to today exactly as they read the round before — the same field-added-by-reading shape as
+   * `paid_on` on the filings register (R3-24) and the seal's photograph (R3-21).
+   */
+  statementFilings: Record<string, StatementFiling>
 }
 
 export const TDS_VERSION = 1
 const STATE_KEY = 'taxflow:tds:'
 
 export function emptyTds(): TdsState {
-  return { version: TDS_VERSION, updatedAt: '', payerType: 'business', vendorSection: {}, billSection: {}, challans: {} }
+  return { version: TDS_VERSION, updatedAt: '', payerType: 'business', vendorSection: {}, billSection: {}, challans: {}, statementFilings: {} }
 }
 
 /** Bills may be typed without picking a supplier row, so fall back to the name. */
@@ -218,6 +238,7 @@ export function loadTds(orgId: string): TdsState {
       vendorSection: asMap(parsed.vendorSection),
       billSection: asMap(parsed.billSection),
       challans: asChallans(parsed.challans),
+      statementFilings: asStatementFilings(parsed.statementFilings),
     }
   } catch {
     return base
@@ -246,6 +267,22 @@ function asChallans(v: unknown): Record<string, Challan> {
       depositDate: c.depositDate,
       amount: Number(c.amount) || 0,
     }
+  }
+  return out
+}
+
+/**
+ * A filing row is kept only where its date is a date. A damaged entry is *unreadable*, not a
+ * clock stopped on a string that is no day: the quarter falls back to reading to today and
+ * prints its ceiling, rather than printing a fee measured to "soon" (Rule 27).
+ */
+function asStatementFilings(v: unknown): Record<string, StatementFiling> {
+  const out: Record<string, StatementFiling> = {}
+  if (!v || typeof v !== 'object') return out
+  for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+    const f = val as Partial<StatementFiling>
+    if (!f || typeof f.filedOn !== 'string' || !parseDate(f.filedOn)) continue
+    out[k] = { filedOn: f.filedOn, reference: typeof f.reference === 'string' ? f.reference : '' }
   }
   return out
 }
@@ -279,6 +316,41 @@ export function setChallan(state: TdsState, month: string, challan: Challan | nu
   if (!challan || !challan.depositDate) delete next[month]
   else next[month] = challan
   return { ...state, challans: next }
+}
+
+/**
+ * A statement with no filing date is not a filing: the empty string the composer sends when the
+ * shop takes the day back clears the row, and the quarter's clock runs to today again. An entry
+ * is saved only when its day parses — the read guard and the write guard say the same thing.
+ */
+export function setStatementFiling(state: TdsState, due: string, filing: StatementFiling | null): TdsState {
+  const next = { ...state.statementFilings }
+  if (!filing || !filing.filedOn || !parseDate(filing.filedOn)) delete next[due]
+  else next[due] = { filedOn: filing.filedOn, reference: filing.reference.trim() }
+  return { ...state, statementFilings: next }
+}
+
+/**
+ * What the composer refuses, in sentences. The portal is still invisible — a filing here is the
+ * shop's word and the page says so — but the date must at least be a date, must not be a day that
+ * has not arrived, and cannot precede the quarter it reports, because the statement describes days
+ * that must have happened first.
+ */
+export function validateStatementFiling(periodTo: string, filedOn: string, today: string): string[] {
+  const problems: string[] = []
+  if (!filedOn) return problems
+  const d = parseDate(filedOn)
+  if (!d) {
+    problems.push('The day this statement was filed must be a date.')
+    return problems
+  }
+  if (today && filedOn > today) {
+    problems.push(`A statement cannot have gone in on ${filedOn} — that day has not come yet.`)
+  }
+  if (periodTo && filedOn < periodTo) {
+    problems.push(`The quarter this statement reports closes on ${periodTo}; a filing dated ${filedOn} would describe days that had not happened.`)
+  }
+  return problems
 }
 
 /* ── the workpaper ──────────────────────────────────────────────────────── */
@@ -362,6 +434,12 @@ export interface TdsWorkpaper {
     overdue: number
     interest: number
     statementFee: number
+    /**
+     * The part of `statementFee` that is a ceiling — quarters past their due date with no filing
+     * day on them, read to today. The rest is exact, measured to a date the register holds; an
+     * empty year of statements, or a fully dated one, prints this as zero and no sentence.
+     */
+    statementFeeCeiling: number
   }
   /** The four quarterly 26Q dates and what a late filing costs at each. */
   statements: QuarterlyStatement[]
@@ -376,6 +454,21 @@ export interface QuarterlyStatement {
   tax: number
   daysLate: number
   fee: number
+  /** The day the shop says this statement went in — the register's only stop date. */
+  filedOn: string
+  /** The acknowledgement the row holds beside that day; printed, never parsed. */
+  reference: string
+  /** True when the days and the fee were measured to a date this register holds. */
+  stopped: boolean
+  /** True when the quarter is late with no filing day on it: the fee is a ceiling, and says so. */
+  ceiling: boolean
+  /**
+   * True when the fee has reached the cap the law puts on it — the tax involved, or ₹5,00,000 —
+   * so another late day adds nothing. A ceiling can be bounded; the page must not call it growing.
+   */
+  capped: boolean
+  /** ₹100 a day still running under 271H; the labelled nil once the clock stops or the cap is reached (Rule 27). */
+  perDay: number
 }
 
 function ymd(d: Date): string {
@@ -627,7 +720,7 @@ export function buildWorkpaper(
   const deposited = months.reduce((s, m) => s + (m.challan ? m.challan.amount : 0), 0)
   const overdue = months.filter(m => m.status === 'pending' && m.monthsLate > 0).reduce((s, m) => s + m.tax, 0)
   const interest = months.reduce((s, m) => s + m.interest, 0)
-  const statements = quarterlyStatements(fyStart, rows, asOf)
+  const statements = quarterlyStatements(fyStart, rows, asOf, state)
 
   return {
     fyLabel: fyLabel(fyStart),
@@ -646,6 +739,7 @@ export function buildWorkpaper(
       overdue,
       interest,
       statementFee: statements.reduce((s, q) => s + q.fee, 0),
+      statementFeeCeiling: statements.reduce((s, q) => s + (q.ceiling ? q.fee : 0), 0),
     },
     statements,
   }
@@ -679,10 +773,17 @@ const QUARTERS: { label: string; quarter: string; from: string; to: string; due:
 ]
 
 /**
- * 26Q is filed quarterly. A late statement costs ₹100 a day under 271H, capped at
- * the tax involved, and ₹200 a day under 285(2A), capped at the fee for the return.
+ * 26Q is filed quarterly. A late statement costs ₹100 a day under 271H, capped at the tax
+ * involved, and ₹200 a day under 285(2A), capped at the fee for the return.
+ *
+ * R3-25's amendment, borrowed whole from the filings register's rule 88B(2) shape (R3-24):
+ * a clock reads to the date the register holds, or it does not stop. Where the shop has said
+ * which day the statement went in, the days and the fee run to that day and stop — filed before
+ * the due date, the fee is a nil that is a reading, not a missing one. Where it has not, the
+ * days run to today and the fee is labelled a ceiling. The portal itself is still invisible;
+ * what changed is that the register no longer has to pretend it is still the day before filing.
  */
-function quarterlyStatements(fyStart: number, rows: DeductionRow[], asOf: Date): QuarterlyStatement[] {
+function quarterlyStatements(fyStart: number, rows: DeductionRow[], asOf: Date, state: TdsState): QuarterlyStatement[] {
   return QUARTERS.map(q => {
     const year = Number(q.from.slice(0, 2)) >= 4 ? fyStart : fyStart + 1
     // A quarter due in January or May is due in the calendar year after it opened:
@@ -690,19 +791,39 @@ function quarterlyStatements(fyStart: number, rows: DeductionRow[], asOf: Date):
     // due 31 May 27.
     const dueYear = Number(q.due.slice(0, 2)) >= 4 ? year : year + 1
     const due = `${dueYear}-${q.due}`
+    const periodTo = `${year}-${q.to}`
     const tax = rows.filter(r => r.month >= `${year}-${q.from.slice(0, 2)}` && r.month <= `${year}-${q.to.slice(0, 2)}`).reduce((s, r) => s + r.tax, 0)
     const dueDate = parseDate(due)!
-    const late = tax > 0 && dueDate < asOf
-    const daysLate = late ? Math.ceil((asOf.getTime() - dueDate.getTime()) / 86400000) : 0
+    const filing = state.statementFilings[due] ?? null
+    // A day that has not arrived cannot stop a clock, and neither can one before the quarter it
+    // reports had closed — the composer refuses both, and a hand-edited store falls back to reading
+    // to today rather than measuring to a day this quarter cannot have been filed on.
+    const filedOn = filing && parseDate(filing.filedOn) && filing.filedOn <= ymd(asOf) && filing.filedOn >= periodTo
+      ? filing.filedOn
+      : ''
+    const stop = filedOn ? parseDate(filedOn)! : asOf
+    const late = tax > 0 && dueDate < stop
+    const daysLate = late ? Math.ceil((stop.getTime() - dueDate.getTime()) / 86400000) : 0
+    const cap = Math.min(tax, 5_00_000)
+    // At the cap a further day adds nothing — the fee has stopped growing even though no filing
+    // day stops the clock. The two states are different and the page prints them differently.
+    const capped = late && daysLate * 100 >= cap
+    const stopped = late && Boolean(filedOn)
     return {
       label: q.label,
       quarter: q.quarter,
       due,
       periodFrom: `${year}-${q.from}`,
-      periodTo: `${year}-${q.to}`,
+      periodTo,
       tax,
       daysLate,
-      fee: late ? Math.min(daysLate * 100, tax, 5_00_000) : 0,
+      fee: late ? Math.min(daysLate * 100, cap) : 0,
+      filedOn,
+      reference: filing?.reference || '',
+      stopped,
+      ceiling: late && !filedOn,
+      capped,
+      perDay: late && !filedOn && !capped ? 100 : 0,
     }
   })
 }
@@ -734,6 +855,30 @@ export function tdsDepositCsvRows(wp: TdsWorkpaper): (string | number)[][] {
   return wp.months.map(m => [
     m.label, m.tax, m.due, m.status, m.challan ? m.challan.amount : '', m.challan?.depositDate || '',
     m.challan?.bsr || '', m.challan?.challanNumber || '', m.monthsLate, m.interest,
+  ])
+}
+
+/**
+ * The four 26Q rows as the register reads them now. `Fee basis` says in words whether the fee is
+ * measured to a held date or is a ceiling to today — a sheet a CA reads in a different week must
+ * not present today's last calculation as the filed fact.
+ */
+export const TDS_STATEMENT_CSV_HEADERS = [
+  'Quarter', 'Label', 'Period from', 'Period to', 'Due date', 'Tax in the quarter',
+  'Days late', 'Fee', 'Fee basis', 'Filed on', 'Acknowledgement',
+]
+
+export function tdsStatementCsvRows(wp: TdsWorkpaper): (string | number)[][] {
+  return wp.statements.map(q => [
+    q.quarter, q.label, q.periodFrom, q.periodTo, q.due, q.tax, q.daysLate, q.fee,
+    q.stopped
+      ? 'measured to the day this register holds'
+      : q.capped
+        ? 'ceiling — no filing day, at the cap'
+        : q.ceiling
+          ? 'ceiling — no filing day, read to today'
+          : 'nothing at stake',
+    q.filedOn || '', q.reference || '',
   ])
 }
 

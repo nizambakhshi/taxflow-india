@@ -146,6 +146,7 @@ const KEPT = {
   'jsx:app/(app)/payroll/page.tsx::states': [1, 'V', 'a verb inside a citation, not a count'],
   'jsx:app/(app)/projects/page.tsx::days': [1, 'E', 'SERVICE_INVOICE_DAYS is 30'],
   'jsx:app/(app)/tds/page.tsx::months': [1, 'E', 'a workpaper walks twelve months'],
+  'jsx:app/(app)/tds/page.tsx::quarters': [1, 'E', 'QUARTERS is four; the variable counts how many carry a filing day'],
   'jsx:app/(app)/vault/page.tsx::books': [1, 'E', "the same 35, read from the inventory's own total"],
   'jsx:app/(app)/vault/page.tsx::calls': [1, 'V', 'a verb: "1 calls the seal in its own engine" — right by value'],
   'jsx:app/(app)/vault/page.tsx::registers': [2, 'E', 'REGISTERS has 35 — both the subtitle and the tab label'],
@@ -184,13 +185,13 @@ eq('A6 no kept site printed a different population than the round measured',
   [...tplStrays.wrong, ...jsxStrays.wrong].join(' | '), '')
 eq('A7 no kept reason is stale — the site it defends is still in the census',
   [...tplStrays.stale, ...jsxStrays.stale].join(' | '), '')
-eq('A8 the whole kept population is the round\'s measured 45 + 12',
-  tpl.hits.length + jsx.hits.length, 57)
+eq('A8 the whole kept population is the round\'s measured 45 + 12, plus R3-25\'s one new statement sentence',
+  tpl.hits.length + jsx.hits.length, 58)
 eq('A9 every kept site carries one of the five classes the round named',
   Object.values(KEPT).every(([, k]) => 'ECDVN'.includes(k)), true)
 const classCensus = Object.values(KEPT).reduce((m, [, k]) => ((m[k] = (m[k] || 0) + 1), m), {})
-eq('A10 the classes split as reported: 25 pinned figures, 4 self-naming sentences, 1 UOM, 10 verbs, 5 name-headed',
-  'ECDVN'.split('').map(k => `${k}${classCensus[k] || 0}`).join(' '), 'E25 C4 D1 V10 N5')
+eq('A10 the classes split as reported: 26 pinned figures, 4 self-naming sentences, 1 UOM, 10 verbs, 5 name-headed',
+  'ECDVN'.split('').map(k => `${k}${classCensus[k] || 0}`).join(' '), 'E26 C4 D1 V10 N5')
 
 
 // ── B. what the sweep did, in the kit's own words ─────────────────────────────
