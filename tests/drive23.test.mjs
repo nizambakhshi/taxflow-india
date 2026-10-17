@@ -24,7 +24,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { plural, pluralNoun } from '@/lib/format'
-import { REGISTERS, keyCount, specById } from '@/lib/vault'
+import { REGISTERS, specById } from '@/lib/vault'
 import { persistencePlan, sealClaims } from '@/lib/persistence'
 import { validateBatch, EXPIRY_CRITICAL_DAYS, EXPIRY_SOON_DAYS, newBatch, newMove } from '@/lib/batches'
 import { watchSentence, SERVICE_INVOICE_DAYS, DUE_SOON_DAYS } from '@/lib/projects'
