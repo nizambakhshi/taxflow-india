@@ -29,7 +29,7 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { bookDocs, type BookDoc } from '@/lib/costcentres'
-import { formatDateIN } from '@/lib/format'
+import {formatDateIN, plural, pluralNoun} from '@/lib/format'
 import { toCsv } from '@/lib/registers'
 import { download } from '@/lib/party-ledger'
 import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
@@ -498,7 +498,7 @@ function ProjectsPageInner() {
     setStore(upsertEntries(orgId, rows))
     setDrawForm(null)
     const total = Math.round(rows.reduce((t, e) => t + e.hours, 0) * 100) / 100
-    flash(`${rows.length} day${rows.length === 1 ? '' : 's'} — ${hours(total)} — drawn onto ${project.name || project.code} from the day book${refused.length ? `. ${refused.length} refused: ${refused[0]}` : '.'}`)
+    flash(`${plural(rows.length, 'day')} — ${hours(total)} — drawn onto ${project.name || project.code} from the day book${refused.length ? `. ${refused.length} refused: ${refused[0]}` : '.'}`)
   }
 
   function changeStatus(v: ProjectView, status: Project['status']) {
@@ -522,7 +522,7 @@ function ProjectsPageInner() {
     setBillFor(null)
     setPicked([])
     const known = invoiceNumbers.includes(ref)
-    flash(`${billFor.ids.length} ${billFor.ids.length === 1 ? 'row' : 'rows'} now point at ${ref}${known ? '' : ' — no invoice by that number is in your books yet, so the register will flag it until you raise one at /invoices'}.`)
+    flash(`${billFor.ids.length} ${pluralNoun(billFor.ids.length, 'row')} now ${billFor.ids.length === 1 ? 'points' : 'point'} at ${ref}${known ? '' : ' — no invoice by that number is in your books yet, so the register will flag it until you raise one at /invoices'}.`)
   }
 
   function unbilledNow(ids: string[]) {
@@ -537,7 +537,7 @@ function ProjectsPageInner() {
     const next = bulkTag(orgId, projectId, list)
     setStore(next)
     setPicked([])
-    flash(`${list.length} document${list.length === 1 ? '' : 's'} attached to ${store.projects.find(p => p.id === projectId)?.name || 'the project'}. The rupees are read from the books, not copied here.`)
+    flash(`${plural(list.length, 'document')} attached to ${store.projects.find(p => p.id === projectId)?.name || 'the project'}. The rupees are read from the books, not copied here.`)
   }
 
   function forget(docId: string) {
@@ -601,24 +601,24 @@ function ProjectsPageInner() {
       <div className="pj-stats">
         <StatCard
           label="Hours on the register" value={hours(sum.hours)}
-          sub={`${sum.entries} logged ${sum.entries === 1 ? 'day' : 'rows'} · ${money(sum.labour_value)} at your recorded rates`}
+          sub={`${plural(sum.entries, 'logged day')} · ${money(sum.labour_value)} at your recorded rates`}
           icon="clock" tone="blue" delay={0}
         />
         <StatCard
           label="Work not yet billed" value={money(sum.unbilled_value)}
-          sub={sum.unbilled_hours > 0 ? `${hours(sum.unbilled_hours)} across ${allGroups.length} project-month${allGroups.length === 1 ? '' : 's'}` : 'every logged hour is on an invoice'}
+          sub={sum.unbilled_hours > 0 ? `${hours(sum.unbilled_hours)} across ${plural(allGroups.length, 'project-month')}` : 'every logged hour is on an invoice'}
           icon={sum.unbilled_hours > 0 ? 'invoice' : 'check'} tone={sum.unbilled_hours > 0 ? 'amber' : 'green'} delay={40}
         />
         <StatCard
           label={`Past the ${SERVICE_INVOICE_DAYS}-day window`} value={String(lateGroups.length)}
           sub={lateGroups.length
             ? `${money(sum.at_risk)} of work, the oldest supplied ${lateGroups.map(g => g.earliest).sort()[0]}`
-            : dueGroups.length ? `${dueGroups.length} month${dueGroups.length === 1 ? '' : 's'} due within ${DUE_SOON_DAYS} days` : 'nothing is late paperwork'}
+            : dueGroups.length ? `${plural(dueGroups.length, 'month')} due within ${DUE_SOON_DAYS} days` : 'nothing is late paperwork'}
           icon={lateGroups.length ? 'alert' : 'shield'} tone={lateGroups.length ? 'red' : dueGroups.length ? 'amber' : 'green'} delay={80}
         />
         <StatCard
           label="Contribution from the books" value={money(sum.contribution)}
-          sub={`${money(sum.revenue)} billed · ${money(sum.cost)} spent · ${liveProjects.length} live project${liveProjects.length === 1 ? '' : 's'}${sum.unpriced_hours > 0 ? ` · ${hours(sum.unpriced_hours)} unpriced` : ''}${sum.costed_hours > 0 ? ` · after named hours ${money(sum.after_labour)}${sum.costed_hours < sum.hours ? ', partial' : ''}` : ''}`}
+          sub={`${money(sum.revenue)} billed · ${money(sum.cost)} spent · ${plural(liveProjects.length, 'live project')}${sum.unpriced_hours > 0 ? ` · ${hours(sum.unpriced_hours)} unpriced` : ''}${sum.costed_hours > 0 ? ` · after named hours ${money(sum.after_labour)}${sum.costed_hours < sum.hours ? ', partial' : ''}` : ''}`}
           icon="scale" tone={sum.contribution >= 0 ? 'violet' : 'red'} delay={120}
         />
       </div>
@@ -860,7 +860,7 @@ function ProjectsPageInner() {
                     onChange={e => setPicked(e.target.checked ? sheetEntries.map(x => x.id) : [])} />
                   <span>Select all in view</span>
                 </label>
-                <strong className="pj-bulk-count">{picked.length ? `${picked.length} selected · ${hours(sheetEntries.filter(e => picked.includes(e.id)).reduce((t, e) => t + e.hours, 0))}` : `${sheetEntries.length} row${sheetEntries.length === 1 ? '' : 's'}`}</strong>
+                <strong className="pj-bulk-count">{picked.length ? `${picked.length} selected · ${hours(sheetEntries.filter(e => picked.includes(e.id)).reduce((t, e) => t + e.hours, 0))}` : `${plural(sheetEntries.length, 'row')}`}</strong>
                 <span className="pj-bulk-total">{money(periodEntries.reduce((t, e) => {
                   const p = store.projects.find(x => x.id === e.project_id)
                   return t + (p ? e.hours * rateOf(e, p) : 0)
@@ -934,7 +934,7 @@ function ProjectsPageInner() {
                           <span>{x.person}</span>
                           <span className="pj-mini-num">{hours(x.hours)}</span>
                           <span className="pj-mini-num">{money(x.value)}</span>
-                          <span className="pj-muted">{x.entries} row{x.entries === 1 ? '' : 's'}</span>
+                          <span className="pj-muted">{plural(x.entries, 'row')}</span>
                         </li>
                       ))}
                     </ul>
@@ -978,7 +978,7 @@ function ProjectsPageInner() {
           ) : (
             <>
               <div className="pj-bulk">
-                <strong className="pj-bulk-count">{groupRows.length} project-month{groupRows.length === 1 ? '' : 's'}</strong>
+                <strong className="pj-bulk-count">{plural(groupRows.length, 'project-month')}</strong>
                 <span className="pj-bulk-total">{money(groupRows.reduce((t, g) => t + g.value, 0))} unbilled · {hours(groupRows.reduce((t, g) => t + g.hours, 0))} · {groupRows.filter(g => g.state === 'overdue').length} past the window</span>
                 <Button size="sm" variant="ghost" icon="download" onClick={exportUnbilled}>Unbilled CSV</Button>
               </div>
@@ -1016,7 +1016,7 @@ function ProjectsPageInner() {
                           <span className="is-right pj-row-actions" data-label="Actions">
                             <button type="button" className="pj-act" onClick={() => setOpenGroup(open ? '' : g.key)}>{open ? 'Hide' : 'Rows'}</button>
                             <button type="button" className="pj-act" onClick={() => copyLine(g)}>Copy line</button>
-                            {g.entries.length > 0 && <button type="button" className="pj-act" onClick={() => { setPicked(g.entries.map(e => e.id)); setTab('timesheet'); flash(`${g.entries.length} row${g.entries.length === 1 ? '' : 's'} from ${g.period_label} selected — Mark billed stamps them with the invoice you raise.`) }}>Select rows</button>}
+                            {g.entries.length > 0 && <button type="button" className="pj-act" onClick={() => { setPicked(g.entries.map(e => e.id)); setTab('timesheet'); flash(`${plural(g.entries.length, 'row')} from ${g.period_label} selected — Mark billed stamps them with the invoice you raise.`) }}>Select rows</button>}
                           </span>
                         </div>
                         {open && (
@@ -1074,7 +1074,7 @@ function ProjectsPageInner() {
                     {liveProjects.map(v => <option key={v.project.id} value={v.project.id}>{v.project.name || v.project.code}</option>)}
                   </select>
                 </label>
-                <strong className="pj-bulk-count">{picked.length ? `${picked.length} selected` : `${unattached.length} document${unattached.length === 1 ? '' : 's'} not on any project`}</strong>
+                <strong className="pj-bulk-count">{picked.length ? `${picked.length} selected` : `${plural(unattached.length, 'document')} not on any project`}</strong>
                 {picked.length > 0 && attachFor && (
                   <Button size="sm" icon="tag" onClick={() => attach(attachFor, openDocs.filter(d => picked.includes(d.id)))}>Attach {picked.length}</Button>
                 )}
@@ -1176,8 +1176,8 @@ function ProjectsPageInner() {
 
       <div className="pj-foot">
         <span>
-          {store.projects.length} project{store.projects.length === 1 ? '' : 's'} · {store.entries.length} hour row{store.entries.length === 1 ? '' : 's'} ·{' '}
-          {store.tags.length} document tag{store.tags.length === 1 ? '' : 's'} · stored in this browser under taxflow:projects
+          {plural(store.projects.length, 'project')} · {plural(store.entries.length, 'hour row')} ·{' '}
+          {plural(store.tags.length, 'document tag')} · stored in this browser under taxflow:projects
         </span>
         <span className="pj-foot-links">
           <Link href="/cost-centres">Cost centres →</Link>
@@ -1342,7 +1342,7 @@ function ProjectsPageInner() {
             <div className="pj-basis">
               <Icon name="book" size={14} />
               <span>
-                This stamps {billFor.ids.length} row{billFor.ids.length === 1 ? '' : 's'} with a reference. It does not create the invoice and it does not take the money —
+                This stamps {plural(billFor.ids.length, 'row')} with a reference. It does not create the invoice and it does not take the money —
                 raise the paper at <Link href="/invoices/new">/invoices/new</Link> and receipt it at <Link href="/payments">/payments</Link>.
               </span>
             </div>
@@ -1359,7 +1359,7 @@ function ProjectsPageInner() {
             )}
             <div className="pj-save">
               <Button variant="ghost" onClick={() => setBillFor(null)}>Cancel</Button>
-              <Button icon="check" onClick={applyBilled}>Stamp {billFor.ids.length} row{billFor.ids.length === 1 ? '' : 's'}</Button>
+              <Button icon="check" onClick={applyBilled}>Stamp {plural(billFor.ids.length, 'row')}</Button>
             </div>
           </div>
         </div>
@@ -1473,7 +1473,7 @@ function ProjectsPageInner() {
             <div className="pj-save">
               <Button variant="ghost" onClick={() => setDrawForm(null)}>Cancel</Button>
               <Button icon="check" disabled={!draw.result || !!draw.result.refuse || drawTicked.length === 0} onClick={applyDraw}>
-                {drawTicked.length ? `Draw ${drawTicked.length} day${drawTicked.length === 1 ? '' : 's'} — ${hours(drawTickedHours)}` : 'Draw the days'}
+                {drawTicked.length ? `Draw ${plural(drawTicked.length, 'day')} — ${hours(drawTickedHours)}` : 'Draw the days'}
               </Button>
             </div>
           </div>

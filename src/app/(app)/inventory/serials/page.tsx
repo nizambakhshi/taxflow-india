@@ -23,7 +23,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { formatDateIN } from '@/lib/format'
+import { formatDateIN, plural } from '@/lib/format'
 import { toCsv } from '@/lib/registers'
 import { download } from '@/lib/party-ledger'
 import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
@@ -115,7 +115,7 @@ function warrantyLine(v: SerialView): { text: string; bad: boolean } {
     if (days === null) return { text: formatDateIN(v.warranty_till), bad: false }
     if (days < 0) return { text: `ended ${formatDateIN(v.warranty_till)}`, bad: true }
     if (days === 0) return { text: `ends today · ${formatDateIN(v.warranty_till)}`, bad: false }
-    return { text: `${formatDateIN(v.warranty_till)} · ${days} day${days === 1 ? '' : 's'} left`, bad: false }
+    return { text: `${formatDateIN(v.warranty_till)} · ${plural(days, 'day')} left`, bad: false }
   }
   if (v.sold_date) return { text: 'No warranty', bad: false }
   if (v.warranty_months > 0) return { text: `${v.warranty_months} mo, from sale`, bad: false }
@@ -303,7 +303,7 @@ function SerialsPageInner() {
     const added = receiveUnits(orgId, product, receiveList, common)
     setUnits(loadUnits(orgId))
     setEvents(loadEvents(orgId))
-    setNotice(`${added.length} unit${added.length === 1 ? '' : 's'} of ${product.name} added to the register.`)
+    setNotice(`${plural(added.length, 'unit')} of ${product.name} added to the register.`)
     closeReceive()
   }
 
@@ -607,7 +607,7 @@ function SerialsPageInner() {
                 <div className="sr-preview-head">
                   <span>This will add</span>
                   <span className="sr-preview-total">
-                    {receiveList.length - receiveDupes.length} unit{receiveList.length - receiveDupes.length === 1 ? '' : 's'}
+                    {plural(receiveList.length - receiveDupes.length, 'unit')}
                     {receiveProduct ? ` of ${receiveProduct.name}` : ''}
                   </span>
                 </div>
@@ -668,7 +668,7 @@ function SerialsPageInner() {
               <Button variant="ghost" onClick={closeReceive}>Cancel</Button>
               <Button icon="check" onClick={saveReceive} disabled={receiveList.length === 0 || receiveDupes.length > 0}>
                 {receiveList.length - receiveDupes.length > 0
-                  ? `Receive ${receiveList.length - receiveDupes.length} unit${receiveList.length - receiveDupes.length === 1 ? '' : 's'}`
+                  ? `Receive ${plural(receiveList.length - receiveDupes.length, 'unit')}`
                   : 'Receive units'}
               </Button>
             </div>

@@ -11,6 +11,7 @@
 import { useEffect, useState } from 'react'
 import Icon from '@/components/Icons'
 import { Button } from '@/components/ui'
+import { plural, pluralNoun} from '@/lib/format'
 import {
   decodePortal, payAllLink, payLinkFor, portalRunning, portalTokenFromHash,
   type PortalDoc, type PortalPayload,
@@ -342,7 +343,7 @@ function StatementView({ payload }: { payload: PortalPayload }) {
             <div className="pt-hero-amt">₹{money(closing)}</div>
             <div className="pt-hero-sub">
               {openCount > 0
-                ? `Across ${openCount} open invoice${openCount === 1 ? '' : 's'}`
+                ? `Across ${plural(openCount, 'open invoice')}`
                 : 'As per the statement below'}
               {' · '}updated {fmtDate(payload.asOf)}
             </div>
@@ -419,7 +420,7 @@ function StatementView({ payload }: { payload: PortalPayload }) {
           }}>
             <span data-label="Date">—</span>
             <span data-label="Particulars">Period total</span>
-            <span data-label="Document">{payload.rows.length} {payload.rows.length === 1 ? 'entry' : 'entries'}</span>
+            <span data-label="Document">{payload.rows.length} {pluralNoun(payload.rows.length, 'entry')}</span>
             <span data-label="Debit" style={{ textAlign: 'right' }}>₹{money(payload.totals.debit)}</span>
             <span data-label="Credit" style={{ textAlign: 'right' }}>₹{money(payload.totals.credit)}</span>
             <span data-label="Balance" style={{ textAlign: 'right' }}>₹{money(payload.totals.closing)}</span>

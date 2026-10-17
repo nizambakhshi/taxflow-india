@@ -85,6 +85,7 @@ import { round2 } from '@/lib/costcentres'
 // The sheet is a delimited paste, exactly like a bank statement — so the same two readers are used
 // rather than writing a third CSV splitter into this register.
 import { detectDelimiter, splitRow } from '@/lib/bank-statement'
+import { plural } from '@/lib/format'
 
 const KEY_PAYROLL = 'taxflow:payroll:'
 /** Today's shape. A stored envelope with a different version is read as empty, not guessed at. */
@@ -922,7 +923,7 @@ export function deleteEmployee(orgId: string, id: string): DeleteEmployeeResult 
   if (rows > 0) {
     return {
       ok: false,
-      error: `This person still has ${rows} recorded month${rows === 1 ? '' : 's'} of salary. Take them off the rolls instead — set a leaving date, and the months they worked stay computed exactly as they were.`,
+      error: `This person still has ${plural(rows, 'recorded month')} of salary. Take them off the rolls instead — set a leaving date, and the months they worked stay computed exactly as they were.`,
     }
   }
   return { ok: true, store: mutatePayroll(orgId, n => ({ ...n, employees: n.employees.filter(e => e.id !== id) })) }
@@ -1587,7 +1588,7 @@ export function planAttendance(store: PayrollStore, month: string, text: string)
         continue
       }
       via = 'grid'
-      read = `${present} present, ${loss} lost, ${neutral} holiday or paid leave across ${marks} marked day${marks === 1 ? '' : 's'}`
+      read = `${present} present, ${loss} lost, ${neutral} holiday or paid leave across ${plural(marks, 'marked day')}`
       lop = round2(loss)
     } else {
       const lossCell = cellAt('loss')
@@ -1625,13 +1626,13 @@ export function planAttendance(store: PayrollStore, month: string, text: string)
         lop = round2(lossNums[0])
       } else if (hasLoss) {
         via = 'loss'
-        read = `${lossNums[0]} day${lossNums[0] === 1 ? '' : 's'} lost on the sheet`
+        read = `${plural(lossNums[0], 'day')} lost on the sheet`
         lop = round2(lossNums[0])
       } else {
         via = 'present'
         lop = round2(Math.max(0, useBasis.days - presentNums[0]))
         overflow = presentNums[0] > useBasis.days
-        read = `${presentNums[0]} day${presentNums[0] === 1 ? '' : 's'} present of ${useBasis.days}`
+        read = `${plural(presentNums[0], 'day')} present of ${useBasis.days}`
       }
     }
 
@@ -1693,7 +1694,7 @@ function ordinal(n: number): string {
 }
 
 function formatDays(n: number): string {
-  return Number.isInteger(n) ? `${n} day${n === 1 ? '' : 's'}` : `${n} days`
+  return Number.isInteger(n) ? `${plural(n, 'day')}` : `${n} days`
 }
 
 /** The stamped half of a row's note — a tag the register can find and replace, not stack. */
@@ -2427,7 +2428,7 @@ export function statutoryDues(store: PayrollStore, month: string): StatutoryLine
     out.push({
       key: 'pf', label: 'Provident fund', form: 'ECR',
       amount: pfTotal, due: depositDue(month, 'pf_esi'),
-      basis: `Employee 12% plus the employer's EPF, EPS, EDLI and administrative legs, over ${s.in_pf} head${s.in_pf === 1 ? '' : 's'} in the scheme.`,
+      basis: `Employee 12% plus the employer's EPF, EPS, EDLI and administrative legs, over ${plural(s.in_pf, 'head')} in the scheme.`,
       cite: PF_RATES.cite,
       note: 'Filed as one Electronic Contribution Record on the EPFO member portal. The register computes it; the challan is paid there, not here.',
       href: '/payroll',
@@ -2439,7 +2440,7 @@ export function statutoryDues(store: PayrollStore, month: string): StatutoryLine
     out.push({
       key: 'esi', label: 'Employee State Insurance', form: 'ESIC contribution',
       amount: esiTotal, due: depositDue(month, 'pf_esi'),
-      basis: `Employee 0.75% and employer 3.25% of gross wages, over ${s.in_esi} covered head${s.in_esi === 1 ? '' : 's'} inside the ₹21,000 limit.`,
+      basis: `Employee 0.75% and employer 3.25% of gross wages, over ${plural(s.in_esi, 'covered head')} inside the ₹21,000 limit.`,
       cite: ESI_BANDS[0].cite,
       note: `Contribution period ${period.label} (${period.window}); the return for it is due ${period.return_due}.`,
       href: '/payroll',
@@ -2449,7 +2450,7 @@ export function statutoryDues(store: PayrollStore, month: string): StatutoryLine
     out.push({
       key: 'tds', label: 'Tax on salary', form: 'Challan 281 · 192',
       amount: s.tds, due: depositDue(month, 'tds'),
-      basis: `Sum of the month's section 192 deductions across ${slips.filter(p => p.tax.applicable).length} computable head${slips.filter(p => p.tax.applicable).length === 1 ? '' : 's'}.`,
+      basis: `Sum of the month's section 192 deductions across ${plural(slips.filter(p => p.tax.applicable).length, 'computable head')}.`,
       cite: DUE_DAYS.cite,
       note: 'Deposited on the income tax portal against a challan; the register holds no challan number, so `/tds` cannot see it. Form 24Q is where this goes back into the department’s books.',
       href: '/tds',
@@ -2459,7 +2460,7 @@ export function statutoryDues(store: PayrollStore, month: string): StatutoryLine
     out.push({
       key: 'pt', label: 'Professional tax', form: 'State PT return',
       amount: s.pt, due: '',
-      basis: `Typed per employee — ${s.heads - s.pt_unset} head${s.heads - s.pt_unset === 1 ? '' : 's'} with an amount set, ${s.pt_unset} with none.`,
+      basis: `Typed per employee — ${plural(s.heads - s.pt_unset, 'head')} with an amount set, ${s.pt_unset} with none.`,
       cite: 'A state subject: the rate, the due date and whether salary is taxed at all are all the state’s, and the tables fetched for this file disagree. Section 16(iii) caps the deduction from salary at ₹2,500 a year.',
       note: 'No national due date to print. The calendar leaves this row undated rather than inventing the 21st.',
       href: '/payroll',
@@ -2479,8 +2480,8 @@ export function missingHeads(store: PayrollStore, month: string): { key: string;
     out.push({
       key: 'pf', label: 'Provident fund',
       why: s.in_pf === 0
-        ? `Nobody in this month's register is in the scheme — all ${s.heads} head${s.heads === 1 ? '' : 's'} are marked outside PF.`
-        : `${s.in_pf} head${s.in_pf === 1 ? '' : 's'} in the scheme, but basic + DA this month carries no contribution.`,
+        ? `Nobody in this month's register is in the scheme — all ${plural(s.heads, 'head')} ${s.heads === 1 ? 'is' : 'are'} marked outside PF.`
+        : `${plural(s.in_pf, 'head')} in the scheme, but basic + DA this month carries no contribution.`,
     })
   }
   if (!have.has('esi')) {
@@ -2497,7 +2498,7 @@ export function missingHeads(store: PayrollStore, month: string): { key: string;
     out.push({
       key: 'tds', label: 'Tax on salary',
       why: s.no_tax > 0
-        ? `${s.no_tax} head${s.no_tax === 1 ? '' : 's'} have no tax figure the register can compute${s.no_tax === s.heads ? ' (no employee is under a schedule this file holds)' : ''}. Everyone else falls under the ₹12,00,000 rebate, which is a real nil — not a gap.`
+        ? `${plural(s.no_tax, 'head')} ${s.no_tax === 1 ? 'has' : 'have'} no tax figure the register can compute${s.no_tax === s.heads ? ' (no employee is under a schedule this file holds)' : ''}. Everyone else falls under the ₹12,00,000 rebate, which is a real nil — not a gap.`
         : 'The walk gives no month a deduction: every salary in the register is covered by the section 87A rebate.',
     })
   }
@@ -2551,7 +2552,7 @@ export function costPerHour(p: Payslip): HourCost {
     hours_per_day: p.hours_per_day,
     cost_per_day: per_day,
     cost_per_hour: per_hour,
-    basis: per_hour === null ? '' : `₹${Math.round(p.employer_cost).toLocaleString('en-IN')} employer cost ÷ ${paid_days} paid day${paid_days === 1 ? '' : 's'} (${p.divisor_label}) ÷ ${p.hours_per_day} h a day.`,
+    basis: per_hour === null ? '' : `₹${Math.round(p.employer_cost).toLocaleString('en-IN')} employer cost ÷ ${plural(paid_days, 'paid day')} (${p.divisor_label}) ÷ ${p.hours_per_day} h a day.`,
     why: per_hour === null
       ? (paid_days <= 0
         ? 'Every day of the divisor was lost, so there is no paid time to divide a cost into.'

@@ -17,7 +17,7 @@ import { isExportDoc, loadExp, todayISO, watchRows, type ExportBookInvoice, type
 import { loadFx } from '@/lib/fx'
 import { addMonths, loadPayroll, payrollEvents, type PayEvent } from '@/lib/payroll'
 import { formatINR } from '@/lib/gst-engine'
-import { formatCompactINR, formatDateIN } from '@/lib/format'
+import {formatCompactINR, formatDateIN, plural, pluralNoun} from '@/lib/format'
 import { Badge, Button, Card, EmptyState, PageHeader, Segmented, StatRow } from '@/components/ui'
 import Icon from '@/components/Icons'
 
@@ -416,7 +416,7 @@ export default function ComplianceCalendarPage() {
         })()}
         {payRows.length > 0 && (
           <p style={{ fontSize: 11.5, color: 'var(--faint)', margin: '11px 0 0', maxWidth: 720, lineHeight: 1.5 }}>
-            {payRows.length} {payRows.length === 1 ? 'deadline' : 'deadlines'} this year {payRows.length === 1 ? 'is' : 'are'}
+            {payRows.length} {pluralNoun(payRows.length, 'deadline')} this year {payRows.length === 1 ? 'is' : 'are'}
             proved from the payroll register — its own PF, ESI, salary-tax and Form 16 rows, with the deposit date and the
             rupee figure the books carry. Those rows replace the monthly guesses the tick-boxes above would otherwise make,
             and a professional-tax row stays undated because only the state knows that date.
@@ -453,7 +453,7 @@ export default function ComplianceCalendarPage() {
             {formatCompactINR(overdue.reduce((s, e) => s + estimateLateCharge(e, Math.abs(e.daysLeft), 0).fee, 0))}
           </div>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
-            Accumulated late fees on {overdue.length} overdue filing{overdue.length === 1 ? '' : 's'} — interest is extra.
+            Accumulated late fees on {plural(overdue.length, 'overdue filing')} — interest is extra.
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--faint)', marginTop: 6, lineHeight: 1.55 }}>
             This is the ₹5,000 headline from section 47. The ceiling is lower on a small shop&apos;s turnover and a nil

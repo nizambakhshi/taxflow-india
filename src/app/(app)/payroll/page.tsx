@@ -35,7 +35,7 @@ import { useSearchDeepLink } from '@/lib/deep-link-search'
 import { download } from '@/lib/party-ledger'
 import { toCsv } from '@/lib/registers'
 import { formatINR } from '@/lib/gst-engine'
-import { formatDateIN } from '@/lib/format'
+import { formatDateIN, plural, pluralNoun } from '@/lib/format'
 import { INDIAN_STATES } from '@/lib/constants'
 import { Badge, Button, Card, EmptyState, PageHeader, SearchInput, Segmented, StatCard, StatRow } from '@/components/ui'
 import Icon from '@/components/Icons'
@@ -85,7 +85,7 @@ function moneyOn(slip: Payslip | null, v: number): string {
 
 /** Days, hours, months — a count is not money and does not want a ₹ in front of it. */
 function count(v: number, unit: string): string {
-  return `${v.toLocaleString('en-IN')} ${unit}${Math.abs(v) === 1 ? '' : 's'}`
+  return `${v.toLocaleString('en-IN')} ${pluralNoun(Math.abs(v), unit)}`
 }
 
 function structureTotal(e: Employee): number {
@@ -200,7 +200,7 @@ function PayrollPageInner() {
     setStore(result.store)
     flash(result.created === 0
       ? `${monthLabel(month)} was already open — every person on the rolls already has a row for it.`
-      : `${monthLabel(month)} is open. ${result.created} row${result.created === 1 ? '' : 's'} waiting for lost days, arrears and bonuses.`)
+      : `${monthLabel(month)} is open. ${plural(result.created, 'row')} waiting for lost days, arrears and bonuses.`)
   }
 
   function commitRow(next: PayInput) {
@@ -238,7 +238,7 @@ function PayrollPageInner() {
     } else {
       flash(`${result.written} month row${result.written === 1 ? ' carries' : 's now carry'} ${monthLabel(month)}’s attendance — lost days and the sentence saying where they came from, nothing else.`
         + (result.unchanged ? ` ${result.unchanged} already agreed with the sheet.` : '')
-        + (result.skipped.length ? ` ${result.skipped.length} person${result.skipped.length === 1 ? '' : 's'} were left out: ${result.skipped[0].reason}` : ''))
+        + (result.skipped.length ? ` ${plural(result.skipped.length, 'person')} ${result.skipped.length === 1 ? 'was' : 'were'} left out: ${result.skipped[0].reason}` : ''))
     }
     return result
   }
@@ -264,7 +264,7 @@ function PayrollPageInner() {
     const result = clearMonthMarks(orgId, employeeId, month)
     setStore(result.store)
     if (!result.cleared) { warn(`${target ? target.name : 'That person'} has no day written for ${monthLabel(month)} — there was nothing to clear.`); return }
-    flash(`${result.cleared} day${result.cleared === 1 ? '' : 's'} cleared for ${target ? target.name : 'that person'} in ${monthLabel(month)}. Their month row still holds ${monthLabel(month)}'s lost days — the book and the money are separate.`)
+    flash(`${plural(result.cleared, 'day')} cleared for ${target ? target.name : 'that person'} in ${monthLabel(month)}. Their month row still holds ${monthLabel(month)}'s lost days — the book and the money are separate.`)
   }
 
   /**
@@ -278,9 +278,9 @@ function PayrollPageInner() {
     if (result.written === 0 && result.refused.length) {
       warn(`${result.refused[0].name}: ${result.refused[0].reason}`)
     } else {
-      flash(`${result.written} month row${result.written === 1 ? '' : 's'} took ${monthLabel(month)}’s lost days from the day book.`
+      flash(`${plural(result.written, 'month row')} took ${monthLabel(month)}’s lost days from the day book.`
         + (result.unchanged ? ` ${result.unchanged} already agreed with it.` : '')
-        + (result.untouched ? ` ${result.untouched} person${result.untouched === 1 ? '' : 's'} with no day written were left alone.` : '')
+        + (result.untouched ? ` ${plural(result.untouched, 'person')} with no day written ${result.untouched === 1 ? 'was' : 'were'} left alone.` : '')
         + (result.refused.length ? ` ${result.refused.length} refused: ${result.refused[0].reason}` : ''))
     }
     return result
@@ -295,7 +295,7 @@ function PayrollPageInner() {
     } else if (result.written === 0) {
       flash('That page carried no mark the book did not already hold — nothing was written, and nothing was deducted.')
     } else {
-      flash(`${result.written} day mark${result.written === 1 ? '' : 's'} are in the book, and no salary moved: ${monthLabel(month)}’s month rows still hold their own lost days until you pull.`)
+      flash(`${plural(result.written, 'day mark')} ${result.written === 1 ? 'is' : 'are'} in the book, and no salary moved: ${monthLabel(month)}’s month rows still hold their own lost days until you pull.`)
     }
     return result
   }
@@ -1000,7 +1000,7 @@ function EmployeeEditor({ draft, month, existing, onSave, onClose }: {
           </Button>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
           {warnings.length > 0 && !blockers.length && (
-            <span className="pr-hint">{warnings.length} finding{warnings.length === 1 ? '' : 's'} will be saved with the card and printed on the slips.</span>
+            <span className="pr-hint">{plural(warnings.length, 'finding')} will be saved with the card and printed on the slips.</span>
           )}
         </div>
       </div>
@@ -1037,7 +1037,7 @@ function RulesPanel({ monthlyStructure, heads }: { monthlyStructure: number; hea
             ))}
             <div className="pr-rule">
               <Icon name="shield" size={14} />
-              <span><b>Nothing monetary is stored.</b> The register holds {heads} salary card{heads === 1 ? '' : 's'} and the exceptions a month typed;
+              <span><b>Nothing monetary is stored.</b> The register holds {plural(heads, 'salary card')} and the exceptions a month typed;
                 the {money(monthlyStructure)} a month of structures on it is turned into gross, provident fund, insurance, tax and take-home on every load.
                 It travels in the browser and backs up through the <Link href="/vault" style={{ color: 'var(--brand)' }}>Books Vault</Link>.</span>
             </div>
@@ -1210,7 +1210,7 @@ function MonthTab({ store, month, slips, summary, roster, openSlip, onOpenSlip, 
         <div className="pr-pad" style={{ paddingBottom: 0 }}>
           <div className="tf-row-between tf-wrap" style={{ gap: 10 }}>
             <p className="pr-note">
-              {roster.on.length} row{roster.on.length === 1 ? '' : 's'} for {monthLabel(month)}.
+              {plural(roster.on.length, 'row')} for {monthLabel(month)}.
               {roster.off.length > 0 && ` ${roster.off.length} person${roster.off.length === 1 ? ' is' : 's are'} not in it below.`}
               {' '}A slip you have not opened still pays the structure — an attendance row only records the exceptions to it.
             </p>
@@ -1307,7 +1307,7 @@ function MonthTab({ store, month, slips, summary, roster, openSlip, onOpenSlip, 
             <StatRow label={`Provident fund — ${summary.in_pf} in the scheme`} value={summary.pf_employee + summary.pf_employer} tone="blue" />
             <StatRow label={`Employee State Insurance — ${summary.in_esi} covered`} value={summary.esi_employee + summary.esi_employer} tone="cyan" />
             <StatRow label={`Tax on salary (section 192)`} value={summary.tds} tone="amber" />
-            <StatRow label={`Professional tax${summary.pt_unset > 0 ? ` — ${summary.pt_unset} head${summary.pt_unset === 1 ? '' : 's'} unrecorded` : ''}`}
+            <StatRow label={`Professional tax${summary.pt_unset > 0 ? ` — ${plural(summary.pt_unset, 'head')} unrecorded` : ''}`}
               value={summary.pt} tone="grey" />
           </div>
           <p className="pr-hint" style={{ marginTop: 10 }}>
@@ -1361,7 +1361,7 @@ function SheetPlan({ plan, onCancel, onApply }: {
           {missing.length > 0 && <Badge tone="amber" dot={false}>{missing.length} not named</Badge>}
         </div>
         <span className="pa-hint">
-          {plan.rows_read} line{plan.rows_read === 1 ? '' : 's'} read, split on {plan.delimiter === '\t' ? 'tabs' : `“${plan.delimiter}”`}
+          {plural(plan.rows_read, 'line')} read, split on {plan.delimiter === '\t' ? 'tabs' : `“${plan.delimiter}”`}
           {' '}· {plan.grid ? 'a day grid' : 'one row per person'} · {plan.basis.days}-day basis
         </span>
       </div>
@@ -1436,7 +1436,7 @@ function SheetPlan({ plan, onCancel, onApply }: {
 
       <div className="pa-apply">
         <Button variant="primary" size="sm" icon="check" onClick={onApply} disabled={plan.matches.length === 0}>
-          Apply {plan.matches.length} row{plan.matches.length === 1 ? '' : 's'}
+          Apply {plural(plan.matches.length, 'row')}
         </Button>
         <Button variant="ghost" size="sm" icon="x" onClick={onCancel}>Do not apply</Button>
         <span className="pa-hint">
@@ -1676,7 +1676,7 @@ function DayBookTab({ store, month, onMark, onErase, onPull, onWritePage, onOpen
               <b>{book.doctrine}</b>
               {' '}
               {book.weekly_off
-                ? <>The shop’s weekly off is <b>{book.weekly_off}</b>, so those columns are shaded. {book.footer.unwritten_on_weekly_off} past {book.weekly_off}{book.footer.unwritten_on_weekly_off === 1 ? '' : 's'} of this month are still unwritten — which is a question about the book, never a deduction.</>
+                ? <>The shop’s weekly off is <b>{book.weekly_off}</b>, so those columns are shaded. {book.footer.unwritten_on_weekly_off} past {pluralNoun(book.footer.unwritten_on_weekly_off, book.weekly_off)} of this month ${book.footer.unwritten_on_weekly_off === 1 ? 'is' : 'are'} still unwritten — which is a question about the book, never a deduction.</>
                 : <>No weekly off is recorded, so every day is ruled the same. <button type="button" className="pb-inline" onClick={onOpenSettings}>Record one</button> under “How the shop computes”, and the grid will name the days it expects to stay blank.</>}
             </span>
           </p>
@@ -1720,7 +1720,7 @@ function DayBookTab({ store, month, onMark, onErase, onPull, onWritePage, onOpen
                 <div className="pb-row" key={e.id} style={{ gridTemplateColumns: cols, minWidth }}>
                   <div className="pr-name">
                     <b>{e.name || 'A card with no name'}</b>
-                    <span>{e.code || 'no code'} · {r.written_days} of {r.on_roll_days} day{r.on_roll_days === 1 ? '' : 's'} written</span>
+                    <span>{e.code || 'no code'} · {r.written_days} of {plural(r.on_roll_days, 'day')} written</span>
                   </div>
                   <div className="pb-num">{r.written_days}</div>
                   <div className="pb-num">{r.loss_days > 0 ? <b className="pb-lost">{r.loss_days}</b> : <span className="pr-dash">{DASH}</span>}</div>
@@ -1754,7 +1754,7 @@ function DayBookTab({ store, month, onMark, onErase, onPull, onWritePage, onOpen
                   <div className="pb-tail">
                     {r.written_days > 0 && (
                       <button type="button" className="pr-step" onClick={() => onErase(e.id)}
-                        title={`Clear all ${r.written_days} day${r.written_days === 1 ? '' : 's'} written for ${e.name || 'this person'} in ${monthLabel(month)}. Their month row keeps its own lost days.`}
+                        title={`Clear all ${plural(r.written_days, 'day')} written for ${e.name || 'this person'} in ${monthLabel(month)}. Their month row keeps its own lost days.`}
                         aria-label={`Clear ${e.name || 'this person'}’s days for ${monthLabel(month)}`}>
                         <Icon name="undo" size={14} />
                       </button>
@@ -1869,7 +1869,7 @@ function DayBookTab({ store, month, onMark, onErase, onPull, onWritePage, onOpen
             <div className="pa-plan">
               <div className="pa-plan-head">
                 <b className="pr-strong">{bridge.refusals.length ? 'This page cannot be written yet' : 'What the book would gain'}</b>
-                <span className="pa-hint">Read against {monthLabel(month)} · {bridge.marks.length} mark{bridge.marks.length === 1 ? '' : 's'}</span>
+                <span className="pa-hint">Read against {monthLabel(month)} · {plural(bridge.marks.length, 'mark')}</span>
               </div>
 
               {bridge.refusals.length > 0 && (
@@ -1881,7 +1881,7 @@ function DayBookTab({ store, month, onMark, onErase, onPull, onWritePage, onOpen
               {bridge.per_person.length > 0 && (
                 <div className="pb-days">
                   {bridge.per_person.map(p => (
-                    <span className="pb-day-count" key={p.employee_id}><b>{p.name}</b> {p.days} day{p.days === 1 ? '' : 's'}</span>
+                    <span className="pb-day-count" key={p.employee_id}><b>{p.name}</b> {plural(p.days, 'day')}</span>
                   ))}
                 </div>
               )}
@@ -1889,7 +1889,7 @@ function DayBookTab({ store, month, onMark, onErase, onPull, onWritePage, onOpen
               <div className="pa-apply">
                 <Button size="sm" variant="primary" icon="check"
                   disabled={bridge.refusals.length > 0 || bridge.marks.length === 0} onClick={writePage}>
-                  Write {bridge.marks.length} day{bridge.marks.length === 1 ? '' : 's'} to the book
+                  Write {plural(bridge.marks.length, 'day')} to the book
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => setBridge(null)}>Cancel</Button>
                 <p className="pa-hint">
@@ -1904,7 +1904,7 @@ function DayBookTab({ store, month, onMark, onErase, onPull, onWritePage, onOpen
             <div className="pa-applied" style={{ marginTop: 14 }}>
               <Icon name="check" size={14} />
               <span>
-                {pageWritten} day mark{pageWritten === 1 ? '' : 's'} from that page now sit on the grid. Nobody’s salary
+                {plural(pageWritten, 'day mark')} from that page now {pageWritten === 1 ? 'sits' : 'sit'} on the grid. Nobody’s salary
                 moved — the month rows still hold their own figures until you pull the book.
               </span>
               <button type="button" className="pa-link-x" onClick={() => setPageWritten(null)} aria-label="Dismiss the receipt">
@@ -1927,14 +1927,14 @@ function BookPullReceipt({ result, month, onDismiss }: { result: BookPullResult;
         <Icon name={result.refused.length ? 'alert' : 'check'} size={15} />
         <b>
           {result.written > 0
-            ? `${result.written} month row${result.written === 1 ? '' : 's'} now carr${result.written === 1 ? 'ies' : 'y'} ${monthLabel(month)}’s lost days from the book`
+            ? `${plural(result.written, 'month row')} now carr${result.written === 1 ? 'ies' : 'y'} ${monthLabel(month)}’s lost days from the book`
             : `No month row needed changing for ${monthLabel(month)}`}
         </b>
         <button type="button" className="pa-link-x" onClick={onDismiss} aria-label="Dismiss the receipt"><Icon name="x" size={14} /></button>
       </div>
       <p className="pa-note">
-        {result.unchanged > 0 && `${result.unchanged} row${result.unchanged === 1 ? '' : 's'} already agreed with the book. `}
-        {result.untouched > 0 && `${result.untouched} person${result.untouched === 1 ? '' : 's'} have no day written, so their rows were left alone rather than zeroed. `}
+        {result.unchanged > 0 && `${plural(result.unchanged, 'row')} already agreed with the book. `}
+        {result.untouched > 0 && `${plural(result.untouched, 'person')} ${result.untouched === 1 ? 'has' : 'have'} no day written, so their rows were left alone rather than zeroed. `}
         Every figure the pull wrote carries the register’s own provenance sentence — a payslip can read back that the
         month’s lost days came from the day book, not from a typed figure.
       </p>

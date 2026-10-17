@@ -14,6 +14,7 @@ import { INDIAN_STATES } from '@/lib/constants'
 import { GST_RATES } from '@/lib/gst-rates'
 import { createCreditNote } from '@/lib/creditnote'
 import SealNotice from '@/components/SealNotice'
+import { plural } from '@/lib/format'
 
 const inputStyle = {
   width: '100%', padding: '8px 10px',
@@ -263,7 +264,7 @@ function CreditNotesPageInner() {
         <div>
           <h1 style={{ fontSize: '22px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>Credit Notes</h1>
           <p style={{ fontSize: '14px', color: '#64748b' }}>
-            {creditNotes.length} credit note{creditNotes.length !== 1 ? 's' : ''}
+            {plural(creditNotes.length, 'credit note')}
           </p>
         </div>
         <button onClick={() => { resetForm(); setShowForm(true) }} style={{

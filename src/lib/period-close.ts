@@ -67,6 +67,7 @@ import {
   computeProfitLoss, type LedgerBill, type LedgerExpense, type LedgerInvoice, type LedgerPayment,
 } from '@/lib/ledger'
 import { drafts, journalRows, paise, rowsInWindow, type JournalStore } from '@/lib/journal'
+import { plural, pluralNoun } from '@/lib/format'
 
 // ── small date helpers, local so this reading owes nothing to another register ──
 // (The house precedent is `audit.ts`'s own header: a window is arithmetic, and a library that
@@ -540,7 +541,7 @@ function verdict(
       why:
         `A period can only be closed once its last day has passed: ${win.label} runs to ${win.to}, and today is ` +
         `${win.today} — so what follows is a running reading, not a close. It could be sealed from ${win.sealableFrom}.` +
-        (findings.length ? ` ${findings.length} thing${findings.length === 1 ? '' : 's'} in it would still move.` : ''),
+        (findings.length ? ` ${plural(findings.length, 'thing')} in it would still move.` : ''),
     }
   }
 
@@ -549,7 +550,7 @@ function verdict(
     ? `${findings.length} ${findings.length === 1 ? 'thing inside it is' : 'things inside it are'} not finished: ${findings.map(f => f.label).join('; ')}.`
     : state === 'nothing-here'
       ? 'Nothing is dated inside it on this device — no document, no posting, no return row, no event. A month with no paper in it is a finding, not a clean close: check that the shop is not simply reading a period it has not used.'
-      : `The period holds ${counts.invoices} invoice${counts.invoices === 1 ? '' : 's'}, ${counts.bills} purchase bill${counts.bills === 1 ? '' : 's'}, ${counts.expenses} expense${counts.expenses === 1 ? '' : 's'} and ${counts.postedEntries} journal posting${counts.postedEntries === 1 ? '' : 's'}, and nothing dated inside it is left draft or unbilled.`
+      : `The period holds ${plural(counts.invoices, 'invoice')}, ${plural(counts.bills, 'purchase bill')}, ${plural(counts.expenses, 'expense')} and ${plural(counts.postedEntries, 'journal posting')}, and nothing dated inside it is left draft or unbilled.`
 
   const refusedSentence = trail.refused > 0
     ? ` ${trail.refused} write${trail.refused === 1 ? ' has' : 's have'} been refused against paper dated in this period — the trail holds the detail.`
@@ -562,7 +563,7 @@ function verdict(
     : ''
 
   const headline = view === 'sealed'
-    ? (unfinished ? `Closed, with ${findings.length} ${findings.length === 1 ? 'thing' : 'things'} still moving inside` : `Closed — ${win.label} stands sealed`)
+    ? (unfinished ? `Closed, with ${findings.length} ${pluralNoun(findings.length, 'thing')} still moving inside` : `Closed — ${win.label} stands sealed`)
     : unfinished ? `${win.label} is not ready to close` :
       state === 'nothing-here' ? `${win.label} holds no paper` : `${win.label} is ready to close`
 

@@ -30,7 +30,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { formatDateIN } from '@/lib/format'
+import { formatDateIN, plural } from '@/lib/format'
 import { downloadElementAsPdf, downloadElementsAsPdf } from '@/lib/pdf-export'
 import { Badge, Button, Card, EmptyState, PageHeader, Segmented } from '@/components/ui'
 import Icon from '@/components/Icons'
@@ -169,7 +169,7 @@ function PayslipPageInner() {
       setDownloading(true)
       try {
         await downloadElementsAsPdf(sheetIds, `Payslips-${month}.pdf`)
-        flash(`${pack.docs.length} slip${pack.docs.length === 1 ? '' : 's'} written into one A4 PDF, a sheet to a person.`)
+        flash(`${plural(pack.docs.length, 'slip')} written into one A4 PDF, a sheet to a person.`)
       } catch (err) {
         console.error('PDF error:', err)
         alert('PDF download failed. Please print instead.')
@@ -205,7 +205,7 @@ function PayslipPageInner() {
 
   const headerSubtitle = mode === 'month'
     ? (pack
-      ? `${pack.docs.length} slip${pack.docs.length === 1 ? '' : 's'} for ${monthLabel(month)} · net payable ${inr(pack.totals.net_pay)} · the month costs ${inr(pack.totals.employer_cost)} all in`
+      ? `${plural(pack.docs.length, 'slip')} for ${monthLabel(month)} · net payable ${inr(pack.totals.net_pay)} · the month costs ${inr(pack.totals.employer_cost)} all in`
       : `${monthLabel(month)} — every slip of the month, one sheet a person`)
     : (doc
       ? doc.printable
@@ -617,7 +617,7 @@ function Sheet({ doc, captureId, seq }: { doc: PayslipDoc; captureId?: string; s
         <div className="ps-month-line">
           <span>{doc.days_in_month} days in the month</span>
           <span>Salary divided on {doc.divisor_label}</span>
-          <span>Loss of pay: {doc.lop_days === 0 ? 'none' : `${doc.lop_days} day${doc.lop_days === 1 ? '' : 's'}`}</span>
+          <span>Loss of pay: {doc.lop_days === 0 ? 'none' : `${plural(doc.lop_days, 'day')}`}</span>
           {doc.attendance_from && <span className="ps-prov">{doc.attendance_from}</span>}
         </div>
 
@@ -772,7 +772,7 @@ function MonthView({ pack, sheetIds, onLetterhead }: {
         </Card>
       ) : (
         <p className="ps-pack-note no-print">
-          {pack.docs.length} sheet{pack.docs.length === 1 ? '' : 's'} below, in the order the register runs the month —
+          {plural(pack.docs.length, 'sheet')} below, in the order the register runs the month —
           the costliest first. Print or download the set; each person starts on a fresh A4 page.
           {pack.partial && ' Everybody listed underneath it gets no paper this month, so this is not the complete set.'}
         </p>

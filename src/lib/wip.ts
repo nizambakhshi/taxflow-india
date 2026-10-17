@@ -47,6 +47,7 @@ import {
   fullCostOfBuild,
   type BomProduct, type Build, type CostRate, type Recipe,
 } from '@/lib/bom'
+import { plural } from '@/lib/format'
 import {
   SLOT_META, paise,
   type JournalEntry, type JournalHead, type JournalStore, type LegSide, type StatementSlot,
@@ -195,7 +196,7 @@ export function wipPlan(
   const materialP = full.material.value === null ? null : paise(full.material.value)
   if (materialP === null) {
     refusals.push(
-      `This run has no material value — ${full.material.unpriced.length} component${full.material.unpriced.length === 1 ? '' : 's'} carry no price (${full.material.unpriced.join(', ')}). A posting never invents one.`,
+      `This run has no material value — ${plural(full.material.unpriced.length, 'component')} ${full.material.unpriced.length === 1 ? 'carries' : 'carry'} no price (${full.material.unpriced.join(', ')}). A posting never invents one.`,
     )
   }
   let timeP: number | null = 0
@@ -244,7 +245,7 @@ export function wipPlan(
 
   const timeMinutes = full.labour.minutes + full.overhead.minutes
   const timeNote = capitalise
-    ? `labour ${full.labour.value === null ? '—' : `₹${full.labour.value}`} + overhead ${full.overhead.value === null ? '—' : `₹${full.overhead.value}`} for ${timeMinutes} minute${timeMinutes === 1 ? '' : 's'} at the rates in force on ${build.date}`
+    ? `labour ${full.labour.value === null ? '—' : `₹${full.labour.value}`} + overhead ${full.overhead.value === null ? '—' : `₹${full.overhead.value}`} for ${plural(timeMinutes, 'minute')} at the rates in force on ${build.date}`
     : 'shop time stays a reading — the run posts its material only'
 
   if (refusals.length > 0 || materialP === null) {
@@ -342,13 +343,13 @@ export function wipPaper(store: JournalStore, ref: string): WipPaper {
     // leave as none
   } else if (drafts > 0 && posted === 0 && reversed === 0) {
     state = 'drafted'
-    note = `${drafts} draft${drafts === 1 ? '' : 's'} on the journal — post them there to give them a number`
+    note = `${plural(drafts, 'draft')} on the journal — post them there to give them a number`
   } else if (posted > 0 && drafts === 0 && reversed === 0) {
     state = 'posted'
     note = `${posted} posted — the statements fold them${posted === 2 ? ' and the pair nets WIP to nothing' : ''}`
   } else if (reversed > 0) {
     state = 'reversed'
-    note = `${reversed} reversed${posted ? `, ${posted} still standing beside ${drafts ? 'and ' : ''}` : drafts ? ' and ' : ''}${drafts ? `${drafts} draft${drafts === 1 ? '' : 's'}` : ''} — the trail keeps both halves`
+    note = `${reversed} reversed${posted ? `, ${posted} still standing beside ${drafts ? 'and ' : ''}` : drafts ? ' and ' : ''}${drafts ? `${plural(drafts, 'draft')}` : ''} — the trail keeps both halves`
   } else {
     state = 'partial'
     note = `${posted} posted and ${drafts} still drafted — the pair is not whole yet`

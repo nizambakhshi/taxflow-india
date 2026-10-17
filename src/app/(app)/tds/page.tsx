@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { formatDateIN } from '@/lib/format'
+import { formatDateIN, plural } from '@/lib/format'
 import { download } from '@/lib/party-ledger'
 import { toCsv } from '@/lib/registers'
 import { fyLabel, fyStartYear } from '@/lib/targets'
@@ -237,7 +237,7 @@ export default function TdsPage() {
         <StatCard label="Purchase value read" value={valueRead} icon="cart" tone="blue"
           sub={`${wp.totals.bills} bills in ${fyLabel(fyStart)}, GST excluded where itemised`} />
         <StatCard label="Tax to deduct" value={wp.totals.tax} icon="percent" tone="violet"
-          sub={`${wp.rows.length} bill${wp.rows.length === 1 ? '' : 's'} over their limit · ${lakh(wp.totals.chargeable)} chargeable`} delay={60} />
+          sub={`${plural(wp.rows.length, 'bill')} over their limit · ${lakh(wp.totals.chargeable)} chargeable`} delay={60} />
         <StatCard label="Deposited against challan" value={wp.totals.deposited} icon="wallet" tone="green"
           sub={`${wp.months.filter(m => m.challan).length} of ${wp.months.length} deduction months paid in`} delay={120} />
         <StatCard label="Still to deposit" value={wp.totals.toDeposit}
@@ -248,7 +248,7 @@ export default function TdsPage() {
           sub="1.5% a month on the deposit, ₹100 a day on a late 26Q" delay={240} />
         <StatCard label="Value with no section chosen" value={wp.totals.untaggedValue} icon="factory"
           tone={untaggedCount ? 'amber' : 'grey'}
-          sub={untaggedCount ? `${untaggedCount} bill${untaggedCount === 1 ? '' : 's'} — tag the supplier to include them` : 'Every supplier is tagged'}
+          sub={untaggedCount ? `${plural(untaggedCount, 'bill')} — tag the supplier to include them` : 'Every supplier is tagged'}
           delay={300} />
       </div>
 
@@ -314,7 +314,7 @@ export default function TdsPage() {
         <div className="td-gap" onClick={() => setTab('suppliers')}>
           <Icon name="alert" size={15} />
           <span>
-            <b>{lakh(wp.totals.untaggedValue)}</b> across {untaggedCount} bill{untaggedCount === 1 ? '' : 's'} with no
+            <b>{lakh(wp.totals.untaggedValue)}</b> across {plural(untaggedCount, 'bill')} with no
             section chosen, so no withholding is reported on them. Pick a section for each supplier on the{' '}
             <b>Supplier sections</b> tab.
           </span>
@@ -359,7 +359,7 @@ export default function TdsPage() {
                         <div className="td-band">
                           <span className="td-band-label">{s.label}</span>
                           <span className="td-band-covers">{s.covers}</span>
-                          <span className="td-band-count tf-num">{g.rows.length} bill{g.rows.length === 1 ? '' : 's'}</span>
+                          <span className="td-band-count tf-num">{plural(g.rows.length, 'bill')}</span>
                           <span className="td-band-tax tf-num">{money(g.chargeable)} chargeable</span>
                           <span className="td-band-total tf-num">{money(g.tax)}</span>
                         </div>
@@ -436,7 +436,7 @@ export default function TdsPage() {
                         <div>
                           <div className="td-dep-month">{m.label}</div>
                           <div className="td-dep-sub">
-                            {m.rows} bill{m.rows === 1 ? '' : 's'} · due {formatDateIN(m.due)}
+                            {plural(m.rows, 'bill')} · due {formatDateIN(m.due)}
                           </div>
                         </div>
                         <div className="td-dep-right">
@@ -487,7 +487,7 @@ export default function TdsPage() {
                           <span className="td-dep-warn">
                             {m.monthsLate === 0
                               ? 'Falls due today and nothing is paid in yet.'
-                              : `Not deposited, ${m.monthsLate} month${m.monthsLate === 1 ? '' : 's'} past the due date — interest at 1% a month where tax was never deducted: ${money(m.interest)}`}
+                              : `Not deposited, ${plural(m.monthsLate, 'month')} past the due date — interest at 1% a month where tax was never deducted: ${money(m.interest)}`}
                           </span>
                         )}
                         {m.status === 'not-yet-due' && <span className="td-dep-ok">Deposit falls due {formatDateIN(m.due)}.</span>}
@@ -495,7 +495,7 @@ export default function TdsPage() {
                           <span className="td-dep-warn">
                             {m.shortfall > 0
                               ? `${money(m.shortfall)} short of what the workpaper says was due · `
-                              : `${m.monthsLate} month${m.monthsLate === 1 ? '' : 's'} late · `}
+                              : `${plural(m.monthsLate, 'month')} late · `}
                             interest at 1.5% a month: {money(m.interest)}
                           </span>
                         )}
@@ -538,7 +538,7 @@ export default function TdsPage() {
               note="A supplier is normally one kind of spend, so tagging them once covers every bill. Open a supplier to change a single bill — the freight bill from a trader who also rents you a godown."
             />
             <div className="td-tools no-print">
-              <span className="td-saved">{wp.vendors.length} supplier{wp.vendors.length === 1 ? '' : 's'} with bills in {fyLabel(fyStart)}</span>
+              <span className="td-saved">{plural(wp.vendors.length, 'supplier')} with bills in {fyLabel(fyStart)}</span>
             </div>
 
             {wp.vendors.length === 0 ? (
@@ -564,7 +564,7 @@ export default function TdsPage() {
                             </button>
                             <em className="td-pan">
                               {v.pan ? `PAN ${v.pan}${v.panSource === 'gstin' ? ' · from GSTIN' : ''}` : 'no PAN on file'}
-                              {' '}· {list.length} bill{list.length === 1 ? '' : 's'}
+                              {' '}· {plural(list.length, 'bill')}
                             </em>
                           </span>
                           <span className="td-sec" data-label="Section">

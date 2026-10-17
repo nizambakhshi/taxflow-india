@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase'
 import { formatINR } from '@/lib/gst-engine'
 import { csvFromRows } from '@/lib/gstr9'
 import { download } from '@/lib/party-ledger'
-import { formatDateIN } from '@/lib/format'
+import { formatDateIN, plural } from '@/lib/format'
 import { Badge, Button, Card, EmptyState, PageHeader, StatCard } from '@/components/ui'
 import Icon from '@/components/Icons'
 
@@ -564,7 +564,7 @@ function invoiceFoot(tab: InvoiceTab, rows: InvoiceRow[]): ReactNode[] {
   }
   return INVOICE_COLUMNS[tab].map((c, i) => {
     const value = i === 0
-      ? `Total · ${rows.length} invoice${rows.length === 1 ? '' : 's'}`
+      ? `Total · ${plural(rows.length, 'invoice')}`
       : totalsByHead[c.key]
     return (
       <span key={c.key} data-label={i === 0 ? '' : c.label}
@@ -586,7 +586,7 @@ function hsnFoot(rows: HsnRow[]): ReactNode[] {
     cess: sumOf('cess'),
   }
   return HSN_COLUMNS.map((c, i) => {
-    const value = i === 0 ? `Total · ${rows.length} code${rows.length === 1 ? '' : 's'}` : totalsByHead[c.key]
+    const value = i === 0 ? `Total · ${plural(rows.length, 'code')}` : totalsByHead[c.key]
     return (
       <span key={c.key} data-label={i === 0 ? '' : c.label}
         className={`r1-td ${c.right ? 'is-right' : ''} ${value ? '' : 'is-blank'}`}>

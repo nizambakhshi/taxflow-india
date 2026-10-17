@@ -37,6 +37,7 @@
 
 import { addMonthsISO, daysBetween, parseISO } from '@/lib/recurring'
 import { newId, todayISO } from '@/lib/batches'
+import { plural } from '@/lib/format'
 
 export { todayISO }
 
@@ -507,7 +508,7 @@ export function archiveWorker(orgId: string, id: string): { ok: boolean; error: 
   const store = loadJob(orgId)
   const open = store.lots.filter(l => l.worker_id === id).length
   if (open > 0) {
-    return { ok: false, error: `Remove or close ${open} movement${open === 1 ? '' : 's'} against this job worker first — their history names them`, store }
+    return { ok: false, error: `Remove or close ${plural(open, 'movement')} against this job worker first — their history names them`, store }
   }
   const next = { ...store, workers: store.workers.map(w => (w.id === id ? { ...w, archived: true } : w)) }
   saveJob(orgId, next)
@@ -610,7 +611,7 @@ export function deleteLot(orgId: string, id: string): { ok: boolean; error: stri
   const store = loadJob(orgId)
   const attached = store.dispositions.filter(d => d.lot_id === id).length
   if (attached > 0) {
-    return { ok: false, error: `${attached} movement${attached === 1 ? '' : 's'} recorded against this challan — remove those first`, store }
+    return { ok: false, error: `${plural(attached, 'movement')} recorded against this challan — remove those first`, store }
   }
   const next = { ...store, lots: store.lots.filter(l => l.id !== id) }
   saveJob(orgId, next)
@@ -828,7 +829,7 @@ export function jobView(
     problems.push(`The challan is dated ${lot.challan_date}, after the goods went out on ${lot.sent_date}`)
   }
   if (status === 'overdue' && deadline && daysToDeadline !== null) {
-    problems.push(`${outstandingQty} ${lot.unit} still out since ${deadline} — rule 45 deems them supplied on ${lot.sent_date} (${Math.abs(daysToDeadline)} day${Math.abs(daysToDeadline) === 1 ? '' : 's'} past the period)`)
+    problems.push(`${outstandingQty} ${lot.unit} still out since ${deadline} — rule 45 deems them supplied on ${lot.sent_date} (${plural(Math.abs(daysToDeadline), 'day')} past the period)`)
   }
   if (lateQty > EPSILON) {
     problems.push(`${lateQty} ${lot.unit} came back after ${deadline} — the deeming under rule 45 already happened on ${lot.sent_date}, so bringing the goods home does not undo it`)

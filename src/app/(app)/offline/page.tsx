@@ -153,7 +153,7 @@ function OfflinePageInner() {
           <div>
             {outcome.synced.length > 0 && (
               <div>
-                Synced {outcome.synced.length} invoice{outcome.synced.length === 1 ? '' : 's'}: {' '}
+                Synced {plural(outcome.synced.length, 'invoice')}: {' '}
                 {outcome.synced.map(s => s.invoiceNumber).join(', ')}
               </div>
             )}
@@ -201,7 +201,7 @@ function OfflinePageInner() {
                     <span className="of-sub">Queued {formatDateTimeIN(entry.createdAt)}</span>
                   </span>
                   <span data-label="Customer">{String(inv.customer_name ?? '—')}</span>
-                  <span data-label="Items">{itemCount} item{itemCount === 1 ? '' : 's'}</span>
+                  <span data-label="Items">{plural(itemCount, 'item')}</span>
                   <span data-label="Amount" className="of-amt">{money(num(inv.grand_total))}</span>
                   <span data-label="Date">{formatDateIN(String(inv.invoice_date ?? ''))}</span>
                   <span data-label="Status">

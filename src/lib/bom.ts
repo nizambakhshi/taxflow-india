@@ -106,6 +106,7 @@ import { allocateFefo, newId, todayISO, type Batch, type BatchMove } from '@/lib
 import { SERIAL_STATUS_LABEL, shelfUnitsOf, viewOf, type SerialEvent, type SerialStatus, type SerialUnit } from '@/lib/serials'
 import { round2 } from '@/lib/costcentres'
 import { fyLabel, fyStartYear } from '@/lib/targets'
+import { plural } from '@/lib/format'
 
 const KEY_BOM = 'taxflow:bom:'
 /**
@@ -640,7 +641,7 @@ export function removeRecipe(orgId: string, id: string): Refusal {
   if (used > 0) {
     return {
       ok: false,
-      reason: `${used} build${used === 1 ? '' : 's'} on the log were made from this recipe — archive it instead of deleting it.`,
+      reason: `${plural(used, 'build')} on the log ${used === 1 ? 'was' : 'were'} made from this recipe — archive it instead of deleting it.`,
     }
   }
   mutate(orgId, s => ({ ...s, recipes: s.recipes.filter(r => r.id !== id) }))
@@ -1307,7 +1308,7 @@ export function recipeView(recipe: Recipe, store: BomStore, products: BomProduct
   }
   if (plan.shortages.length) {
     findings.push({
-      text: `Short of ${plan.shortages.length} component${plan.shortages.length === 1 ? '' : 's'} — ${plan.shortages.slice(0, 3).map(s => s.name).join(', ')}${plan.shortages.length > 3 ? '…' : ''}`,
+      text: `Short of ${plural(plan.shortages.length, 'component')} — ${plan.shortages.slice(0, 3).map(s => s.name).join(', ')}${plan.shortages.length > 3 ? '…' : ''}`,
       tone: 'red',
     })
   }
@@ -1404,9 +1405,9 @@ export function buildView(build: Build, store: BomStore, products: BomProduct[],
   if (build.status === 'built' && !build.moved) findings.push({ text: 'Marked built but its movements never reached the stock ledger.', tone: 'red' })
   if (build.status === 'cancelled' && build.moved) findings.push({ text: 'Cancelled — the reversal has to be written before the stock is true again.', tone: 'amber' })
   if (!recipe) findings.push({ text: 'Its recipe is no longer on the register.', tone: 'red' })
-  if (variance.length) findings.push({ text: `${variance.length} line${variance.length === 1 ? '' : 's'} drawn differently from the recipe.`, tone: 'amber' })
+  if (variance.length) findings.push({ text: `${plural(variance.length, 'line')} drawn differently from the recipe.`, tone: 'amber' })
   const roll = rollUpCost(build.lines, products)
-  if (roll.unpriced.length) findings.push({ text: `${roll.unpriced.length} component${roll.unpriced.length === 1 ? '' : 's'} with no cost, so this run has no material value.`, tone: 'amber' })
+  if (roll.unpriced.length) findings.push({ text: `${plural(roll.unpriced.length, 'component')} with no cost, so this run has no material value.`, tone: 'amber' })
   if (full.labour.missing) findings.push({ text: `Labour unpriced on this run — ${full.labour.missing}.`, tone: 'amber' })
   if (full.overhead.missing) findings.push({ text: `Overhead unpriced on this run — ${full.overhead.missing}.`, tone: 'amber' })
   const lots = lotTrail(build)

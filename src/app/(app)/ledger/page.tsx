@@ -8,7 +8,7 @@ import {
   buildLedger, buildStatement, download, statementToCsv, summariseParties,
   type PartySummary,
 } from '@/lib/party-ledger'
-import { changePct, formatDateIN, formatCompactINR } from '@/lib/format'
+import {changePct, formatDateIN, formatCompactINR, pluralNoun} from '@/lib/format'
 import { buildPortalPayload, encodePortal, portalUrl } from '@/lib/portal'
 import { buildWhatsAppLink, loadUpiSettings, validateVpa } from '@/lib/payments'
 import {
@@ -446,7 +446,7 @@ export default function LedgerPage() {
                     {share.closing > 0 ? 'outstanding' : share.closing < 0 ? 'in credit' : 'settled'}
                   </span>
                   <span>·</span>
-                  <span>{share.openCount} open {share.openCount === 1 ? 'invoice' : 'invoices'}</span>
+                  <span>{share.openCount} open {pluralNoun(share.openCount, 'invoice')}</span>
                   {share.dropped > 0 && (<><span>·</span><span>{share.dropped} older entries folded in</span></>)}
                 </div>
 

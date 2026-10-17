@@ -21,7 +21,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { formatDateIN } from '@/lib/format'
+import { formatDateIN, plural } from '@/lib/format'
 import { toCsv } from '@/lib/registers'
 import { download } from '@/lib/party-ledger'
 import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
@@ -344,7 +344,7 @@ function CostCentresPageInner() {
     setStore(result.store)
     const label = split.doc.number || DOC_KIND_META[split.doc.kind].label
     flash(splitAlloc.parts.length
-      ? `${label} split ${pct(totalShare(splitAlloc.parts))} across ${splitAlloc.parts.length} centre${splitAlloc.parts.length === 1 ? '' : 's'} — the rest stays unassigned.`
+      ? `${label} split ${pct(totalShare(splitAlloc.parts))} across ${plural(splitAlloc.parts.length, 'centre')} — the rest stays unassigned.`
       : `${label} is unassigned again.`)
     setSplit(null)
   }
@@ -362,8 +362,8 @@ function CostCentresPageInner() {
     setPicked([])
     const centre = centreById.get(bulkCentre)?.name || 'the centre'
     flash(result.assigned
-      ? `${result.assigned} document${result.assigned === 1 ? '' : 's'} tagged to ${centre}${result.skipped ? ` — ${result.skipped} already carrying a split were left exactly as they were` : ''}.`
-      : `Nothing was tagged — ${result.skipped} document${result.skipped === 1 ? ' already' : 's already'} carr${result.skipped === 1 ? 'ies' : 'y'} a split, and a bulk action will not flatten one.`)
+      ? `${plural(result.assigned, 'document')} tagged to ${centre}${result.skipped ? ` — ${plural(result.skipped, 'document')} already carrying a split ${result.skipped === 1 ? 'was left exactly as it was' : 'were left exactly as they were'}` : ''}.`
+      : `Nothing was tagged — ${plural(result.skipped, 'document')} already carr${result.skipped === 1 ? 'ies' : 'y'} a split, and a bulk action will not flatten one.`)
   }
 
   const [bulkCentre, setBulkCentre] = useState('')
@@ -416,19 +416,19 @@ function CostCentresPageInner() {
         />
         <StatCard
           label="Nobody’s rupees" value={money(untracked)}
-          sub={free.length ? `${free.length} document${free.length === 1 ? '' : 's'} carry no centre` : 'every document in view has a centre'}
+          sub={free.length ? `${plural(free.length, 'document')} ${free.length === 1 ? 'carries' : 'carry'} no centre` : 'every document in view has a centre'}
           icon={free.length ? 'alert' : 'check'} tone={free.length ? 'amber' : 'green'} delay={40}
         />
         <StatCard
           label="Strongest centre" value={sum.top ? sum.top.centre.name : '—'}
-          sub={sum.top ? `${money(sum.top.contribution)} contribution · ${sum.top.docs} document${sum.top.docs === 1 ? '' : 's'}` : 'nothing tagged yet'}
+          sub={sum.top ? `${money(sum.top.contribution)} contribution · ${plural(sum.top.docs, 'document')}` : 'nothing tagged yet'}
           icon="trend" tone={sum.top ? 'violet' : 'grey'} delay={80}
         />
         <StatCard
           label="Things to check" value={String(attention.centres.length + attention.sheets.length + attention.orphans.length)}
           sub={attention.orphans.length
-            ? `${attention.centres.length + attention.sheets.length} findings · ${attention.orphans.length} orphan tag${attention.orphans.length === 1 ? '' : 's'}`
-            : `${attention.centres.length + attention.sheets.length} finding${attention.centres.length + attention.sheets.length === 1 ? '' : 's'}`}
+            ? `${attention.centres.length + attention.sheets.length} findings · ${plural(attention.orphans.length, 'orphan tag')}`
+            : `${plural(attention.centres.length + attention.sheets.length, 'finding')}`}
           icon={attention.centres.length + attention.sheets.length ? 'shield' : 'check'}
           tone={attention.centres.length + attention.sheets.length ? 'red' : 'green'} delay={120}
         />
@@ -529,7 +529,7 @@ function CostCentresPageInner() {
                     <div className="cc-card-badges">
                       {KIND_META[c.kind].statutory && <Badge tone="violet" dot={false}>Statutory kind</Badge>}
                       {c.archived && <Badge tone="grey" dot={false}>Archived</Badge>}
-                      {v.docs > 0 && !c.archived && <Badge tone="blue" dot={false}>{v.docs} doc{v.docs === 1 ? '' : 's'}</Badge>}
+                      {v.docs > 0 && !c.archived && <Badge tone="blue" dot={false}>{plural(v.docs, 'doc')}</Badge>}
                     </div>
                   </div>
 
@@ -599,7 +599,7 @@ function CostCentresPageInner() {
 
                   <div className="cc-card-foot">
                     <Button variant="ghost" size="sm" icon="list" onClick={() => setOpenCentre(open ? '' : c.id)}>
-                      {open ? 'Hide shares' : `${shares.length} share${shares.length === 1 ? '' : 's'}`}
+                      {open ? 'Hide shares' : `${plural(shares.length, 'share')}`}
                     </Button>
                     <span className="cc-card-actions">
                       <Button variant="ghost" size="sm" icon="download" title={`Export ${c.name}’s shares`}
@@ -695,7 +695,7 @@ function CostCentresPageInner() {
           {visibleSheets.some(s => s.problems.length) && (
             <div className="cc-note is-hot">
               <Icon name="alert" size={14} strokeWidth={2.2} />
-              <span>{visibleSheets.filter(s => s.problems.length).length} document{visibleSheets.filter(s => s.problems.length).length === 1 ? '' : 's'} in this view have a split worth reading again — the row carries the reason, and the <button type="button" className="cc-inline" onClick={() => setTab('attention')}>To check</button> tab lists them together.</span>
+              <span>{plural(visibleSheets.filter(s => s.problems.length).length, 'document')} in this view {visibleSheets.filter(s => s.problems.length).length === 1 ? 'has' : 'have'} a split worth reading again — the row carries the reason, and the <button type="button" className="cc-inline" onClick={() => setTab('attention')}>To check</button> tab lists them together.</span>
             </div>
           )}
         </div>
@@ -736,7 +736,7 @@ function CostCentresPageInner() {
                     {picked.length === free.length ? 'Clear selection' : `Select all ${free.length}`}
                   </Button>
                   <Button size="sm" icon="tag" onClick={tagAllUnassigned} disabled={!bulkCentre || picked.length === 0}>
-                    Tag {picked.length || 0} document{picked.length === 1 ? '' : 's'}
+                    Tag {plural(picked.length, 'document')}
                   </Button>
                 </div>
                 <span className="cc-bulk-total">{money(round2(free.reduce((t, s) => t + s.doc.total, 0)))} sitting unassigned</span>
@@ -838,7 +838,7 @@ function CostCentresPageInner() {
                 <div className="cc-issue">
                   <div className="cc-issue-head">
                     <Icon name="undo" size={14} />
-                    <span className="cc-issue-title">{attention.orphans.length} orphan tag{attention.orphans.length === 1 ? '' : 's'}</span>
+                    <span className="cc-issue-title">{plural(attention.orphans.length, 'orphan tag')}</span>
                     <Badge tone="grey" dot={false}>no rupees</Badge>
                   </div>
                   <ul className="cc-problems is-modal">
@@ -895,8 +895,8 @@ function CostCentresPageInner() {
 
       <div className="cc-foot">
         <span>
-          {store.centres.length} centre{store.centres.length === 1 ? '' : 's'} · {sum.tagged} of {sum.docs} document{sum.docs === 1 ? '' : 's'} split
-          {sum.orphans ? ` · ${sum.orphans} orphan tag${sum.orphans === 1 ? '' : 's'}` : ''} · stored in this browser under taxflow:ccentres
+          {plural(store.centres.length, 'centre')} · {sum.tagged} of {plural(sum.docs, 'document')} split
+          {sum.orphans ? ` · ${plural(sum.orphans, 'orphan tag')}` : ''} · stored in this browser under taxflow:ccentres
         </span>
         <span className="cc-foot-links">
           <Link href="/accounting">Financial statements →</Link>
@@ -990,7 +990,7 @@ function CostCentresPageInner() {
               <ul className="cc-preview-list">
                 <li>A centre on the register in this browser<span className="cc-preview-take">{KIND_META[editor.centre.kind].label}</span></li>
                 <li>Nothing charged, nothing debited<span className="cc-preview-take">₹0</span></li>
-                <li>Rupees arrive only when a document is split against it<span className="cc-preview-take">{sum.tagged} split{sum.tagged === 1 ? '' : 's'} today</span></li>
+                <li>Rupees arrive only when a document is split against it<span className="cc-preview-take">{plural(sum.tagged, 'split')} today</span></li>
               </ul>
               {editorProblems.length > 0 && (
                 <ul className="cc-problems is-modal">

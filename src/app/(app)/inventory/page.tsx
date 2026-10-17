@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase'
 import { formatINR } from '@/lib/gst-engine'
 import { Badge, Button, Card, EmptyState, PageHeader, SearchInput, Segmented, StatCard, type Tone } from '@/components/ui'
 import Icon from '@/components/Icons'
+import { plural } from '@/lib/format'
 
 type Product = {
   id: string
@@ -204,7 +205,7 @@ export default function InventoryPage() {
       <PageHeader
         eyebrow="Masters"
         title="Inventory"
-        subtitle={`${products.length} tracked product${products.length !== 1 ? 's' : ''} — stock moves only through recorded movements, never by editing a product.`}
+        subtitle={`${plural(products.length, 'tracked product')} — stock moves only through recorded movements, never by editing a product.`}
         actions={<Button variant="ghost" icon="settings" href="/products">Manage products</Button>}
       />
 

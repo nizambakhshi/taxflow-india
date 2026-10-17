@@ -58,6 +58,7 @@ import { addMonthsISO, daysBetween, parseISO } from '@/lib/recurring'
 import { newId, todayISO } from '@/lib/batches'
 import { round2 } from '@/lib/fx'
 import { periodLabel, periodRange, type FilingsStore } from '@/lib/filings'
+import { plural } from '@/lib/format'
 
 export { todayISO, round2 }
 
@@ -1429,7 +1430,7 @@ export function buildView(
   if (advance?.late) {
     const shipped = file.export_date || file.shipping_bill_date
     const lateBy = shipped ? daysBetween(advance.due_date, shipped) : daysBetween(advance.due_date, today)
-    const tail = lateBy === null ? '' : ` ${lateBy} day${lateBy === 1 ? '' : 's'} past it.`
+    const tail = lateBy === null ? '' : ` ${plural(lateBy, 'day')} past it.`
     attention.push(shipped
       ? `Goods against the advance of ${advance.received} left on ${shipped}, after the dispatch window closed on ${advance.due_date}.${tail}`
       : `An advance was received on ${advance.received} and nothing has been dispatched: the ${advance.window.months}-month window closed on ${advance.due_date}.${tail}`)
@@ -2288,7 +2289,7 @@ export function refundTrack(
     if (igstUnknown > 0) {
       warnings.push({
         code: 'no_invoice',
-        label: `${igstUnknown} invoice${igstUnknown === 1 ? '' : 's'} not in the books`,
+        label: `${plural(igstUnknown, 'invoice')} not in the books`,
         detail: 'The amount at stake is a floor: whatever the missing rows paid is not in this figure.',
       })
     }

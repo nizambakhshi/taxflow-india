@@ -22,6 +22,7 @@ import { createInvoice } from '@/lib/create-invoice'
 import { queueOfflineInvoice, isNetworkError } from '@/lib/outbox'
 import { Button, Card, EmptyState, PageHeader, SearchInput, SectionTitle, Segmented, StatRow } from '@/components/ui'
 import Icon from '@/components/Icons'
+import { plural } from '@/lib/format'
 
 type Product = {
   id: string
@@ -443,7 +444,7 @@ export default function PosPage() {
             </SectionTitle>
             {missingBarcodeCount > 0 && (
               <p className="pos-hint" style={{ marginBottom: 10 }}>
-                {missingBarcodeCount} product{missingBarcodeCount === 1 ? '' : 's'} still need a barcode —{' '}
+                {plural(missingBarcodeCount, 'product')} still {missingBarcodeCount === 1 ? 'needs' : 'need'} a barcode —{' '}
                 <a href="/products" className="pos-link">add SKUs</a> to scan them.
               </p>
             )}

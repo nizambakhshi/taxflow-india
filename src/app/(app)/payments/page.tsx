@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { formatINR } from '@/lib/gst-engine'
-import { formatDateIN } from '@/lib/format'
+import { formatDateIN, plural } from '@/lib/format'
 import { Badge, Button, Card, EmptyState, PageHeader, SearchInput, Segmented, StatCard } from '@/components/ui'
 import SealNotice from '@/components/SealNotice'
 import { askSeal } from '@/lib/audit'
@@ -389,13 +389,13 @@ function PaymentsPageInner() {
 
       <div className="pm-stats">
         <StatCard label="To receive" value={money(summary.toReceive)}
-          sub={`${receivables.length} invoice${receivables.length === 1 ? '' : 's'} outstanding`}
+          sub={`${plural(receivables.length, 'invoice')} outstanding`}
           icon="arrow-down" tone="blue" delay={0} />
         <StatCard label="Overdue" value={money(summary.overdue)}
           sub={summary.overdueCount ? `${summary.overdueCount} past the due date` : 'nothing past its due date'}
           icon="clock" tone={summary.overdueCount ? 'red' : 'grey'} delay={40} />
         <StatCard label="To pay" value={money(summary.toPay)}
-          sub={`${payables.length} bill${payables.length === 1 ? '' : 's'} outstanding`}
+          sub={`${plural(payables.length, 'bill')} outstanding`}
           icon="arrow-up" tone="violet" delay={80} />
         <StatCard label="Not tied to a document" value={String(summary.unlinked)}
           sub={summary.unlinked ? 'cash in or out with no invoice or bill behind it' : `every payment settles a document · ${money(summary.collectedThisMonth)} collected this month`}

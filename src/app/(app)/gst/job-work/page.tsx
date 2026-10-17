@@ -21,7 +21,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { formatDateIN } from '@/lib/format'
+import { formatDateIN, plural, pluralNoun } from '@/lib/format'
 import { fmtQty } from '@/lib/reorder'
 import { toCsv } from '@/lib/registers'
 import { download } from '@/lib/party-ledger'
@@ -84,9 +84,9 @@ function clockLine(v: JobView): { text: string; tone: 'red' | 'amber' | 'blue' |
   const d = v.days_to_deadline
   const back = formatDateIN(v.deadline)
   if (d === null) return { text: `Back by ${back}`, tone: 'blue' }
-  if (d < 0) return { text: `${-d} day${-d === 1 ? '' : 's'} past the period — due back by ${back}`, tone: 'red' }
+  if (d < 0) return { text: `${plural(-d, 'day')} past the period — due back by ${back}`, tone: 'red' }
   if (d === 0) return { text: `Due back today (${back})`, tone: 'amber' }
-  if (d <= APPROACHING_DAYS) return { text: `${d} day${d === 1 ? '' : 's'} left — due back ${back}`, tone: 'amber' }
+  if (d <= APPROACHING_DAYS) return { text: `${plural(d, 'day')} left — due back ${back}`, tone: 'amber' }
   return { text: `${d} days left — due back ${back}`, tone: 'blue' }
 }
 
@@ -398,12 +398,12 @@ function JobWorkPageInner() {
       <div className="jw-stats">
         <StatCard
           label="Movements out" value={String(totals.lots)}
-          sub={`${totals.openLots} still out · ${totals.settledLots} closed · ${totals.workers} job worker${totals.workers === 1 ? '' : 's'}`}
+          sub={`${totals.openLots} still out · ${totals.settledLots} closed · ${plural(totals.workers, 'job worker')}`}
           icon="factory" tone="blue" delay={0}
         />
         <StatCard
           label="Value still with job workers" value={money(totals.outstanding_value)}
-          sub={totals.openLots ? `${fmtQty(totals.outstanding_qty, '')} units across ${totals.openLots} challan${totals.openLots === 1 ? '' : 's'}` : 'everything is accounted for'}
+          sub={totals.openLots ? `${fmtQty(totals.outstanding_qty, '')} units across ${plural(totals.openLots, 'challan')}` : 'everything is accounted for'}
           icon="scale" tone="cyan" delay={40}
         />
         <StatCard
@@ -416,7 +416,7 @@ function JobWorkPageInner() {
         <StatCard
           label="ITC-04 statement" value={period ? period.label : 'No period closed'}
           sub={period
-            ? `${cadence.label} · due ${formatDateIN(period.due)}${period.days_left !== null ? ` (${period.days_left >= 0 ? `${period.days_left} day${period.days_left === 1 ? '' : 's'} left` : `${-period.days_left} day${-period.days_left === 1 ? '' : 's'} past`})` : ''}`
+            ? `${cadence.label} · due ${formatDateIN(period.due)}${period.days_left !== null ? ` (${period.days_left >= 0 ? `${plural(period.days_left, 'day')} left` : `${plural(-period.days_left, 'day')} past`})` : ''}`
             : 'declare the turnover to fix the cadence'}
           icon="calendar" tone={period && (period.days_left ?? 0) < 0 ? 'amber' : 'violet'} delay={120} href="/gst/calendar"
         />
@@ -458,8 +458,7 @@ function JobWorkPageInner() {
         <div className="jw-note is-hot" style={{ marginBottom: 12 }}>
           <Icon name="alert" size={14} strokeWidth={2.2} />
           <span>
-            {totals.overdue} movement{totals.overdue === 1 ? '' : 's'} ran the period out — {fmtQty(totals.deemed_qty, '')} unit
-            {totals.deemed_qty === 1 ? '' : 's'} worth {money(totals.deemed_value)} are deemed supplied on the day they went out, and a
+            {plural(totals.overdue, 'movement')} ran the period out — {fmtQty(totals.deemed_qty, '')} {pluralNoun(totals.deemed_qty, 'unit')} worth {money(totals.deemed_value)} are deemed supplied on the day they went out, and a
             later return does not undo that. The <Link href="/gst/gstr1">GSTR-1 workpaper</Link> will not show them by itself.
           </span>
         </div>
@@ -649,8 +648,8 @@ function JobWorkPageInner() {
               <span className="jw-due-value">{formatDateIN(period.start)} → {formatDateIN(period.end)}</span>
               <span className={`jw-due-count ${period.days_left !== null && period.days_left < 0 ? 'is-past' : ''}`}>
                 {period.days_left === null ? '—' : period.days_left >= 0
-                  ? `due in ${period.days_left} day${period.days_left === 1 ? '' : 's'}`
-                  : `${-period.days_left} day${-period.days_left === 1 ? '' : 's'} past the 25th`}
+                  ? `due in ${plural(period.days_left, 'day')}`
+                  : `${plural(-period.days_left, 'day')} past the 25th`}
               </span>
             </div>
           )}
@@ -670,9 +669,9 @@ function JobWorkPageInner() {
                   <Icon name="alert" size={13} strokeWidth={2.2} />
                   <span>
                     {statement.rows_without_hsn > 0 &&
-                      `${statement.rows_without_hsn} movement${statement.rows_without_hsn === 1 ? '' : 's'} in this period carry no HSN/SAC — the statement is prepared HSN-wise, so they fall under the blank code. `}
+                      `${plural(statement.rows_without_hsn, 'movement')} in this period ${statement.rows_without_hsn === 1 ? 'carries' : 'carry'} no HSN/SAC — the statement is prepared HSN-wise, so they fall under the blank code. `}
                     {statement.rows_without_gstin > 0 &&
-                      `${statement.rows_without_gstin} movement${statement.rows_without_gstin === 1 ? '' : 's'} name a job worker without a GSTIN — that is legal below their service threshold, but grid A reports them by name only.`}
+                      `${plural(statement.rows_without_gstin, 'movement')} ${statement.rows_without_gstin === 1 ? 'names' : 'name'} a job worker without a GSTIN — that is legal below their service threshold, but grid A reports them by name only.`}
                   </span>
                 </div>
               )}
@@ -860,7 +859,7 @@ function JobWorkPageInner() {
           <div className="jw-note" style={{ marginTop: 10 }}>
             <Icon name="alert" size={13} strokeWidth={2.2} />
             <span>
-              {unnamedWorkers} movement{unnamedWorkers === 1 ? '' : 's'} name a job worker who is not on the register. Add them so the
+              {plural(unnamedWorkers, 'movement')} {unnamedWorkers === 1 ? 'names' : 'name'} a job worker who is not on the register. Add them so the
               statement carries a GSTIN and an address against those challans.
             </span>
           </div>
@@ -869,7 +868,7 @@ function JobWorkPageInner() {
 
       <div className="jw-foot">
         <span>
-          {totals.lots ? `${totals.lots} movement${totals.lots === 1 ? '' : 's'} · ${totals.sent_qty} units sent · ${totals.outstanding_qty} still out` : 'Nothing on the register'}
+          {totals.lots ? `${plural(totals.lots, 'movement')} · ${totals.sent_qty} units sent · ${totals.outstanding_qty} still out` : 'Nothing on the register'}
         </span>
         <span className="jw-foot-links">
           <Link href="/challans">Delivery challans</Link>

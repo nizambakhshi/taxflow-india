@@ -11,6 +11,7 @@ import {
   INVOICE_TYPE_LABELS, downloadJson, safeFilePart, stateNameFor,
 } from '@/lib/einvoice'
 import { upsertEwbEntry } from '@/lib/registers'
+import { plural } from '@/lib/format'
 
 // The portal only takes invoices that have been issued; a draft has no IRN to sign.
 const WINDOW = 300
@@ -487,7 +488,7 @@ export default function EInvoicePage() {
             <StatCard label="Ready to sign" value={`${readyRows.length}`} tone="green" icon="check"
               sub={issued.length ? `${Math.round(readyRows.length / issued.length * 100)}% of issued invoices` : 'Nothing issued yet'} />
             <StatCard label="Needs fixing" value={`${fixRows.length}`} tone={fixRows.length ? 'amber' : 'green'} icon="alert"
-              sub={totalIssues ? `${totalIssues} field${totalIssues === 1 ? '' : 's'} NIC will reject` : 'No validation errors'} />
+              sub={totalIssues ? `${plural(totalIssues, 'field')} NIC will reject` : 'No validation errors'} />
             <StatCard label="Drafts" value={`${draftRows.length}`} tone="grey" icon="clipboard"
               sub="No IRN until they are issued" />
             <StatCard label="Invoice value ready" value={readyRows.reduce((s, r) => s + Number(r.inv.grand_total), 0)}

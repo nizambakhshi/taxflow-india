@@ -14,6 +14,7 @@ import { INDIAN_STATES } from '@/lib/constants'
 import { GST_RATES } from '@/lib/gst-rates'
 import { createDebitNote } from '@/lib/creditnote'
 import SealNotice from '@/components/SealNotice'
+import { plural } from '@/lib/format'
 
 const inputStyle = {
   width: '100%', padding: '8px 10px',
@@ -256,7 +257,7 @@ function DebitNotesPageInner() {
         <div>
           <h1 style={{ fontSize: '22px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>Debit Notes</h1>
           <p style={{ fontSize: '14px', color: '#64748b' }}>
-            {debitNotes.length} debit note{debitNotes.length !== 1 ? 's' : ''}
+            {plural(debitNotes.length, 'debit note')}
           </p>
         </div>
         <button onClick={() => { resetForm(); setShowForm(true) }} style={{

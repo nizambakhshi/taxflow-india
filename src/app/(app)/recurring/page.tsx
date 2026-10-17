@@ -21,7 +21,7 @@ import { GST_RATES } from '@/lib/gst-rates'
 import {
   calculateInvoiceTotals, calculateLineItem, determineGSTType, getFinancialYear,
 } from '@/lib/gst-engine'
-import { formatDateIN, plural } from '@/lib/format'
+import { formatDateIN, plural, pluralNoun } from '@/lib/format'
 import { toCsv } from '@/lib/registers'
 import { download } from '@/lib/party-ledger'
 import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
@@ -339,7 +339,7 @@ function RecurringPageInner() {
   function remove(v: ScheduleView) {
     if (v.raised > 0) {
       // The serial-register rule: a schedule that wrote books stays on the record.
-      warn(`${v.s.name} has raised ${v.raised} invoice${v.raised === 1 ? '' : 's'}. Those bills are in your books, `
+      warn(`${v.s.name} has raised ${plural(v.raised, 'invoice')}. Those bills are in your books, `
         + 'so the schedule that produced them stays on the record — pause it instead.')
       return
     }
@@ -454,12 +454,12 @@ function RecurringPageInner() {
       <div className="ri-stats">
         <StatCard
           label="Due to raise" value={String(roll.dueCount)}
-          sub={roll.dueCount ? `${money(roll.dueValue)} waiting · across ${dueSchedules} schedule${dueSchedules === 1 ? '' : 's'}` : 'every period so far has been billed'}
+          sub={roll.dueCount ? `${money(roll.dueValue)} waiting · across ${plural(dueSchedules, 'schedule')}` : 'every period so far has been billed'}
           icon={roll.dueCount ? 'alert' : 'check'} tone={roll.dueCount ? 'red' : 'green'} delay={0}
         />
         <StatCard
           label="Raised from schedules" value={money(roll.raisedValue)}
-          sub={roll.raised ? `${roll.raised} invoice${roll.raised === 1 ? '' : 's'} so far` : 'nothing billed yet'}
+          sub={roll.raised ? `${plural(roll.raised, 'invoice')} so far` : 'nothing billed yet'}
           icon="invoice" tone="cyan" delay={40}
         />
         <StatCard
@@ -574,7 +574,7 @@ function RecurringPageInner() {
                     <span>
                       {v.due.length === 1
                         ? <><strong>{formatDateIN(v.due[0])}</strong> is still unbilled — {money(v.perOccurrence)} worth.</>
-                        : <><strong>{formatDateIN(v.due[0])}</strong> and {v.due.length - 1} more period{v.due.length === 2 ? '' : 's'}
+                        : <><strong>{formatDateIN(v.due[0])}</strong> and {v.due.length - 1} more {pluralNoun(v.due.length - 1, 'period')}
                           {' '}are unbilled — {money(v.due.length * v.perOccurrence)} worth.</>}
                     </span>
                   </div>
@@ -650,7 +650,7 @@ function RecurringPageInner() {
 
       <div className="ri-foot">
         <span>
-          {schedules.length} schedule{schedules.length === 1 ? '' : 's'} · {roll.raised} invoice{roll.raised === 1 ? '' : 's'} raised
+          {plural(schedules.length, 'schedule')} · {plural(roll.raised, 'invoice')} raised
           {roll.dueCount ? ` · ${roll.dueCount} still to bill` : ''}
         </span>
         <span className="ri-foot-links">
@@ -764,7 +764,7 @@ function RecurringPageInner() {
                     <input className="tf-input" type="number" min="1" max="365" value={String(editor.s.interval)}
                       onChange={e => patchEditor({ interval: Math.round(num(e.target.value)) })} />
                     <span className="ri-inline-unit">
-                      {frequencyOf(editor.s.frequency)[editor.s.interval === 1 ? 'one' : 'many']}
+                      {pluralNoun(editor.s.interval, frequencyOf(editor.s.frequency).unit)}
                     </span>
                   </div>
                 </label>
@@ -895,7 +895,7 @@ function RecurringPageInner() {
               <div className="ri-note is-flat">
                 <Icon name="shield" size={13} strokeWidth={2.2} />
                 <span>
-                  {editor.s.occurrences.length} invoice{editor.s.occurrences.length === 1 ? '' : 's'} already raised from this
+                  {plural(editor.s.occurrences.length, 'invoice')} already raised from this
                   schedule keep the figures they were billed with. Editing here changes only the bills raised from now on.
                 </span>
               </div>
@@ -932,7 +932,7 @@ function RecurringPageInner() {
             {gen.queue.length === 0 ? (
               <div className="ri-done">
                 <Icon name="check" size={22} strokeWidth={2.4} />
-                <h3>{gen.raised.length} invoice{gen.raised.length === 1 ? '' : 's'} raised</h3>
+                <h3>{plural(gen.raised.length, 'invoice')} raised</h3>
                 <ul className="ri-done-list">
                   {gen.raised.map(r => (
                     <li key={r.number}>

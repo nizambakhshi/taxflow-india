@@ -17,6 +17,7 @@ import { askSeal } from '@/lib/audit'
 import { INDIAN_STATES } from '@/lib/constants'
 import { GST_RATES } from '@/lib/gst-rates'
 import SealNotice from '@/components/SealNotice'
+import { plural } from '@/lib/format'
 
 const inputStyle = {
   width: '100%', padding: '8px 10px',
@@ -364,7 +365,7 @@ function BillsPageInner() {
             Purchase Bills
           </h1>
           <p style={{ fontSize: '14px', color: '#64748b' }}>
-            {activeBills.length} bill{activeBills.length !== 1 ? 's' : ''}
+            {plural(activeBills.length, 'bill')}
             {bills.length !== activeBills.length && ` · ${bills.length - activeBills.length} cancelled`}
           </p>
         </div>

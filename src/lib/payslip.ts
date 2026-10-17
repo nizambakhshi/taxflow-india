@@ -33,7 +33,7 @@
 
 import { todayISO } from '@/lib/batches'
 import { round2 } from '@/lib/costcentres'
-import { formatDateIN } from '@/lib/format'
+import { formatDateIN, plural } from '@/lib/format'
 import { amountInWords } from '@/lib/words'
 import { INDIAN_STATES } from '@/lib/constants'
 import {
@@ -183,7 +183,7 @@ export function buildPayslip(store: PayrollStore, slip: Payslip, workspaceName =
   if (slip.lop_deduction > 0) {
     deductions.push({
       key: 'lop',
-      label: `Loss of pay (${slip.lop_days} day${slip.lop_days === 1 ? '' : 's'} of ${slip.divisor})`,
+      label: `Loss of pay (${plural(slip.lop_days, 'day')} of ${slip.divisor})`,
       amount: round2(slip.lop_deduction),
       basis: slip.divisor_label,
       dash: '',

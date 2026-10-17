@@ -33,7 +33,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { formatDateIN } from '@/lib/format'
+import {formatDateIN, plural, pluralNoun} from '@/lib/format'
 import { toCsv } from '@/lib/registers'
 import { download } from '@/lib/party-ledger'
 import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
@@ -365,7 +365,7 @@ function JournalPageInner() {
     setNotice({
       msg: active
         ? `${h.name} is open again — the composer offers it to new entries.`
-        : `${h.name} is closed. New entries cannot use it; the ${used} ${used === 1 ? 'entry' : 'entries'} already carrying ${used === 1 ? 'it' : 'them'} still read on the statements.`,
+        : `${h.name} is closed. New entries cannot use it; the ${used} ${pluralNoun(used, 'entry')} already carrying ${used === 1 ? 'it' : 'them'} still read on the statements.`,
       bad: !active,
     })
   }
@@ -453,12 +453,12 @@ function JournalPageInner() {
       <div className="jn-stats">
         <StatCard label="Postings standing" value={String(stats.posted)} icon="book" tone="green"
           sub={stats.reversed > 0 || postedReversals > 0
-            ? `folded into the statements · ${stats.reversed} reversed${postedReversals > 0 ? ` · ${postedReversals} posted reversal${postedReversals === 1 ? '' : 's'} — the pair nets to nothing` : ''}`
+            ? `folded into the statements · ${stats.reversed} reversed${postedReversals > 0 ? ` · ${plural(postedReversals, 'posted reversal')} — the pair nets to nothing` : ''}`
             : 'folded into the statements'} delay={0} />
         <StatCard label="Drafts" value={String(stats.drafts)} icon="edit" tone={stats.drafts ? 'amber' : 'grey'}
           sub="no number taken yet" delay={60} />
         <StatCard label={`Moved in ${fy.label}`} value={money(stats.rupeesThisFY)} icon="hash" tone="blue"
-          sub={`${movedThisFY.length} statement ${movedThisFY.length === 1 ? 'line' : 'lines'} touched`} delay={120} />
+          sub={`${movedThisFY.length} statement ${pluralNoun(movedThisFY.length, 'line')} touched`} delay={120} />
         <StatCard label="Heads" value={String(stats.heads)} icon="tag" tone="violet"
           sub={`${stats.openHeads} open · ${stats.heads - stats.openHeads} closed`} delay={180} />
       </div>
@@ -664,7 +664,7 @@ function JournalPageInner() {
                   {tb.entries === 0
                     ? <>The columns are <strong>both zero because nothing has moved</strong>, not because the books agree. Post an entry and this schedule has a figure to foot.</>
                     : tb.foots
-                    ? <>The journal&rsquo;s own columns <strong>foot to the paisa</strong> — {money(tb.total_debit)} carried on a debit, {money(tb.total_credit)} on a credit, across {tb.entries} {tb.entries === 1 ? 'posting' : 'postings'}.</>
+                    ? <>The journal&rsquo;s own columns <strong>foot to the paisa</strong> — {money(tb.total_debit)} carried on a debit, {money(tb.total_credit)} on a credit, across {tb.entries} {pluralNoun(tb.entries, 'posting')}.</>
                     : <>The columns <strong>do not foot</strong> — the debit side ({money(tb.total_debit)}) and the credit side ({money(tb.total_credit)}) differ by {money(Math.abs(tb.residual))}. That is the rupee this register lost or gained, and no schedule can close it for you.</>}
                 </div>
                 <p>
@@ -702,7 +702,7 @@ function JournalPageInner() {
                     <span className="jn-tb-name">
                       {l.label}
                       {l.contra && <em className="jn-tb-contra">contra</em>}
-                      {l.dangling && <small>{l.entries} {l.entries === 1 ? 'entry' : 'entries'} name a head this register no longer holds</small>}
+                      {l.dangling && <small>{l.entries} {pluralNoun(l.entries, 'entry')} {l.entries === 1 ? 'names' : 'name'} a head this register no longer holds</small>}
                     </span>
                     <span className="jn-tb-moves">{l.dangling ? '— no line to move' : SLOT_META[l.slot].label}</span>
                     <span className="jn-tb-entries">{l.entries}</span>
@@ -1451,7 +1451,7 @@ function HeadCard({
             ? bal.entries === 0
               ? '₹0 — never moved'
               : `₹0 where it stands · ${bal.entries} ${bal.entries === 1 ? 'posting names' : 'postings name'} it and they net to nothing`
-            : `${signed(bal.signed)} · ${bal.entries} ${bal.entries === 1 ? 'entry' : 'entries'}`}
+            : `${signed(bal.signed)} · ${bal.entries} ${pluralNoun(bal.entries, 'entry')}`}
         </span>
         <span className="jn-actions" style={{ marginLeft: 'auto' }}>
           <Button variant="ghost" size="sm" icon={h.active ? 'lock' : 'unlock'} onClick={onToggle}>

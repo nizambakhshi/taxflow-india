@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { formatINR } from '@/lib/gst-engine'
 import { Button, Card, PageHeader, SectionTitle, Segmented, StatCard } from '@/components/ui'
+import { plural } from '@/lib/format'
 
 function getDateRange(type: string) {
   const now = new Date()
@@ -309,7 +310,7 @@ export default function ReportsPage() {
         <>
           <div className="rp-stats">
             <StatCard label="Total sales" value={salesData.total} icon="trend" tone="blue"
-              sub={`${salesData.invoiceCount} invoice${salesData.invoiceCount !== 1 ? 's' : ''}`} />
+              sub={`${plural(salesData.invoiceCount, 'invoice')}`} />
             <StatCard label="Taxable value" value={salesData.taxable} icon="scale" tone="blue"
               sub="GST excluded" delay={40} />
             <StatCard label="Tax collected" value={salesData.tax} icon="percent" tone="amber"
@@ -329,7 +330,7 @@ export default function ReportsPage() {
                 <div key={c.name} className="rp-line">
                   <div style={{ minWidth: 0 }}>
                     <div className="rp-line-name">{c.name}</div>
-                    <div className="rp-line-sub">{c.count} invoice{c.count !== 1 ? 's' : ''}</div>
+                    <div className="rp-line-sub">{plural(c.count, 'invoice')}</div>
                   </div>
                   <div className="rp-line-amt tf-num">₹{formatINR(c.total)}</div>
                 </div>
@@ -377,7 +378,7 @@ export default function ReportsPage() {
         <>
           <div className="rp-stats rp-stats-3">
             <StatCard label="Total purchases" value={purchaseData.total} icon="cart" tone="blue"
-              sub={`${purchaseData.billCount} bill${purchaseData.billCount !== 1 ? 's' : ''}`} />
+              sub={`${plural(purchaseData.billCount, 'bill')}`} />
             <StatCard label="ITC available" value={purchaseData.itc} icon="check" tone="green"
               sub="from eligible bills" delay={40} />
             <StatCard label="Bills" value={String(purchaseData.billCount)} icon="invoice" tone="blue"

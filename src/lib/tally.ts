@@ -53,6 +53,7 @@ import {
   type GSTType, type LineItemResult,
 } from '@/lib/gst-engine'
 import { GST_RATES } from '@/lib/gst-rates'
+import { plural, pluralNoun } from '@/lib/format'
 
 // ── a tolerant XML reader ─────────────────────────────────────────────────────
 //
@@ -244,7 +245,7 @@ export function parseXml(xml: string): XmlDoc {
   if (stack.length && !truncated) {
     issues.push({
       at: -1,
-      message: `${stack.length} tag${stack.length === 1 ? '' : 's'} left open at the end — the file was cut off mid-object`,
+      message: `${plural(stack.length, 'tag')} left open at the end — the file was cut off mid-object`,
     })
     truncated = true
   }
@@ -1654,7 +1655,7 @@ function documentItem(
     reasons.push(`${missingItems.length === 1 ? `${shown} is` : `${shown}${missingItems.length > 3 ? ` and ${missingItems.length - 3} more` : ' are'}`} neither a stock item in this file nor a product on the register — a line has to name something`)
   }
   if (!v.lines.length) {
-    reasons.push(`The voucher carries ${v.entries.length} ledger entr${v.entries.length === 1 ? 'y' : 'ies'} and no stock or service line — the file shows money moving, not what was sold. ${isSale ? 'An invoice has to print at least one line.' : 'A bill has to show what was bought.'}`)
+    reasons.push(`The voucher carries ${plural(v.entries.length, 'ledger entry')} and no stock or service line — the file shows money moving, not what was sold. ${isSale ? 'An invoice has to print at least one line.' : 'A bill has to show what was bought.'}`)
   }
 
   // The reader's own findings, routed by what they mean here: no date or a reversed
@@ -1741,7 +1742,7 @@ function documentItem(
   })
 
   if (amountDiscounts) {
-    derived.push(`${amountDiscounts} line${amountDiscounts === 1 ? '' : 's'} state${amountDiscounts === 1 ? 's' : ''} a discount in rupees; it is carried as the percent of that line the rupees work out to, because a tax invoice restates one number, not two`)
+    derived.push(`${plural(amountDiscounts, 'line')} state${amountDiscounts === 1 ? 's' : ''} a discount in rupees; it is carried as the percent of that line the rupees work out to, because a tax invoice restates one number, not two`)
   }
   if (cessCameFromLedger) {
     derived.push(`The cess rate comes from this voucher’s cess ledger (${fileCessRate}%), because the stock item states none`)
@@ -1831,7 +1832,7 @@ function documentItem(
     if (received > 0) flags.push(`${isSale ? '₹' + received.toLocaleString('en-IN') + ' was received' : '₹' + received.toLocaleString('en-IN') + ' was paid'} against this voucher in Tally (${v.moneyLedgers.map(m => m.ledger).join(', ')}). Money is recorded on /payments, and an import does not write it — the document lands as unpaid.`)
   }
 
-  if (!reasons.length) derived.push(`The document ${isSale ? 'will be raised' : 'will be booked'} at ₹${totals.grand_total.toLocaleString('en-IN')} from ${v.lines.length} line${v.lines.length === 1 ? '' : 's'}`)
+  if (!reasons.length) derived.push(`The document ${isSale ? 'will be raised' : 'will be booked'} at ₹${totals.grand_total.toLocaleString('en-IN')} from ${plural(v.lines.length, 'line')}`)
 
   const partyLine = v.party || 'no party'
   return {
@@ -1839,7 +1840,7 @@ function documentItem(
     target,
     status: already ? 'already' : reasons.length ? 'blocked' : 'ready',
     title: isSale ? `${v.party || 'Unnamed party'} · ${totals.grand_total.toLocaleString('en-IN')}` : `${v.party || 'Unnamed vendor'} · ${totals.grand_total.toLocaleString('en-IN')}`,
-    subtitle: `${v.voucherType || (isSale ? 'Sales' : 'Purchase')}${v.number ? ` #${v.number}` : ''} · ${v.date || 'no date'} · ${v.lines.length} line${v.lines.length === 1 ? '' : 's'}`,
+    subtitle: `${v.voucherType || (isSale ? 'Sales' : 'Purchase')}${v.number ? ` #${v.number}` : ''} · ${v.date || 'no date'} · ${plural(v.lines.length, 'line')}`,
     fields,
     lines: itemsPayload,
     reasons,
@@ -1954,7 +1955,7 @@ function noteItem(
     reasons.push(`${missingItems.length === 1 ? `${shown} is` : `${shown}${missingItems.length > 3 ? ` and ${missingItems.length - 3} more` : ' are'}`} neither a stock item in this file nor a product on the register — a line has to name something`)
   }
   if (!v.lines.length) {
-    reasons.push(`The voucher carries ${v.entries.length} ledger entr${v.entries.length === 1 ? 'y' : 'ies'} and no stock or service line — the file shows money moving, not what came back. A note has to name what it reverses.`)
+    reasons.push(`The voucher carries ${plural(v.entries.length, 'ledger entry')} and no stock or service line — the file shows money moving, not what came back. A note has to name what it reverses.`)
   }
 
   // The reader's findings, routed by what they mean for a note: a missing date still
@@ -2037,7 +2038,7 @@ function noteItem(
 
   const amountDiscounts = v.lines.filter(l => l.discountHow === 'amount').length
   if (amountDiscounts) {
-    derived.push(`${amountDiscounts} line${amountDiscounts === 1 ? '' : 's'} state${amountDiscounts === 1 ? 's' : ''} a discount in rupees; a note item stores the value, so it is already inside the taxable value these lines carry`)
+    derived.push(`${plural(amountDiscounts, 'line')} state${amountDiscounts === 1 ? 's' : ''} a discount in rupees; a note item stores the value, so it is already inside the taxable value these lines carry`)
   }
   if (cessCameFromLedger) {
     derived.push(`The cess rate comes from this voucher’s cess ledger (${fileCessRate}%), because the stock item states none`)
@@ -2128,14 +2129,14 @@ function noteItem(
     flags.push(`₹${moved.toLocaleString('en-IN')} moved through ${v.moneyLedgers.map(m => m.ledger).join(', ')} on this voucher in Tally. Money is recorded on /payments, and an import does not write it — the note lands without it.`)
   }
 
-  if (!reasons.length) derived.push(`The note ${isCredit ? 'will be raised' : 'will be booked'} at ₹${totals.grand_total.toLocaleString('en-IN')} against ${originalNumber} from ${v.lines.length} line${v.lines.length === 1 ? '' : 's'}`)
+  if (!reasons.length) derived.push(`The note ${isCredit ? 'will be raised' : 'will be booked'} at ₹${totals.grand_total.toLocaleString('en-IN')} against ${originalNumber} from ${plural(v.lines.length, 'line')}`)
 
   return {
     key: planKey(target, `${v.party || 'no party'}|${v.date}|${v.number}|${v.sourceIndex}`),
     target,
     status: already ? 'already' : reasons.length ? 'blocked' : 'ready',
     title: `${v.party || 'Unnamed party'} · ${totals.grand_total.toLocaleString('en-IN')}`,
-    subtitle: `${v.voucherType || (isCredit ? 'Credit Note' : 'Debit Note')}${v.number ? ` #${v.number}` : ''} · ${v.date || 'no date'} · ${v.lines.length} line${v.lines.length === 1 ? '' : 's'}`,
+    subtitle: `${v.voucherType || (isCredit ? 'Credit Note' : 'Debit Note')}${v.number ? ` #${v.number}` : ''} · ${v.date || 'no date'} · ${plural(v.lines.length, 'line')}`,
     fields,
     lines: itemsPayload,
     reasons,
@@ -2224,11 +2225,11 @@ function journalItem(v: TallyVoucher, existing: Existing): PlanItem {
   if (missingHeads.length) {
     const shown = missingHeads.slice(0, 3).map(n => `“${n}”`).join(', ')
     const more = missingHeads.length > 3 ? ` and ${missingHeads.length - 3} more` : ''
-    reasons.push(`${shown}${more} ${missingHeads.length === 1 ? 'names' : 'name'} no head on the journal register — add the head${missingHeads.length === 1 ? '' : 's'} on /journal and read the file again, or leave this voucher in Tally. The bridge does not invent a chart of accounts.`)
+    reasons.push(`${shown}${more} ${missingHeads.length === 1 ? 'names' : 'name'} no head on the journal register — add the ${pluralNoun(missingHeads.length, 'head')} on /journal and read the file again, or leave this voucher in Tally. The bridge does not invent a chart of accounts.`)
   }
   if (!missingHeads.length && !v.moneyLedgers.length && legs.length < 2) {
     reasons.push(legs.length
-      ? `Only one leg survives the check against the register — a journal is a double entry; the file gives ${v.entries.length} ledger line${v.entries.length === 1 ? '' : 's'} and this app can draft one named leg.`
+      ? `Only one leg survives the check against the register — a journal is a double entry; the file gives ${plural(v.entries.length, 'ledger line')} and this app can draft one named leg.`
       : 'The voucher holds no ledger entry this register could name — there is nothing to draft.')
   }
   if (!missingHeads.length && !v.moneyLedgers.length && legs.length >= 2 && Math.abs(debit - credit) > 0.005) {
@@ -2237,7 +2238,7 @@ function journalItem(v: TallyVoucher, existing: Existing): PlanItem {
   for (const problem of v.problems) {
     if (problem.key === 'no-date') reasons.push(problem.text)
   }
-  if (zeroDropped) flags.push(`${zeroDropped} ledger line${zeroDropped === 1 ? '' : 's'} of ₹0 in the file left the draft — the register refuses a zero leg, and a zero is a claim, not an absence`)
+  if (zeroDropped) flags.push(`${plural(zeroDropped, 'ledger line')} of ₹0 in the file left the draft — the register refuses a zero leg, and a zero is a claim, not an absence`)
 
   const already = (existing.journalEntries || []).find(d => (d.notes || '').toLowerCase().includes(tallyRef.toLowerCase()))
   if (already) reasons.push(`An entry carrying this Tally reference is already on the journal register (${already.number || 'an unnumbered draft'}) — importing again would raise a second one`)
@@ -2254,7 +2255,7 @@ function journalItem(v: TallyVoucher, existing: Existing): PlanItem {
     target: 'journal_draft',
     status: already ? 'already' : reasons.length ? 'blocked' : 'ready',
     title: `${v.number ? `Journal #${v.number}` : 'Journal voucher'} · ${Math.max(debit, credit).toLocaleString('en-IN')}`,
-    subtitle: `${v.voucherType || 'Journal'}${v.reference ? ` · ref ${v.reference}` : ''} · ${v.date || 'no date'} · ${legs.length} leg${legs.length === 1 ? '' : 's'}`,
+    subtitle: `${v.voucherType || 'Journal'}${v.reference ? ` · ref ${v.reference}` : ''} · ${v.date || 'no date'} · ${plural(legs.length, 'leg')}`,
     fields: {
       date: v.date,
       narration: `Imported from Tally — ${tallyRef}`,
@@ -2355,7 +2356,7 @@ function challanItem(
     reasons.push(`${missingItems.length === 1 ? `${shown} is` : `${shown}${missingItems.length > 3 ? ` and ${missingItems.length - 3} more` : ' are'}`} neither a stock item in this file nor a product on the register — a challan line has to name something`)
   }
   if (!v.lines.length) {
-    reasons.push(`The voucher carries ${v.entries.length} ledger entr${v.entries.length === 1 ? 'y' : 'ies'} and no stock or service line — a challan moves goods; this shows only rupees`)
+    reasons.push(`The voucher carries ${plural(v.entries.length, 'ledger entry')} and no stock or service line — a challan moves goods; this shows only rupees`)
   }
   for (const problem of v.problems) {
     if (problem.key === 'no-date' || problem.key === 'negative-qty') reasons.push(problem.text)
@@ -2399,7 +2400,7 @@ function challanItem(
     target: 'challan_draft',
     status: already ? 'already' : reasons.length ? 'blocked' : 'ready',
     title: `${v.party || 'Unnamed party'} · ${value.toLocaleString('en-IN')}`,
-    subtitle: `${v.voucherType || 'Delivery Challan'}${v.number ? ` #${v.number}` : ''} · ${v.date || 'no date'} · ${v.lines.length} line${v.lines.length === 1 ? '' : 's'}`,
+    subtitle: `${v.voucherType || 'Delivery Challan'}${v.number ? ` #${v.number}` : ''} · ${v.date || 'no date'} · ${plural(v.lines.length, 'line')}`,
     fields,
     lines,
     reasons,

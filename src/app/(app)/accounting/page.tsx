@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { formatDateIN, plural } from '@/lib/format'
+import {formatDateIN, plural, pluralNoun} from '@/lib/format'
 import { Button, Card, PageHeader, Segmented, StatCard } from '@/components/ui'
 import Icon from '@/components/Icons'
 import {
@@ -338,13 +338,13 @@ export default function FinancialStatementsPage() {
             <div className="ac-foot">
               {pl.journal.touched === 0 ? (
                 <>
-                  {pl.journal.entries} journal entr{pl.journal.entries === 1 ? 'y' : 'ies'} ({pl.journal.legs} legs) fold into this
+                  {plural(pl.journal.entries, 'journal entry')} ({pl.journal.legs} legs) fold into this
                   period and answer each other — every line they name nets back to where it stood, so no figure here moved.
                   Read or write them on the <Link href="/journal">journal register</Link>.
                 </>
               ) : (
                 <>
-                  {pl.journal.entries} journal entr{pl.journal.entries === 1 ? 'y' : 'ies'} ({pl.journal.legs} legs) moved{' '}
+                  {plural(pl.journal.entries, 'journal entry')} ({pl.journal.legs} legs) moved{' '}
                   {pl.journal.touched === 1 ? 'a line' : `${pl.journal.touched} lines`} in this
                   period — they are the shop&apos;s own words, not documents, and each one balanced on the way in.
                   Read or write them on the <Link href="/journal">journal register</Link>.
@@ -422,7 +422,7 @@ export default function FinancialStatementsPage() {
             {bs.journal.entries > 0 && (
               <div className="ac-foot">
                 {proof.ok ? (
-                  <>The {proof.entries} journal {proof.entries === 1 ? 'entry' : 'entries'} this sheet read balanced to the paisa —{' '}
+                  <>The {proof.entries} journal {pluralNoun(proof.entries, 'entry')} this sheet read balanced to the paisa —{' '}
                     {money(proof.debits)} on each side — so the derived capital line did not move by a rupee. A journal renames money; it does not explain it.</>
                 ) : (
                   <>The register handed rows whose debits ({money(proof.debits)}) and credits ({money(proof.credits)}) differ by{' '}

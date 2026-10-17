@@ -112,7 +112,7 @@ function InvoicesPageInner() {
       <PageHeader
         eyebrow="Sales"
         title="Invoices"
-        subtitle={`${invoices.length} invoice${invoices.length === 1 ? '' : 's'} in this account. Every document opens for print, PDF and reminders.`}
+        subtitle={`${plural(invoices.length, 'invoice')} in this account. Every document opens for print, PDF and reminders.`}
         actions={
           <Button size="sm" icon="plus" onClick={() => router.push('/invoices/new')}>New invoice</Button>
         }

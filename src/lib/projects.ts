@@ -75,7 +75,7 @@ import { newId, todayISO } from '@/lib/batches'
 import { addDaysISO, daysBetween } from '@/lib/recurring'
 import { DOC_KIND_META, bookDocs, round2 } from '@/lib/costcentres'
 import type { BookDoc, BookInput, DocKind } from '@/lib/costcentres'
-import { plural } from '@/lib/format'
+import { plural, pluralNoun } from '@/lib/format'
 
 const KEY_PROJECTS = 'taxflow:projects:'
 /** Today's shape. A stored envelope with a different version is read as empty, not guessed at. */
@@ -437,7 +437,7 @@ export function deleteProject(orgId: string, id: string): DeleteResult {
   if (entries || tags) {
     return {
       ok: false,
-      error: `This project still carries ${entries} time ${entries === 1 ? 'entry' : 'entries'} and ${tags} attached ${tags === 1 ? 'document' : 'documents'}. Archive it instead — the record stays, the list does not.`,
+      error: `This project still carries ${entries} time ${pluralNoun(entries, 'entry')} and ${tags} attached ${pluralNoun(tags, 'document')}. Archive it instead — the record stays, the list does not.`,
     }
   }
   return { ok: true, store: mutate(orgId, n => ({ ...n, projects: n.projects.filter(p => p.id !== id) })) }

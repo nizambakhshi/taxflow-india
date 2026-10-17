@@ -429,7 +429,7 @@ function AuditPageInner() {
               {chain.count === 0
                 ? <>The trail is <strong>empty</strong> — nothing has been sealed, released, refused or noted on this device. An empty trail is not a broken one, but it is no proof either: there is nothing here yet to vouch for.</>
                 : chain.ok
-                  ? <>The trail is <strong>unbroken</strong> — {chain.count} event{chain.count === 1 ? '' : 's'} numbered 1 to {chain.count} with no gap, duplicate or reorder.</>
+                  ? <>The trail is <strong>unbroken</strong> — {plural(chain.count, 'event')} numbered 1 to {chain.count} with no gap, duplicate or reorder.</>
                   : <>The trail <strong>shows a break</strong> at sequence {chain.broken.join(', ')} — a row was added, removed or re-sorted by hand.</>}
             </div>
             <p>
@@ -1019,14 +1019,14 @@ function PeriodClose({ month, fy, onMonth, reading, loading, search, onSeal }: {
       {reading.money.loaded ? (
         <div className="au-stats">
           <StatCard label="Revenue billed" value={reading.money.revenue} icon="trend" tone="blue"
-            sub={`${reading.counts.invoices} invoice${reading.counts.invoices === 1 ? '' : 's'}${reading.counts.cancelledInvoices ? ` · ${reading.counts.cancelledInvoices} cancelled` : ''}`} delay={0} />
+            sub={`${plural(reading.counts.invoices, 'invoice')}${reading.counts.cancelledInvoices ? ` · ${reading.counts.cancelledInvoices} cancelled` : ''}`} delay={0} />
           <StatCard label="Purchases" value={reading.money.purchases} icon="bag" tone="amber"
-            sub={`${reading.counts.bills} bill${reading.counts.bills === 1 ? '' : 's'} dated here`} delay={60} />
+            sub={`${plural(reading.counts.bills, 'bill')} dated here`} delay={60} />
           <StatCard label="Expenses" value={reading.money.expenses} icon="wallet" tone="red"
-            sub={`${reading.counts.expenses} expense${reading.counts.expenses === 1 ? '' : 's'} dated here`} delay={120} />
+            sub={`${plural(reading.counts.expenses, 'expense')} dated here`} delay={120} />
           <StatCard label="Net for the window" value={reading.money.netProfit}
             icon={reading.money.netProfit >= 0 ? 'check' : 'arrow-down'} tone={reading.money.netProfit >= 0 ? 'green' : 'red'}
-            sub={`Journal: ${reading.money.journalEntries} posting${reading.money.journalEntries === 1 ? '' : 's'}, ${reading.money.journalTouched} line${reading.money.journalTouched === 1 ? '' : 's'} moved`}
+            sub={`Journal: ${plural(reading.money.journalEntries, 'posting')}, ${plural(reading.money.journalTouched, 'line')} moved`}
             delay={180} />
         </div>
       ) : (
@@ -1067,8 +1067,8 @@ function PeriodClose({ month, fy, onMonth, reading, loading, search, onSeal }: {
             Money that moved and money waiting: <strong>₹{formatINR(reading.money.received)}</strong> received and{' '}
             <strong>₹{formatINR(reading.money.paid)}</strong> paid with a date inside the window, and{' '}
             <strong>₹{formatINR(reading.money.outstanding)}</strong> still outstanding on the invoices this window raised. The journal
-            contributed {reading.money.journalEntries} entr{reading.money.journalEntries === 1 ? 'y' : 'ies'} and{' '}
-            {reading.money.journalLegs} leg{reading.money.journalLegs === 1 ? '' : 's'} to the figures above, through the same fold the
+            contributed {plural(reading.money.journalEntries, 'entry')} and{' '}
+            {plural(reading.money.journalLegs, 'leg')} to the figures above, through the same fold the
             statements read. A payment dated after the window settles what the window raised without touching it, so the outstanding
             line is the books reading themselves today, not the last day of the period.
           </p>

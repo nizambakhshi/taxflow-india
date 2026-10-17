@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type CSSProperties, type Rea
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { formatDateIN } from '@/lib/format'
+import { formatDateIN, plural, pluralNoun } from '@/lib/format'
 import { daysUntil } from '@/lib/registers'
 import { download } from '@/lib/party-ledger'
 import { fyLabel, fyStartYear, monthShort } from '@/lib/targets'
@@ -289,12 +289,12 @@ export default function Gstr9Page() {
           sub={`Net of reversals and block credit: ${money(itc.netHeads.tax)}`} delay={120} />
         <StatCard label={`Credit past ${ITC_PAYMENT_DEADLINE_DAYS} days unpaid`} value={sumHeads(atRisk.map(r => r.heads)).tax}
           icon="alert" tone={atRisk.length ? 'red' : 'grey'}
-          sub={atRisk.length ? `${atRisk.length} supplier invoice${atRisk.length > 1 ? 's' : ''} — s.16(4) reversal` : 'Nothing outstanding past the deadline'}
+          sub={atRisk.length ? `${plural(atRisk.length, 'supplier invoice')} — s.16(4) reversal` : 'Nothing outstanding past the deadline'}
           delay={180} />
         <StatCard label="Books vs filed GSTR-3B" value={recon.monthsDeclared ? Math.abs(recon.turnoverDiff) : 0}
           icon="compare" tone={recon.monthsVariance ? 'amber' : 'grey'}
           sub={recon.monthsDeclared
-            ? `${recon.monthsDeclared} of 12 months declared · ${recon.monthsVariance} variance${recon.monthsVariance === 1 ? '' : 's'}`
+            ? `${recon.monthsDeclared} of 12 months declared · ${plural(recon.monthsVariance, 'variance')}`
             : 'No filed figures entered yet'}
           delay={240} />
       </div>
@@ -415,7 +415,7 @@ export default function Gstr9Page() {
               <div className="g9-reavail">
                 <Icon name="check" size={14} />
                 <span>
-                  <b>{recreditedRow.count}</b> invoice{recreditedRow.count === 1 ? '' : 's'} paid after the reversal, credit taken
+                  <b>{recreditedRow.count}</b> {pluralNoun(recreditedRow.count, 'invoice')} paid after the reversal, credit taken
                   back in the month of payment — {money(recreditedRow.heads.tax)}. It is added to 5.A, not netted here.
                 </span>
               </div>
@@ -425,7 +425,7 @@ export default function Gstr9Page() {
               <div className="g9-watch">
                 <div className="g9-watch-head">
                   <Icon name="clock" size={14} />
-                  <span>Section 16(4) watchlist · {atRisk.length} document{atRisk.length > 1 ? 's' : ''}</span>
+                  <span>Section 16(4) watchlist · {plural(atRisk.length, 'document')}</span>
                   <Link href="/bills?q=" className="g9-watch-link">open purchase bills →</Link>
                 </div>
                 {atRisk.slice(0, 12).map(r => (

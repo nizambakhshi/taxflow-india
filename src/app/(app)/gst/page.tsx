@@ -10,6 +10,7 @@ import {
 } from '@/components/ui'
 import type { Tone } from '@/components/ui'
 import Icon from '@/components/Icons'
+import { plural } from '@/lib/format'
 
 interface InvoiceTotals {
   grand_total: number | string | null
@@ -325,11 +326,11 @@ export default function GSTDashboardPage() {
       {/* Headline numbers */}
       <div className="tf-g-4" style={{ marginBottom: '1rem' }}>
         <StatCard label="Total sales" value={summary.totalSales} tone="blue" icon="invoice"
-          sub={`${summary.invoiceCount} invoice${summary.invoiceCount === 1 ? '' : 's'}`} />
+          sub={`${plural(summary.invoiceCount, 'invoice')}`} />
         <StatCard label="Output tax" value={summary.totalOutputTax} tone="violet" icon="percent"
           sub="Collected on supplies" />
         <StatCard label="ITC available" value={summary.totalITC} tone="green" icon="cart"
-          sub={`${summary.billCount} eligible bill${summary.billCount === 1 ? '' : 's'}`} />
+          sub={`${plural(summary.billCount, 'eligible bill')}`} />
         <StatCard label="Net GST payable" value={payable} tone={payable > 0 ? 'red' : 'green'}
           icon="wallet" sub={payable > 0 ? 'Deposit by the 20th' : 'Credit covers the tax'} />
       </div>
@@ -417,8 +418,8 @@ export default function GSTDashboardPage() {
                   <div className="gh-ret-name">{ret.label}</div>
                   <div className="gh-ret-meta">
                     {ret.desc} · due {due.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                    {late && <span className="gh-due is-late"> · overdue by {Math.abs(days)} day{Math.abs(days) === 1 ? '' : 's'}</span>}
-                    {soon && <span className="gh-due is-soon"> · due in {days === 0 ? 'today' : `${days} day${days === 1 ? '' : 's'}`}</span>}
+                    {late && <span className="gh-due is-late"> · overdue by {plural(Math.abs(days), 'day')}</span>}
+                    {soon && <span className="gh-due is-soon"> · due in {days === 0 ? 'today' : `${plural(days, 'day')}`}</span>}
                   </div>
                 </div>
                 <div className="tf-row tf-wrap gh-ret-actions">

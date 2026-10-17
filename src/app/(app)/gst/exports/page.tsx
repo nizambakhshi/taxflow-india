@@ -24,7 +24,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { formatDateIN } from '@/lib/format'
+import { formatDateIN, plural } from '@/lib/format'
 import { toCsv } from '@/lib/registers'
 import { download } from '@/lib/party-ledger'
 import { matchesAny, useSearchDeepLink } from '@/lib/deep-link-search'
@@ -96,7 +96,7 @@ function clockLine(v: ExportView): { text: string; tone: 'red' | 'amber' | 'blue
   if (v.time_state === 'settled_late') return { text: `Realised, but after ${due} — a late credit does not undo the contravention`, tone: 'amber' }
   if (d === null) return { text: `Proceeds due ${due}`, tone: 'blue' }
   if (d < 0 && v.time_state === 'restricted') return { text: `${-d} days past the window — the AD bank may restrict future exports`, tone: 'red' }
-  if (d < 0) return { text: `Window ran out ${-d} day${-d === 1 ? '' : 's'} ago (due ${due})`, tone: 'red' }
+  if (d < 0) return { text: `Window ran out ${plural(-d, 'day')} ago (due ${due})`, tone: 'red' }
   if (d === 0) return { text: `Proceeds due today (${due})`, tone: 'amber' }
   if (d <= 45) return { text: `${d} days left — proceeds due ${due}`, tone: 'amber' }
   return { text: `${d} days left — proceeds due ${due}`, tone: 'blue' }
@@ -219,7 +219,7 @@ function ScreenedList({ rows, onCsv }: { rows: ScreenedRow[]; onCsv: () => void 
         </div>
       ))}
       <div className="ex-foot">
-        <span>{rows.length} file{rows.length === 1 ? '' : 's'} outside the mechanism.</span>
+        <span>{plural(rows.length, 'file')} outside the mechanism.</span>
         <span className="ex-foot-links"><Button size="sm" variant="ghost" icon="download" onClick={onCsv}>List CSV</Button></span>
       </div>
     </Card>
@@ -542,7 +542,7 @@ function ExportsPageInner() {
         <StatCard
           label="Export files" value={String(totals.files)}
           sub={unpapered.length
-            ? `${unpapered.length} export invoice${unpapered.length === 1 ? '' : 's'} in the books with no file here`
+            ? `${plural(unpapered.length, 'export invoice')} in the books with no file here`
             : `${totals.unmatched} with no invoice behind them`}
           icon="ship" tone="blue" delay={0}
         />
@@ -622,7 +622,7 @@ function ExportsPageInner() {
             <div className="ex-note is-hot" style={{ marginBottom: 12 }}>
               <Icon name="alert" size={14} strokeWidth={2.2} />
               <span>
-                {totals.lut_gap} file{totals.lut_gap === 1 ? '' : 's'} claim a LUT this register cannot match to the date of
+                {plural(totals.lut_gap, 'file')} claim a LUT this register cannot match to the date of
                 export. Without an undertaking in force for that year the supply is not zero-rated without payment — IGST
                 becomes payable, and refundable under rule 96.
               </span>
@@ -634,7 +634,7 @@ function ExportsPageInner() {
               <div className="ex-unpapered-head">
                 <Icon name="invoice" size={14} />
                 <span>
-                  {unpapered.length} export invoice{unpapered.length === 1 ? '' : 's'} in the books with no file here.
+                  {plural(unpapered.length, 'export invoice')} in the books with no file here.
                   The return is going to be filed from the invoice whether the shipping bill is written down or not.
                 </span>
               </div>
@@ -767,7 +767,7 @@ function ExportsPageInner() {
                 </div>
               ))}
               <div className="ex-foot">
-                <span>{watch.length} dated obligation{watch.length === 1 ? '' : 's'} on {totals.files} file{totals.files === 1 ? '' : 's'}.</span>
+                <span>{plural(watch.length, 'dated obligation')} on {plural(totals.files, 'file')}.</span>
                 <span className="ex-foot-links"><Button size="sm" variant="ghost" icon="download" onClick={exportWatch}>Watch list CSV</Button></span>
               </div>
             </>
@@ -867,7 +867,7 @@ function ExportsPageInner() {
                   </div>
                 ))}
                 <div className="ex-foot">
-                  <span>{track.groups.length} bill{track.groups.length === 1 ? '' : 's'} · {track.groups.reduce((s, g) => s + g.members.length, 0)} file{track.groups.length === 1 ? '' : 's'}.</span>
+                  <span>{plural(track.groups.length, 'bill')} · {plural(track.groups.reduce((s, g) => s + g.members.length, 0), 'file')}.</span>
                   <span className="ex-foot-links">
                     <Button size="sm" variant="ghost" icon="download" onClick={exportTrack}>Refund track CSV</Button>
                     <Link href="/gst/filings">The returns register</Link>

@@ -36,6 +36,7 @@ import {
 import { stateNameFor } from '@/lib/einvoice'
 import { newId, todayISO } from '@/lib/batches'
 import { isUsableLine, lineToItemFields, type FlowDoc, type FlowLine } from '@/lib/orderflow'
+import { plural, pluralNoun } from '@/lib/format'
 
 export { todayISO }
 
@@ -58,19 +59,24 @@ export interface FrequencySpec {
   /** Month-based cadences keep the anchor's day of month; day-based ones just add. */
   months: number
   days: number
-  /** "Every month" reads better than "every 1 months" in the cadence line. */
-  one: string
-  many: string
+  /**
+   * The cadence's noun, singular — "day", "fortnight", "half-year".
+   *
+   * This table once carried both spellings ("day" and "days"), which made it a second pluraliser sitting
+   * beside the kit's own, and the two could only ever drift. The count is printed by the caller and the
+   * ending comes from `pluralNoun()`, so "Every 2 fortnights" is the kit's English, not a remembered one.
+   */
+  unit: string
 }
 
 export const FREQUENCIES: FrequencySpec[] = [
-  { value: 'daily', label: 'Daily', months: 0, days: 1, one: 'day', many: 'days' },
-  { value: 'weekly', label: 'Weekly', months: 0, days: 7, one: 'week', many: 'weeks' },
-  { value: 'fortnightly', label: 'Fortnightly', months: 0, days: 14, one: 'fortnight', many: 'fortnights' },
-  { value: 'monthly', label: 'Monthly', months: 1, days: 0, one: 'month', many: 'months' },
-  { value: 'quarterly', label: 'Quarterly', months: 3, days: 0, one: 'quarter', many: 'quarters' },
-  { value: 'half-yearly', label: 'Every 6 months', months: 6, days: 0, one: 'half-year', many: 'half-years' },
-  { value: 'yearly', label: 'Yearly', months: 12, days: 0, one: 'year', many: 'years' },
+  { value: 'daily', label: 'Daily', months: 0, days: 1, unit: 'day' },
+  { value: 'weekly', label: 'Weekly', months: 0, days: 7, unit: 'week' },
+  { value: 'fortnightly', label: 'Fortnightly', months: 0, days: 14, unit: 'fortnight' },
+  { value: 'monthly', label: 'Monthly', months: 1, days: 0, unit: 'month' },
+  { value: 'quarterly', label: 'Quarterly', months: 3, days: 0, unit: 'quarter' },
+  { value: 'half-yearly', label: 'Every 6 months', months: 6, days: 0, unit: 'half-year' },
+  { value: 'yearly', label: 'Yearly', months: 12, days: 0, unit: 'year' },
 ]
 
 export const END_MODES: { value: EndMode; label: string }[] = [
@@ -310,7 +316,7 @@ export function deleteSchedule(orgId: string, id: string): { ok: true; schedules
   if (found.occurrences.length > 0) {
     return {
       ok: false,
-      error: `${found.name} has raised ${found.occurrences.length} invoice${found.occurrences.length === 1 ? '' : 's'}. Those bills `
+      error: `${found.name} has raised ${plural(found.occurrences.length, 'invoice')}. Those bills `
         + 'are in your books, so the schedule that produced them stays on the record — pause it instead.',
     }
   }
@@ -503,7 +509,7 @@ function ordinal(n: number): string {
 
 export function cadenceLine(s: Schedule): string {
   const f = frequencyOf(s.frequency)
-  const unit = s.interval === 1 ? f.one : f.many
+  const unit = pluralNoun(s.interval, f.unit)
   const every = s.interval === 1 ? 'Every' : `Every ${s.interval}`
   const day = parseISO(s.anchor_date)?.d
   const suffix = f.months && day ? ` · on the ${day}${ordinal(day)}` : ''

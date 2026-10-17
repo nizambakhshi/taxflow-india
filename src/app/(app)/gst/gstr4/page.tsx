@@ -27,6 +27,7 @@ import {
 } from '@/lib/gstr4'
 import { Badge, Button, Card, EmptyState, PageHeader, Segmented, StatCard } from '@/components/ui'
 import Icon from '@/components/Icons'
+import { plural } from '@/lib/format'
 
 type Tab = 'overview' | 'cmp08' | 'debit' | 'risks'
 
@@ -308,7 +309,7 @@ export default function Gstr4Page() {
             <Segmented value={tab} onChange={v => setTab(v as Tab)} options={TABS} />
             <span className="g4-tabs-note">
               {declaredCount ? `${declaredCount} of 4 quarters declared` : 'Nothing declared yet'}
-              {riskCount ? ` · ${riskCount} finding${riskCount > 1 ? 's' : ''} that bar the scheme` : ''}
+              {riskCount ? ` · ${plural(riskCount, 'finding')} that bar the scheme` : ''}
               {state.updatedAt ? ` · saved ${new Date(state.updatedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}` : ''}
             </span>
           </div>
@@ -492,7 +493,7 @@ export default function Gstr4Page() {
                 <div className="g4-card-head">
                   <div className="g4-sect">
                     <span className="g4-chip" style={{ background: wp.risks.length ? 'var(--red)' : 'var(--green)' }} />
-                    <h2>{wp.risks.length ? `${wp.risks.length} document finding${wp.risks.length > 1 ? 's' : ''}` : 'No barred supply found'}</h2>
+                    <h2>{wp.risks.length ? `${plural(wp.risks.length, 'document finding')}` : 'No barred supply found'}</h2>
                   </div>
                   <p>One inter-state outward bill, one export, one chapter outside the scheme — any of these ends
                     the composition option from the day it happened, not from the year end.</p>

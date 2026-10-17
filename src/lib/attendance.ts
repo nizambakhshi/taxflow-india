@@ -457,9 +457,9 @@ export function marksFromPlan(plan: AttendancePlan, month: string, today = today
   const dedup = new Map<string, DayMark>()
   for (const m of marks) dedup.set(`${m.employee_id}|${m.date}`, m)
   const kept = [...dedup.values()]
-  notes.push(`${kept.length} day mark${kept.length === 1 ? '' : 's'} for ${per.size} ${per.size === 1 ? 'person' : 'people'}. The marks are what the sheet wrote — a day it left blank stays blank.`)
+  notes.push(`${plural(kept.length, 'day mark')} for ${per.size} ${per.size === 1 ? 'person' : 'people'}. The marks are what the sheet wrote — a day it left blank stays blank.`)
   if (skipped.length) {
-    notes.push(`${skipped.length} row${skipped.length === 1 ? '' : 's'} on the sheet carr${skipped.length === 1 ? 'ies' : 'y'} no mark at all. The book leaves ${skipped.length === 1 ? 'that person' : 'those people'} exactly as they stand — a blank row is not a month of presents, and it is not a refusal either.`)
+    notes.push(`${plural(skipped.length, 'row')} on the sheet carr${skipped.length === 1 ? 'ies' : 'y'} no mark at all. The book leaves ${skipped.length === 1 ? 'that person' : 'those people'} exactly as they stand — a blank row is not a month of presents, and it is not a refusal either.`)
   }
   return { marks: kept, people: per.size, per_person: [...per.entries()].map(([employee_id, v]) => ({ employee_id, name: v.name, days: v.days })), notes, refusals }
 }

@@ -13,7 +13,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { formatDateIN } from '@/lib/format'
+import { formatDateIN, plural } from '@/lib/format'
 import { formatINR } from '@/lib/gst-engine'
 import { fmtQty } from '@/lib/reorder'
 import { toCsv } from '@/lib/registers'
@@ -63,9 +63,9 @@ function matchesView(v: BatchView, view: ViewFilter): boolean {
 
 function daysText(v: Pick<BatchView, 'daysLeft'>): string {
   if (v.daysLeft === null) return 'No expiry'
-  if (v.daysLeft < 0) return `Expired ${-v.daysLeft} day${v.daysLeft === -1 ? '' : 's'} ago`
+  if (v.daysLeft < 0) return `Expired ${plural(Math.abs(v.daysLeft), 'day')} ago`
   if (v.daysLeft === 0) return 'Expires today'
-  return `${v.daysLeft} day${v.daysLeft === 1 ? '' : 's'} left`
+  return `${plural(v.daysLeft, 'day')} left`
 }
 
 const inr = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 })
@@ -213,7 +213,7 @@ function BatchesPageInner() {
 
   function removeLot(v: BatchView) {
     const n = moves.filter(m => m.batch_id === v.id).length
-    if (!confirm(`Delete lot ${v.batch_no} of ${v.product_name}?${n ? ` Its ${n} recorded movement${n === 1 ? '' : 's'} go with it.` : ''}`)) return
+    if (!confirm(`Delete lot ${v.batch_no} of ${v.product_name}?${n ? ` Its ${plural(n, 'recorded movement')} ${n === 1 ? 'goes' : 'go'} with it.` : ''}`)) return
     const next = deleteBatch(orgId, v.id)
     setBatches(next.batches)
     setMoves(next.moves)
@@ -243,7 +243,7 @@ function BatchesPageInner() {
     setMoves(appendMoves(orgId, fresh))
     const label = liveProducts.find(p => p.id === alloc.productId)?.name || 'item'
     const where = alloc.godownId ? ` in ${godownById(godowns, alloc.godownId).name}` : ''
-    flash(`Drew ${qty - preview.shortfall} × ${label}${where} from ${preview.picks.length} lot${preview.picks.length === 1 ? '' : 's'}${preview.shortfall > 0 ? ` — ${preview.shortfall} had no batch recorded` : ''}.`)
+    flash(`Drew ${qty - preview.shortfall} × ${label}${where} from ${plural(preview.picks.length, 'lot')}${preview.shortfall > 0 ? ` — ${preview.shortfall} had no batch recorded` : ''}.`)
     setAlloc(null)
   }
 
@@ -312,7 +312,7 @@ function BatchesPageInner() {
       <div className="bt-stats">
         <StatCard
           label="On the shelf" value={String(summary.live)}
-          sub={`${summary.lots === 0 ? 'no lots yet' : `${summary.lots} lot${summary.lots === 1 ? '' : 's'} recorded · ${summary.items} item${summary.items === 1 ? '' : 's'}`}`}
+          sub={`${summary.lots === 0 ? 'no lots yet' : `${plural(summary.lots, 'lot')} recorded · ${plural(summary.items, 'item')}`}`}
           icon="box" tone="blue" delay={0}
         />
         <StatCard
@@ -322,12 +322,12 @@ function BatchesPageInner() {
         />
         <StatCard
           label={`Expiring in ${EXPIRY_CRITICAL_DAYS} days`} value={money(summary.d30.value)}
-          sub={summary.d30.count ? `${summary.d30.count} lot${summary.d30.count === 1 ? '' : 's'} — sell or flag them` : 'nothing in the danger window'}
+          sub={summary.d30.count ? `${plural(summary.d30.count, 'lot')} — sell or flag them` : 'nothing in the danger window'}
           icon="clock" tone={summary.d30.count ? 'amber' : 'green'} delay={80}
         />
         <StatCard
           label="Expired" value={money(summary.expired.value)}
-          sub={summary.expired.count ? `${summary.expired.count} lot${summary.expired.count === 1 ? '' : 's'} past expiry` : 'nothing past its date'}
+          sub={summary.expired.count ? `${plural(summary.expired.count, 'lot')} past expiry` : 'nothing past its date'}
           icon="alert" tone={summary.expired.count ? 'red' : 'green'} delay={120}
         />
       </div>
@@ -603,7 +603,7 @@ function BatchesPageInner() {
                   onChange={e => { setAlloc(a => (a ? { ...a, productId: e.target.value } : a)); setAllocError('') }}>
                   <option value="">Select item…</option>
                   {liveProducts.map(p => (
-                    <option key={p.id} value={p.id}>{p.name} — {p.left.toLocaleString('en-IN')} left in {p.lots} lot{p.lots === 1 ? '' : 's'}</option>
+                    <option key={p.id} value={p.id}>{p.name} — {p.left.toLocaleString('en-IN')} left in {plural(p.lots, 'lot')}</option>
                   ))}
                 </select>
               </label>
@@ -672,13 +672,13 @@ function BatchesPageInner() {
                 {allocExpiredTakes > 0 && (
                   <p className="bt-warn">
                     <Icon name="alert" size={13} strokeWidth={2.2} />
-                    {allocExpiredTakes} unit{allocExpiredTakes === 1 ? '' : 's'} come from lots already past expiry — that stock should not have gone out.
+                    {plural(allocExpiredTakes, 'unit')} {allocExpiredTakes === 1 ? 'comes' : 'come'} from lots already past expiry — that stock should not have gone out.
                   </p>
                 )}
                 {allocPreview.shortfall > 0 && (
                   <p className="bt-warn">
                     <Icon name="alert" size={13} strokeWidth={2.2} />
-                    {allocPreview.shortfall} unit{allocPreview.shortfall === 1 ? '' : 's'} have no batch recorded and stay off the register.
+                    {plural(allocPreview.shortfall, 'unit')} {allocPreview.shortfall === 1 ? 'has' : 'have'} no batch recorded and {allocPreview.shortfall === 1 ? 'stays' : 'stay'} off the register.
                   </p>
                 )}
               </div>

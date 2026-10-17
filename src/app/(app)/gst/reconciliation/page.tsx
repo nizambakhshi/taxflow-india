@@ -10,6 +10,7 @@ import { download } from '@/lib/party-ledger'
 import { Badge, Button, Card, EmptyState, PageHeader, StatCard } from '@/components/ui'
 import type { Tone } from '@/components/ui'
 import Icon from '@/components/Icons'
+import { plural } from '@/lib/format'
 import {
   BookRecord,
   CSV_TEMPLATE_EXAMPLE,
@@ -345,7 +346,7 @@ export default function Gstr2bReconciliationPage() {
         title="GSTR-2B reconciliation"
         subtitle={portalRecords
           ? `${books.length} bills in your books against ${portalRecords.length} records in 2B`
-          : `Match the ${books.length} ITC-eligible purchase bill${books.length === 1 ? '' : 's'} in your books against GSTR-2B`}
+          : `Match the ${plural(books.length, 'ITC-eligible purchase bill')} in your books against GSTR-2B`}
         actions={
           <select
             className="tf-input"
@@ -424,7 +425,7 @@ export default function Gstr2bReconciliationPage() {
           <EmptyState
             icon="compare"
             title="No 2B statement loaded"
-            message={`You have ${books.length} ITC-eligible bill${books.length === 1 ? '' : 's'} in ${periodLabel(selectedPeriod)}. Upload the 2B file and this page shows:`}
+            message={`You have ${plural(books.length, 'ITC-eligible bill')} in ${periodLabel(selectedPeriod)}. Upload the 2B file and this page shows:`}
             action={
               <ul className="rc-checklist">
                 <li>ITC at risk — bills your supplier has not reported to the portal</li>

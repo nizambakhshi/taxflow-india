@@ -27,6 +27,7 @@
 
 import { newId, todayISO } from '@/lib/batches'
 import { INDIAN_STATES, validateGSTIN } from '@/lib/constants'
+import { plural } from '@/lib/format'
 
 const KEY_CC = 'taxflow:ccentres:'
 /** Today's shape. A stored envelope with a different version is read as empty, not guessed at. */
@@ -576,7 +577,7 @@ export function deleteCentre(orgId: string, id: string): { ok: boolean; error: s
   if (used > 0) {
     return {
       ok: false,
-      error: `${used} document${used === 1 ? '' : 's'} still carr${used === 1 ? 'ies' : 'y'} a share to this centre — archive it instead, or reassign those documents first`,
+      error: `${plural(used, 'document')} still carr${used === 1 ? 'ies' : 'y'} a share to this centre — archive it instead, or reassign those documents first`,
       store,
     }
   }
@@ -905,7 +906,7 @@ export function centreViews(list: CostCentre[], sheetList: DocSheet[], homeState
       problems.push(`This centre’s GSTIN begins ${centre.gstin.slice(0, 2)} (${stateLabel(centre.gstin.slice(0, 2)) || 'an unknown state'}), but the state recorded here is ${stateLabel(centre.state) || centre.state} — one of the two is mistyped`)
     }
     if (centre.archived && docs > 0) {
-      problems.push(`Archived, yet ${docs} document${docs === 1 ? '' : 's'} still carr${docs === 1 ? 'ies' : 'y'} a share to it`)
+      problems.push(`Archived, yet ${plural(docs, 'document')} still carr${docs === 1 ? 'ies' : 'y'} a share to it`)
     }
 
     return {

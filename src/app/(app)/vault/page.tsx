@@ -35,7 +35,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { formatDateIN } from '@/lib/format'
+import { formatDateIN, plural } from '@/lib/format'
 import {
   LARGE_VAULT_CHARS, NOT_IN_THE_VAULT, PLAN_STATE_META, REGISTERS, VAULT_FAULT_COPY,
   applyRestore, atRiskRows, browseRegisters, collectVault, daysSinceBackup, defaultSelection, downloadVault,
@@ -360,7 +360,7 @@ function VaultPageInner() {
     const f = snap.freshness
     if (!f) return null
     const c = f.counts
-    const at = f.at ? `${when(f.at)} (${f.days === null ? '—' : f.days === 0 ? 'today' : `${f.days} day${f.days === 1 ? '' : 's'} ago`})` : ''
+    const at = f.at ? `${when(f.at)} (${f.days === null ? '—' : f.days === 0 ? 'today' : `${plural(f.days, 'day')} ago`})` : ''
     return {
       at,
       counts: c,
@@ -792,7 +792,7 @@ function VaultPageInner() {
                     <label className="tfv-confirm">
                       <input type="checkbox" className="tfv-check" checked={confirm} onChange={ev => setConfirm(ev.target.checked)} />
                       <span>
-                        I understand this replaces {plan.counts.replace} register{plan.counts.replace === 1 ? '' : 's'} that
+                        I understand this replaces {plural(plan.counts.replace, 'register')} that
                         already hold content
                         {plan.counts.blank > 0 ? ` and clears ${plan.counts.blank} the file left empty` : ''} — the browser
                         copy cannot be got back after this.
@@ -802,11 +802,11 @@ function VaultPageInner() {
                   <div className="tfv-plan-foot-row">
                     <span className="tfv-foot-hint">
                       {picked.length
-                        ? `${picked.length} register${picked.length === 1 ? '' : 's'} chosen · each is written through its own page's save and read back`
+                        ? `${plural(picked.length, 'register')} chosen · each is written through its own page's save and read back`
                         : 'Nothing chosen yet'}
                     </span>
                     <Button variant="danger" icon="undo" disabled={!canRestore} onClick={runRestore}>
-                      Restore {picked.length ? `${picked.length} register${picked.length === 1 ? '' : 's'}` : ''}
+                      Restore {picked.length ? `${plural(picked.length, 'register')}` : ''}
                     </Button>
                   </div>
                 </div>
@@ -912,7 +912,7 @@ function VaultPageInner() {
                 <div className="tfv-risk">
                   <div className="tfv-risk-head">
                     <Icon name="alert" size={13} />
-                    <span>What a wipe would take with it — {atRisk.length} book{atRisk.length === 1 ? '' : 's'} with content newer than any file you have taken</span>
+                    <span>What a wipe would take with it — {plural(atRisk.length, 'book')} with content newer than any file you have taken</span>
                   </div>
                   {atRisk.map(r => (
                     <div key={r.id} className="tfv-risk-row">
@@ -939,7 +939,7 @@ function VaultPageInner() {
             <div key={section.group} className="tfv-section">
               <div className="tfv-section-head">
                 <h2><Icon name={section.group === 'evidence' ? 'book' : 'layers'} size={14} />{GROUP_LABEL[section.group]}</h2>
-                <span className="tfv-section-sub">{section.rows.length} register{section.rows.length === 1 ? '' : 's'} shown</span>
+                <span className="tfv-section-sub">{plural(section.rows.length, 'register')} shown</span>
               </div>
               <div className="table-frame">
                 <div className="responsive-table">
@@ -1182,7 +1182,7 @@ function VaultPageInner() {
             <div key={section.cls} className="tfv-section">
               <div className="tfv-section-head">
                 <h2><Icon name={CLASS_META[section.cls].serverBound ? 'cloud' : 'shield'} size={14} />{CLASS_META[section.cls].label}</h2>
-                <span className="tfv-section-sub">{section.rows.length} register{section.rows.length === 1 ? '' : 's'} · {CLASS_META[section.cls].serverBound ? 'belongs on a server' : 'stays on the device'}</span>
+                <span className="tfv-section-sub">{plural(section.rows.length, 'register')} · {CLASS_META[section.cls].serverBound ? 'belongs on a server' : 'stays on the device'}</span>
               </div>
               <div className="table-frame">
                 <div className="responsive-table">

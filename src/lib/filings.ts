@@ -653,7 +653,7 @@ export function estimateLateFee(args: {
     : 0
   const prints: string[] = []
   if (days > 0 && slab.perDay > 0) {
-    prints.push(`₹${slab.perDay} a day for ${days} day${days === 1 ? '' : 's'} = ₹${raw.toLocaleString('en-IN')}, `
+    prints.push(`₹${slab.perDay} a day for ${plural(days, 'day')} = ₹${raw.toLocaleString('en-IN')}, `
       + `against a ceiling of ${slab.capText}.` + (fee < raw ? ' The fee printed is the ceiling.' : ''))
   }
   if (days > 0 && args.tax > 0) {
@@ -1256,7 +1256,7 @@ export function deleteFiling(orgId: string, id: string, reason = ''): FilingDele
   if (record.status !== 'not_filed' && waiting.length) {
     return {
       ok: false, store,
-      why: `${FORM_META[record.form].label} for ${periodLabel(record.period)} is recorded as filed and ${waiting.length} amendment${waiting.length === 1 ? '' : 's'} still point${waiting.length === 1 ? 's' : ''} at that period. Close or re-date the amendments first — a correction that belongs to no return is not a record.`,
+      why: `${FORM_META[record.form].label} for ${periodLabel(record.period)} is recorded as filed and ${plural(waiting.length, 'amendment')} still point${waiting.length === 1 ? 's' : ''} at that period. Close or re-date the amendments first — a correction that belongs to no return is not a record.`,
       trail: '',
     }
   }
@@ -1669,7 +1669,7 @@ export function amendmentCost(
   const still = a.status === 'open'
   const why = still
     ? `Interest under section 50 on ₹${a.tax.toLocaleString('en-IN')} of tax left unpaid since ${dueOn} — `
-      + `${days} day${days === 1 ? '' : 's'} so far, read to today because nothing has been paid on this row yet. `
+      + `${plural(days, 'day')} so far, read to today because nothing has been paid on this row yet. `
       + `It adds about ₹${perDay.toLocaleString('en-IN')} for every further day it stays open.`
     : `Recorded as carried${a.carried_in ? ` through ${a.carried_in}` : ''}, but this register holds no date the tax `
       + `was paid, so the clock cannot be stopped honestly. Read to today (${days} days) as an upper figure — `
@@ -2419,7 +2419,7 @@ export function sealFilingsPeriod(
   return {
     result: {
       ok: false, store,
-      why: `A seal closes a month or a year. ${periodLabel(period)} is ${open.length} month${open.length === 1 ? '' : 's'} of paper — seal ${open.join(', ')} at /audit, one month at a time.`,
+      why: `A seal closes a month or a year. ${periodLabel(period)} is ${plural(open.length, 'month')} of paper — seal ${open.join(', ')} at /audit, one month at a time.`,
     },
     label: periodLabel(period),
   }

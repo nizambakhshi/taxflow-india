@@ -6,6 +6,7 @@
 
 import { formatINR } from '@/lib/gst-engine'
 import { computeProfitLoss, type LedgerJournalRow } from '@/lib/ledger'
+import { pluralNoun } from '@/lib/format'
 
 type Row = Record<string, any>
 
@@ -502,7 +503,7 @@ function groupSum(rows: Row[], key: (r: Row) => string | null, value: (r: Row) =
     map.set(label, cur)
   }
   return [...map.entries()]
-    .map(([label, v]) => ({ label, value: v.value, meta: `${v.count} ${v.count === 1 ? 'entry' : 'entries'}` }))
+    .map(([label, v]) => ({ label, value: v.value, meta: `${v.count} ${pluralNoun(v.count, 'entry')}` }))
     .sort((a, b) => b.value - a.value)
     .slice(0, limit)
 }
@@ -519,7 +520,7 @@ function monthlyCounts(rows: Row[], limit = 12): AnswerRow[] {
     .map(([key, value]) => ({
       label: key === 'undated' ? 'Undated' : `${MONTH_ABBR[fromISO(`${key}-01`).getMonth()]} ${key.slice(0, 4)}`,
       value,
-      meta: `${value} ${value === 1 ? 'invoice' : 'invoices'}`,
+      meta: `${value} ${pluralNoun(value, 'invoice')}`,
     }))
 }
 
@@ -721,8 +722,8 @@ function askSales(ctx: Ctx): AskAnswer {
   const tax = product ? sumBy(lines, lineTax) : sumBy(invoices, r => num(r.total_tax))
   const grand = product ? taxable + tax : sumBy(invoices, r => num(r.grand_total))
   const docLabel = product
-    ? `${lines.length} ${lines.length === 1 ? 'line' : 'lines'} billed`
-    : `${invoices.length} ${invoices.length === 1 ? 'invoice' : 'invoices'}`
+    ? `${lines.length} ${pluralNoun(lines.length, 'line')} billed`
+    : `${invoices.length} ${pluralNoun(invoices.length, 'invoice')}`
   const scoped = !!(ctx.filters.party || product)
   const measure = (s: string, e: string) => salesTaxable(ctx, s, e)
   const cmp = buildComparison(ctx, taxable, measure)
@@ -750,8 +751,8 @@ function askCollections(ctx: Ctx): AskAnswer {
     intent: 'collections',
     headline: 'Money received',
     value: money(received),
-    note: `${rows.length} ${rows.length === 1 ? 'payment' : 'payments'} recorded`,
-    sentence: `You collected ${money(received)} in ${rows.length} ${rows.length === 1 ? 'payment' : 'payments'} during ${ctx.period.label}.` + (cmp ? ` ${trendNote(cmp)}` : ''),
+    note: `${rows.length} ${pluralNoun(rows.length, 'payment')} recorded`,
+    sentence: `You collected ${money(received)} in ${rows.length} ${pluralNoun(rows.length, 'payment')} during ${ctx.period.label}.` + (cmp ? ` ${trendNote(cmp)}` : ''),
     rows: groupSum(rows, r => r.party_name, r => num(r.amount), 8),
     rowsCaption: 'Who paid',
     series: seriesFor(ctx.period, (s, e) => sumBy(paymentRows(ctx, 'received', s, e), r => num(r.amount))),
@@ -798,8 +799,8 @@ function askPurchases(ctx: Ctx): AskAnswer {
     intent: 'purchases',
     headline: ctx.filters.party ? 'Purchases from this vendor' : 'Taxable purchases',
     value: money(taxable),
-    note: `${rows.length} ${rows.length === 1 ? 'bill' : 'bills'} · GST ${money(tax)} · ITC eligible ${money(itc)}`,
-    sentence: `You recorded ${money(taxable)} of taxable purchases across ${rows.length} ${rows.length === 1 ? 'bill' : 'bills'} in ${ctx.period.label}. ${money(itc)} of that carries ITC you can claim.` + (cmp ? ` ${trendNote(cmp)}` : ''),
+    note: `${rows.length} ${pluralNoun(rows.length, 'bill')} · GST ${money(tax)} · ITC eligible ${money(itc)}`,
+    sentence: `You recorded ${money(taxable)} of taxable purchases across ${rows.length} ${pluralNoun(rows.length, 'bill')} in ${ctx.period.label}. ${money(itc)} of that carries ITC you can claim.` + (cmp ? ` ${trendNote(cmp)}` : ''),
     rows: ctx.filters.party ? [] : groupSum(rows, r => r.vendor_name, r => num(r.taxable_amount), 8),
     rowsCaption: 'Vendor spend',
     series: seriesFor(ctx.period, (s, e) => sumBy(purchaseBills(ctx, s, e), r => num(r.taxable_amount))),
@@ -836,10 +837,10 @@ function askExpenses(ctx: Ctx): AskAnswer {
     intent: 'expenses',
     headline: ctx.filters.category ? `Expenses — ${ctx.filters.category}` : 'Total expenses',
     value: money(net),
-    note: `${rows.length} ${rows.length === 1 ? 'entry' : 'entries'} · GST on them ${money(gst)}`,
+    note: `${rows.length} ${pluralNoun(rows.length, 'entry')} · GST on them ${money(gst)}`,
     sentence: ctx.filters.category
-      ? `${ctx.filters.category} expenses were ${money(net)} in ${ctx.period.label}, across ${rows.length} ${rows.length === 1 ? 'entry' : 'entries'}.`
-      : `You spent ${money(net)} (net of GST) in ${ctx.period.label} across ${rows.length} ${rows.length === 1 ? 'expense' : 'expenses'}.` + (cmp ? ` ${trendNote(cmp)}` : ''),
+      ? `${ctx.filters.category} expenses were ${money(net)} in ${ctx.period.label}, across ${rows.length} ${pluralNoun(rows.length, 'entry')}.`
+      : `You spent ${money(net)} (net of GST) in ${ctx.period.label} across ${rows.length} ${pluralNoun(rows.length, 'expense')}.` + (cmp ? ` ${trendNote(cmp)}` : ''),
     rows: groupSum(rows, r => r.category, r => expenseNet(r), 8),
     rowsCaption: 'By category',
     series: seriesFor(ctx.period, (s, e) => sumBy(expenseRows(ctx, s, e), r => expenseNet(r))),
@@ -859,7 +860,7 @@ function askExpenseBreakdown(ctx: Ctx): AskAnswer {
     intent: 'expense_breakdown',
     headline: 'Expense breakdown',
     value: money(net),
-    note: `${grouped.length} ${grouped.length === 1 ? 'category' : 'categories'}`,
+    note: `${grouped.length} ${pluralNoun(grouped.length, 'category')}`,
     sentence: `Your ${money(net)} of expenses in ${ctx.period.label} splits as ${grouped.slice(0, 4).map(g => `${g.label} ${money(g.value)}`).join(', ')}${grouped.length > 4 ? ', and the rest elsewhere' : ''}.`,
     rows: grouped.map(g => ({ ...g, meta: `${net > 0 ? ((g.value / net) * 100).toFixed(1) : '0'}% of spend` })),
     rowsCaption: 'Biggest categories first',
@@ -916,7 +917,7 @@ function askProfit(ctx: Ctx): AskAnswer {
     },
     caveats: ['Profit here is sales minus purchases minus expenses. It does not yet value opening/closing stock, so it is a management view, not a filed P&L.']
       .concat(fromJournal
-        ? [`This period also reads ${pl.journal.entries} journal ${pl.journal.entries === 1 ? 'posting' : 'postings'} — the same rows the financial statements fold, tagged "from the journal".`]
+        ? [`This period also reads ${pl.journal.entries} journal ${pluralNoun(pl.journal.entries, 'posting')} — the same rows the financial statements fold, tagged "from the journal".`]
         : []),
     links: [{ label: 'Financial statements', href: '/accounting' }, { label: 'Reports', href: '/reports' }]
       .concat(fromJournal ? [{ label: 'Journal register', href: '/journal' }] : []),
@@ -970,7 +971,7 @@ function askGstItc(ctx: Ctx): AskAnswer {
     headline: 'Input tax credit available',
     value: money(total),
     note: `Bills ${money(p.onBills)} · Expenses ${money(p.onExpenses)}`,
-    sentence: `In ${ctx.period.label} you can claim ${money(total)} of ITC — ${money(p.onBills)} on ${p.bills.length} supplier ${p.bills.length === 1 ? 'bill' : 'bills'} and ${money(p.onExpenses)} on expenses.` + (blocked > 0 ? ` A further ${money(blocked)} sits on bills marked ITC-ineligible, so it is a cost, not a credit.` : ''),
+    sentence: `In ${ctx.period.label} you can claim ${money(total)} of ITC — ${money(p.onBills)} on ${p.bills.length} supplier ${pluralNoun(p.bills.length, 'bill')} and ${money(p.onExpenses)} on expenses.` + (blocked > 0 ? ` A further ${money(blocked)} sits on bills marked ITC-ineligible, so it is a cost, not a credit.` : ''),
     rows: [
       { label: 'On purchase bills', value: p.onBills, meta: `${p.bills.length} bills` },
       { label: 'On expenses marked ITC eligible', value: p.onExpenses, meta: `${p.expenses.length} expenses` },
@@ -1025,8 +1026,8 @@ function askReceivables(ctx: Ctx): AskAnswer {
     intent: 'receivables',
     headline: 'Customers owe you',
     value: money(total),
-    note: `${open.length} unpaid ${open.length === 1 ? 'invoice' : 'invoices'}${overdueAmount > 0 ? ` · ${money(overdueAmount)} over 30 days old` : ''}`,
-    sentence: `As at ${prettyDate(asOf)}, ${money(total)} is still to be collected on ${open.length} unpaid ${open.length === 1 ? 'invoice' : 'invoices'}. Of that, ${money(overdueAmount)} is more than 30 days old. You billed ${money(billedInPeriod)} during ${ctx.period.label}.`,
+    note: `${open.length} unpaid ${pluralNoun(open.length, 'invoice')}${overdueAmount > 0 ? ` · ${money(overdueAmount)} over 30 days old` : ''}`,
+    sentence: `As at ${prettyDate(asOf)}, ${money(total)} is still to be collected on ${open.length} unpaid ${pluralNoun(open.length, 'invoice')}. Of that, ${money(overdueAmount)} is more than 30 days old. You billed ${money(billedInPeriod)} during ${ctx.period.label}.`,
     rows: groupSum(open, r => r.customer_name, r => num(r.balance_due), 10).map(g => ({ ...g, meta: `${g.meta} outstanding` })),
     rowsCaption: 'Biggest balances first',
     caveats: ['Balance due is read from the invoice record, so it only reflects payments entered on the Payments screen.'],
@@ -1046,8 +1047,8 @@ function askPayables(ctx: Ctx): AskAnswer {
     intent: 'payables',
     headline: 'You owe vendors',
     value: money(total),
-    note: `${open.length} unpaid ${open.length === 1 ? 'bill' : 'bills'}`,
-    sentence: `As at ${prettyDate(asOf)}, ${money(total)} is still to be paid to vendors on ${open.length} unpaid ${open.length === 1 ? 'bill' : 'bills'}. You paid out ${money(paidInPeriod)} in ${ctx.period.label}.`,
+    note: `${open.length} unpaid ${pluralNoun(open.length, 'bill')}`,
+    sentence: `As at ${prettyDate(asOf)}, ${money(total)} is still to be paid to vendors on ${open.length} unpaid ${pluralNoun(open.length, 'bill')}. You paid out ${money(paidInPeriod)} in ${ctx.period.label}.`,
     rows: groupSum(open, r => r.vendor_name, r => num(r.balance_due), 10),
     rowsCaption: 'Largest dues first',
     links: [{ label: 'Receivables & payables', href: '/payments' }, { label: 'Bills', href: '/bills' }],
@@ -1064,7 +1065,7 @@ function askInvoiceCount(ctx: Ctx): AskAnswer {
     headline: 'Invoices raised',
     value: count(rows.length),
     note: `Worth ${money(taxable)} · average ${money(avg)}`,
-    sentence: `You raised ${rows.length} ${rows.length === 1 ? 'invoice' : 'invoices'} in ${ctx.period.label}, worth ${money(taxable)}, averaging ${money(avg)} each.` + (draft > 0 ? ` ${draft} of them ${draft === 1 ? 'is' : 'are'} still in draft.` : ''),
+    sentence: `You raised ${rows.length} ${pluralNoun(rows.length, 'invoice')} in ${ctx.period.label}, worth ${money(taxable)}, averaging ${money(avg)} each.` + (draft > 0 ? ` ${draft} of them ${draft === 1 ? 'is' : 'are'} still in draft.` : ''),
     rows: monthlyCounts(rows),
     rowsCaption: 'Invoices per month',
     unit: 'count',
@@ -1081,8 +1082,8 @@ function askAvgInvoice(ctx: Ctx): AskAnswer {
     intent: 'avg_invoice',
     headline: 'Average invoice value',
     value: money(avg),
-    note: `${rows.length} ${rows.length === 1 ? 'invoice' : 'invoices'} · total ${money(taxable)}`,
-    sentence: `The average invoice in ${ctx.period.label} is ${money(avg)}, from ${money(taxable)} spread over ${rows.length} ${rows.length === 1 ? 'invoice' : 'invoices'}.` + (sorted.length ? ` Your largest single invoice was ${money(num(sorted[0].taxable_amount))}.` : ''),
+    note: `${rows.length} ${pluralNoun(rows.length, 'invoice')} · total ${money(taxable)}`,
+    sentence: `The average invoice in ${ctx.period.label} is ${money(avg)}, from ${money(taxable)} spread over ${rows.length} ${pluralNoun(rows.length, 'invoice')}.` + (sorted.length ? ` Your largest single invoice was ${money(num(sorted[0].taxable_amount))}.` : ''),
     rows: sorted.slice(0, 6).map(r => ({
       label: `${r.invoice_number || 'Invoice'} — ${r.customer_name || 'Unnamed'}`,
       value: num(r.taxable_amount),
@@ -1103,7 +1104,7 @@ function askTopCustomers(ctx: Ctx): AskAnswer {
     intent: 'top_customers',
     headline: grouped.length ? `Top customer: ${grouped[0].label}` : 'Top customers',
     value: grouped.length ? money(grouped[0].value) : money(0),
-    note: `${repeat} ${repeat === 1 ? 'customer' : 'customers'} bought in ${ctx.period.label}`,
+    note: `${repeat} ${pluralNoun(repeat, 'customer')} bought in ${ctx.period.label}`,
     sentence: grouped.length
       ? `${grouped[0].label} is your largest customer in ${ctx.period.label} with ${money(grouped[0].value)}, ${total > 0 ? `${((grouped[0].value / total) * 100).toFixed(1)}% of ` : ''}of taxable sales. ${grouped.slice(1, 3).map(g => `${g.label} ${money(g.value)}`).join(', ')}.`
       : `No customer sales fall in ${ctx.period.label}.`,
@@ -1121,7 +1122,7 @@ function askTopVendors(ctx: Ctx): AskAnswer {
     intent: 'top_vendors',
     headline: grouped.length ? `Top vendor: ${grouped[0].label}` : 'Top vendors',
     value: grouped.length ? money(grouped[0].value) : money(0),
-    note: `${rows.length} ${rows.length === 1 ? 'bill' : 'bills'} from ${new Set(rows.map(r => normalize(String(r.vendor_name || '')))).size} vendors`,
+    note: `${rows.length} ${pluralNoun(rows.length, 'bill')} from ${new Set(rows.map(r => normalize(String(r.vendor_name || '')))).size} vendors`,
     sentence: grouped.length
       ? `You spent most with ${grouped[0].label}: ${money(grouped[0].value)} in ${ctx.period.label}${total > 0 ? `, ${((grouped[0].value / total) * 100).toFixed(1)}% of purchases` : ''}. Next: ${grouped.slice(1, 3).map(g => `${g.label} ${money(g.value)}`).join(', ') || 'nobody else'}.`
       : `No purchase bills fall in ${ctx.period.label}.`,

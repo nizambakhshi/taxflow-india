@@ -14,7 +14,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { formatDateIN } from '@/lib/format'
+import { formatDateIN, plural, pluralNoun } from '@/lib/format'
 import { fmtQty } from '@/lib/reorder'
 import { toCsv } from '@/lib/registers'
 import { download } from '@/lib/party-ledger'
@@ -258,12 +258,12 @@ function GodownsPageInner() {
         />
         <StatCard
           label="Value on the register" value={money(totals.value)}
-          sub={totals.liveLots ? `${totals.liveLots} lot${totals.liveLots === 1 ? '' : 's'} · ${totals.units.toLocaleString('en-IN')} units` : 'nothing registered yet'}
+          sub={totals.liveLots ? `${plural(totals.liveLots, 'lot')} · ${totals.units.toLocaleString('en-IN')} units` : 'nothing registered yet'}
           icon="scale" tone="cyan" delay={40}
         />
         <StatCard
           label="Never placed" value={String(totals.unplaced)}
-          sub={totals.unplaced ? `lot${totals.unplaced === 1 ? '' : 's'} read as standing in ${godowns[0].name}` : 'every lot has a home'}
+          sub={totals.unplaced ? `${pluralNoun(totals.unplaced, 'lot')} read as standing in ${godowns[0].name}` : 'every lot has a home'}
           icon={totals.unplaced ? 'alert' : 'check'} tone={totals.unplaced ? 'amber' : 'green'} delay={80}
         />
         <StatCard
@@ -366,7 +366,7 @@ function GodownsPageInner() {
                 {s.unplaced > 0 && (
                   <div className="gd-unplaced">
                     <Icon name="alert" size={13} strokeWidth={2.2} />
-                    {s.unplaced} lot{s.unplaced === 1 ? '' : 's'} never placed — booked before godowns existed, or added without a place.
+                    {plural(s.unplaced, 'lot')} never placed — booked before godowns existed, or added without a place.
                   </div>
                 )}
 
@@ -472,8 +472,8 @@ function GodownsPageInner() {
 
       <div className="gd-foot">
         <span>
-          {stock.length} place{stock.length === 1 ? '' : 's'} · {totals.liveLots} live lot{totals.liveLots === 1 ? '' : 's'}
-          {history.length ? ` · ${history.length} move${history.length === 1 ? '' : 's'} recorded` : ''}
+          {plural(stock.length, 'place')} · {plural(totals.liveLots, 'live lot')}
+          {history.length ? ` · ${plural(history.length, 'move')} recorded` : ''}
         </span>
         <span className="gd-foot-links">
           <Link href="/inventory/batches">Batch register →</Link>

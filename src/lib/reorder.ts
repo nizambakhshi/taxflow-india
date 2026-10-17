@@ -1,3 +1,4 @@
+import { plural } from '@/lib/format'
 // Reorder planning: how much of each stocked product to buy, and when to buy it.
 //
 // Three domain decisions worth writing down:
@@ -361,7 +362,7 @@ export function poCsvRows(groups: PurchaseOrderGroup[]): (string | number)[][] {
 export function orderText(groups: PurchaseOrderGroup[], windowDays: number): string {
   return groups.map(g => {
     const lines = g.rows.map(r => `• ${fmtQty(r.orderQty, r.unit)} — ${r.name}${r.sku ? ` (${r.sku})` : ''}`)
-    return `${g.vendor}\n${lines.join('\n')}\nEst. value ₹${Math.round(g.value).toLocaleString('en-IN')} · ${g.rows.length} item${g.rows.length === 1 ? '' : 's'}`
+    return `${g.vendor}\n${lines.join('\n')}\nEst. value ₹${Math.round(g.value).toLocaleString('en-IN')} · ${plural(g.rows.length, 'item')}`
   }).join('\n\n') + `\n\n(based on the last ${windowDays} days of sales)`
 }
 

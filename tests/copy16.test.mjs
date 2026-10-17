@@ -69,7 +69,7 @@ eq('plural: period again', plural(7, 'period'), '7 periods')
 ok('plural: never hedges', [0, 1, 2, 17].every(n => !plural(n, 'day').includes('(')), plural(17, 'day'))
 ok('plural: always prints the count first', [0, 1, 2, 9, 100].every(n => plural(n, 'invoice').startsWith(`${n} `)))
 ok('plural: never doubles a unit', [1, 2].every(n => !/(s|ies)\s*\1/i.test(plural(n, 'draft'))))
-eq('the kit has five formatters now', Object.keys(formatKit).sort().join(), 'changePct,formatCompactINR,formatDateIN,initials,plural')
+eq('the kit has six formatters now', Object.keys(formatKit).sort().join(), 'changePct,formatCompactINR,formatDateIN,initials,plural,pluralNoun')
 
 // ── B. the bracketed hedge survives only where it is an argument list ─────────
 
@@ -131,10 +131,20 @@ ok('no hedged month, form or head name is left in prose',
 eq('format.ts is the only home for plural', ALL.filter(([, t]) => /export function plural\(/.test(t)).map(([f]) => f).join(), 'lib/format.ts')
 ok('vault.ts no longer defines its own', !/function plural\(/.test(FILES['lib/vault.ts']))
 ok('vault.ts imports the kit one', /import \{[^}]*\bplural\b[^}]*\} from '@\/lib\/format'/.test(FILES['lib/vault.ts']))
-// R3-21 moved this count from 15 to 16, and it is the round's own doing rather than a drift: the
-// seal-drift card on `/audit` counts moved figures with `plural()`, which is exactly where R3-16 said
-// a count like that belongs. A kit that gains an importer when a new card is built is a kit in use.
-eq('files that import plural from the kit', ALL.filter(([, t]) => /import \{[^}]*\bplural\b[^}]*\} from '@\/lib\/format'/.test(t)).length, 16)
+// R3-16 shipped this as a number, R3-21 moved it from 15 to 16 because the seal-drift card on `/audit`
+// counts moved figures with `plural()`, and R3-22 swept the rest of the tree onto the kit: the hand-rolled
+// nouns in the libraries as well as the pages, one page-local `count()` helper, and a hand-written
+// {one, many} table in the cadence spec. A fixed number here is a tax on every page that ever counts, so
+// what is pinned now is the reason the number mattered — a file that says the kit's word has to import it,
+// and the kit is the only place the word is spelled.
+const importers = ALL.filter(([, t]) => /import \{[^}]*\bplural\b[^}]*\} from '@\/lib\/format'/.test(t)).length
+eq('no file calls plural() without importing it',
+  ALL.filter(([f, t]) => f !== 'lib/format.ts' && /\bplural\(/.test(t)
+    && !/import \{[^}]*\bplural\b[^}]*\} from '@\/lib\/format'/.test(t)).map(([f]) => f).join(), '')
+eq('no file calls pluralNoun() without importing it',
+  ALL.filter(([f, t]) => f !== 'lib/format.ts' && /\bpluralNoun\(/.test(t)
+    && !/import \{[^}]*\bpluralNoun\b[^}]*\} from '@\/lib\/format'/.test(t)).map(([f]) => f).join(), '')
+ok('the sweep left the kit with at least the importers R3-21 measured', importers >= 16, `${importers}`)
 
 // ── D. one action, one offer ─────────────────────────────────────────────────
 

@@ -394,7 +394,7 @@ function FxPageInner() {
     setFeed({ written: results.map(r => r.code), missing: gaps, failed: [...new Set(failed)] })
     setFetching(false)
     flash(results.length
-      ? `${results.length} rate${results.length === 1 ? '' : 's'} written — stamped as a reference table, which is indicative and not the Rule 45 notification.`
+      ? `${plural(results.length, 'rate')} written — stamped as a reference table, which is indicative and not the Rule 45 notification.`
       : 'The reference table gave nothing usable. The ledger keeps the rates you typed.')
   }
 
@@ -430,12 +430,12 @@ function FxPageInner() {
       <div className="fx-stats">
         <StatCard
           label="Exposure today" value={roll.exposure_inr}
-          sub={`${roll.open_count} deal${roll.open_count === 1 ? '' : 's'} awaiting a remittance · booked at ${inr(roll.outstanding_inr)}`}
+          sub={`${plural(roll.open_count, 'deal')} awaiting a remittance · booked at ${inr(roll.outstanding_inr)}`}
           icon="globe" tone="cyan" delay={0}
         />
         <StatCard
           label="Unrealised movement" value={signedRupees(roll.unrealised)}
-          sub={`paper until the money lands · ${unvalued} deal${unvalued === 1 ? '' : 's'} have no rate to revalue on`}
+          sub={`paper until the money lands · ${plural(unvalued, 'deal')} ${unvalued === 1 ? 'has' : 'have'} no rate to revalue on`}
           icon="trend" tone={roll.unrealised > 0 ? 'green' : roll.unrealised < 0 ? 'red' : 'grey'} delay={40}
         />
         <StatCard
@@ -544,7 +544,7 @@ function FxPageInner() {
                     <span className="fx-card-sub">
                       {v.book?.customer_name || e.party_name || 'no customer named'}
                       {' · '}invoiced {dayOrDash(e.invoice_date)}
-                      {v.due_days !== null ? ` · ${v.due_days} day${v.due_days === 1 ? '' : 's'} old` : ''}
+                      {v.due_days !== null ? ` · ${plural(v.due_days, 'day')} old` : ''}
                     </span>
                   </div>
                   <div className="fx-card-badges">
@@ -718,7 +718,7 @@ function FxPageInner() {
                   <span data-label="Rate" className="fx-num">{rateLabel(r.rate, r.code)}</span>
                   <span data-label="Applies to" className="fx-num">{dayOrDash(r.as_of)}</span>
                   <span data-label="Age" className={age === 0 ? 'fx-sub' : age > 0 ? 'fx-amber' : 'fx-sub'}>
-                    {age === 0 ? 'today' : age < 0 ? `${-age} day${-age === 1 ? '' : 's'} ahead` : `${age} day${age === 1 ? '' : 's'} old`}
+                    {age === 0 ? 'today' : age < 0 ? `${plural(-age, 'day')} ahead` : `${plural(age, 'day')} old`}
                   </span>
                   <span data-label="Source">
                     <Badge tone={r.source === 'feed' ? 'cyan' : 'grey'} dot={false}>
@@ -803,7 +803,7 @@ function FxPageInner() {
 
       <div className="fx-foot">
         <span>
-          {views.length} deal{views.length === 1 ? '' : 's'} on the register · {rates.length} currenc{rates.length === 1 ? 'y has' : 'ies have'} a rate ·{' '}
+          {plural(views.length, 'deal')} on the register · {rates.length} currenc{rates.length === 1 ? 'y has' : 'ies have'} a rate ·{' '}
           {inr(roll.exposure_inr)} revalued, {inr(roll.unvalued_inr)} of it with no rate to revalue on.
         </span>
         <span className="fx-foot-links">

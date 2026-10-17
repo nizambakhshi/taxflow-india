@@ -14,6 +14,7 @@
  */
 
 import { fyLabel, fyMonths, monthOf } from '@/lib/targets'
+import { plural } from '@/lib/format'
 
 /* ── money primitives ───────────────────────────────────────────────────── */
 
@@ -648,7 +649,7 @@ export function cautions(input: CautionInput): Caution[] {
   if (noGstinB2b.length) {
     out.push({
       id: 'outward-no-gstin', level: 'amber',
-      title: `${noGstinB2b.length} taxable invoice${noGstinB2b.length > 1 ? 's' : ''} report as B2C because the customer GSTIN is missing`,
+      title: `${plural(noGstinB2b.length, 'taxable invoice')} report as B2C because the customer GSTIN is missing`,
       detail: `₹${Math.round(taxableNoGstin.taxable)} sits in Table 4.A(c) instead of 4.A(a). Consolidated B2C is harder to defend at assessment time.`,
       href: '/invoices',
     })
@@ -658,7 +659,7 @@ export function cautions(input: CautionInput): Caution[] {
   if (creditNotes.length) {
     out.push({
       id: 'credit-notes', level: 'info',
-      title: `${creditNotes.length} credit note${creditNotes.length > 1 ? 's' : ''} net against outward turnover`,
+      title: `${plural(creditNotes.length, 'credit note')} net against outward turnover`,
       detail: `Table 4.A shows the year after these reductions; the portal wants them in the debit/credit note annexure as well.`,
       href: '/credit-notes',
     })
@@ -667,7 +668,7 @@ export function cautions(input: CautionInput): Caution[] {
   if (atRisk.length) {
     out.push({
       id: 'itc-180', level: 'red',
-      title: `₹${Math.round(atRiskTotal(atRisk).tax)} of credit is on ${atRisk.length} invoice${atRisk.length > 1 ? 's' : ''} unpaid beyond ${ITC_PAYMENT_DEADLINE_DAYS} days`,
+      title: `₹${Math.round(atRiskTotal(atRisk).tax)} of credit is on ${plural(atRisk.length, 'invoice')} unpaid beyond ${ITC_PAYMENT_DEADLINE_DAYS} days`,
       detail: 'Section 16(4) requires this reversal in the month after the deadline and allows it back only when payment is made.',
       href: '/bills',
     })
@@ -677,7 +678,7 @@ export function cautions(input: CautionInput): Caution[] {
   if (expensesNoGstin.length) {
     out.push({
       id: 'expense-no-gstin', level: 'amber',
-      title: `Credit taken on ${expensesNoGstin.length} expense${expensesNoGstin.length > 1 ? 's' : ''} with no supplier GSTIN`,
+      title: `Credit taken on ${plural(expensesNoGstin.length, 'expense')} with no supplier GSTIN`,
       detail: 'These will not appear in GSTR-2B, so the credit is at risk of a demand.',
       href: '/expenses',
     })
@@ -700,7 +701,7 @@ export function cautions(input: CautionInput): Caution[] {
   } else if (recon.monthsVariance) {
     out.push({
       id: 'recon-variance', level: 'red',
-      title: `${recon.monthsVariance} month${recon.monthsVariance > 1 ? 's' : ''} do not tie between the books and GSTR-3B`,
+      title: `${plural(recon.monthsVariance, 'month')} ${recon.monthsVariance === 1 ? 'does' : 'do'} not tie between the books and GSTR-3B`,
       detail: `Net difference on taxable value is ₹${Math.round(recon.turnoverDiff)}. Each variance needs a reason in the reconciliation statement.`,
     })
   }

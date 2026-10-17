@@ -878,7 +878,7 @@ function FilingsPageInner() {
                 <p className="fg-side-note" style={{ margin: 0 }}>
                   {costTotals.quantified === 0
                     ? 'Nothing on this board can be costed yet — every row prints its reason below.'
-                    : `${costTotals.quantified} of ${plural(costs.length, 'correction')} carry a figure. Interest still accruing on open rows reads ${money(costTotals.running)}, and ${money(costTotals.upperBound)} is the ceiling across every row the register can cost — the difference is rows marked carried whose payment date this register does not hold. Every open row together adds about ${money(costTotals.perDay)} a day.`}
+                    : `${costTotals.quantified} of ${plural(costs.length, 'correction')} ${costTotals.quantified === 1 ? 'carries' : 'carry'} a figure. Interest still accruing on open rows reads ${money(costTotals.running)}, and ${money(costTotals.upperBound)} is the ceiling across every row the register can cost — the difference is rows marked carried whose payment date this register does not hold. Every open row together adds about ${money(costTotals.perDay)} a day.`}
                 </p>
                 {costTotals.oldest && (
                   <p className="fg-side-note" style={{ margin: 0 }}>
@@ -1106,7 +1106,7 @@ function FilingsPageInner() {
             {openAmendmentsFor(store, removing.row.period).length > 0 && (
               <div className="fg-warn">
                 <Icon name="alert" size={14} />
-                {plural(openAmendmentsFor(store, removing.row.period).length, 'open amendment')} name {periodLabel(removing.row.period)}.
+                {plural(openAmendmentsFor(store, removing.row.period).length, 'open amendment')} {openAmendmentsFor(store, removing.row.period).length === 1 ? 'names' : 'name'} {periodLabel(removing.row.period)}.
                 Close or re-date them first — {removing.mode === 'delete' ? 'this removal will be refused until they are.' : 'withdrawing the row leaves them answering nothing.'}
               </div>
             )}

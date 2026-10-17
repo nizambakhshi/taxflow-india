@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { formatDateIN } from '@/lib/format'
+import { formatDateIN, plural } from '@/lib/format'
 import { toCsv } from '@/lib/registers'
 import { download } from '@/lib/party-ledger'
 import {
@@ -18,8 +18,6 @@ import Icon from '@/components/Icons'
 
 const inr = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 })
 const money = (n: number) => `₹${inr.format(Math.round(Number(n) || 0))}`
-
-const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 
 const WINDOWS = [
   { value: '30', label: '30 days' },
@@ -230,7 +228,7 @@ export default function ReorderPlannerPage() {
       <PageHeader
         eyebrow={`${orgName.toUpperCase()} · LAST ${settings.windowDays} DAYS`}
         title="Reorder planner"
-        subtitle={`${count(products.length, 'stocked item')} · ${count(lineCount.sold, 'sale line')} and ${count(lineCount.bought, 'purchase line')} since ${formatDateIN(windowFrom)}`}
+        subtitle={`${plural(products.length, 'stocked item')} · ${plural(lineCount.sold, 'sale line')} and ${plural(lineCount.bought, 'purchase line')} since ${formatDateIN(windowFrom)}`}
         actions={
           <>
             <Button variant="ghost" size="sm" icon="download" onClick={exportPlan}>Plan CSV</Button>
@@ -257,7 +255,7 @@ export default function ReorderPlannerPage() {
         <StatCard label="Median cover" value={summary.daysCoverMedian === null ? '—' : `${summary.daysCoverMedian} d`}
           sub={`Target is ${settings.leadDays + settings.coverDays} days`} icon="clock" tone="blue" />
         <StatCard label="Dead stock" value={money(summary.deadStockValue)}
-          sub={summary.deadStockCount ? `${count(summary.deadStockCount, 'item')} sold nothing` : 'Everything moved in the window'}
+          sub={summary.deadStockCount ? `${plural(summary.deadStockCount, 'item')} sold nothing` : 'Everything moved in the window'}
           icon="box" tone={summary.deadStockValue > 0 ? 'violet' : 'green'} />
       </div>
 
@@ -300,7 +298,7 @@ export default function ReorderPlannerPage() {
         <Card pad={false}>
           <div style={{ padding: '0.9rem 1rem' }}>
             <SectionTitle icon="cart" action={groups.length > 0
-              ? <span className="rp-count">{groups.length} supplier{groups.length === 1 ? '' : 's'}</span> : undefined}>
+              ? <span className="rp-count">{plural(groups.length, 'supplier')}</span> : undefined}>
               Purchase orders
             </SectionTitle>
             {groups.length === 0 ? (

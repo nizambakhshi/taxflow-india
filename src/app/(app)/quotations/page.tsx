@@ -14,6 +14,7 @@ import { INDIAN_STATES } from '@/lib/constants'
 import { GST_RATES } from '@/lib/gst-rates'
 import { loadSetup, resolveSeries, composeNumber } from '@/lib/setup'
 import { askSeal } from '@/lib/audit'
+import { plural } from '@/lib/format'
 
 const inputStyle = {
   width: '100%', padding: '8px 10px',
@@ -417,7 +418,7 @@ function QuotationsPageInner() {
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
         <div>
           <h1 style={{ fontSize: '22px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>Quotations</h1>
-          <p style={{ fontSize: '14px', color: '#64748b' }}>{quotations.length} quotation{quotations.length !== 1 ? 's' : ''}</p>
+          <p style={{ fontSize: '14px', color: '#64748b' }}>{plural(quotations.length, 'quotation')}</p>
         </div>
         <button onClick={() => { resetForm(); setShowForm(true) }} style={{
           padding: '9px 18px', background: '#2563eb', color: 'white',

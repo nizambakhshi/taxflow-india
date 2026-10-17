@@ -32,7 +32,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { formatDateIN, plural } from '@/lib/format'
+import {formatDateIN, plural, pluralNoun} from '@/lib/format'
 import { toCsv } from '@/lib/registers'
 import { download } from '@/lib/party-ledger'
 import { getFinancialYear } from '@/lib/gst-engine'
@@ -1038,7 +1038,7 @@ function TallyPageInner() {
               <Card pad={false} className="tb-bar">
                 <div className="tb-bar-main">
                   <div className="tb-bar-line">
-                    <strong>{writeSet.length}</strong> {writeSet.length === 1 ? 'row' : 'rows'} will be written
+                    <strong>{writeSet.length}</strong> {pluralNoun(writeSet.length, 'row')} will be written
                     <span className="tb-dot">·</span>
                     {plural(writeDocs.length, 'document')} worth <strong className="tb-num">{money(writeRupees)}</strong>
                     <span className="tb-dot">·</span>

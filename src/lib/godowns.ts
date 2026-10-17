@@ -21,6 +21,7 @@
 // number with no per-godown column, so the shelf-count page keeps reporting the
 // whole business. Per-godown figures cover *registered lots* and say so.
 
+import { plural } from '@/lib/format'
 import {
   loadMoves, newId, newMove, saveMoves, statusOf, todayISO, upsertBatch,
   type Batch, type BatchMove, type BatchView,
@@ -164,7 +165,7 @@ export function validateGodown(godown: Godown, all: Godown[]): string[] {
  */
 export function archiveGodown(orgId: string, id: string, liveAtPlace: number): Godown[] | string {
   if (id === GODOWN_MAIN) return 'The Main godown cannot be archived — unplaced lots are read as standing there.'
-  if (liveAtPlace > 0) return `${liveAtPlace} lot${liveAtPlace === 1 ? '' : 's'} still hold${liveAtPlace === 1 ? 's' : ''} stock here — move them out or write them off first.`
+  if (liveAtPlace > 0) return `${plural(liveAtPlace, 'lot')} still hold${liveAtPlace === 1 ? 's' : ''} stock here — move them out or write them off first.`
   const list = loadGodowns(orgId)
   const next = list.map(g => (g.id === id ? { ...g, archived: true } : g))
   saveGodowns(orgId, reorder(next))

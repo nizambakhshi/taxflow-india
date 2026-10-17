@@ -76,9 +76,15 @@ ok('B4 the cancelled third state is named when there is one to name',
 ok('B5 cancelled is derived, not picked from a fourth status the engine has no name for',
   recipes.includes('const cancelled = buildList.length - built - planned'))
 ok('B6 waiting demand still rides along',
-  recipes.includes("if (demand.length) parts.push(`${demand.length} order${demand.length === 1 ? '' : 's'} waiting`)"))
+  recipes.includes("if (demand.length) parts.push(`${plural(demand.length, 'order')} waiting`)"))
 ok('B7 the old two-only sub-line is gone',
   !recipes.includes("${buildList.filter(b => b.status === 'built').length} built"))
+// B3 and B4 count *participles* — "2 built", "1 cancelled" — and R3-22 deliberately left them spelled
+// directly. The kit pluralises nouns; a pluraliser that also agreed participles would be a grammar, and
+// the card's English would stop living in one readable line. B6's noun, "order", went to the kit.
+ok('B8 the participle counts are still the card’s own words',
+  recipes.includes('const parts = [`${built} built`, `${planned} planned`]')
+  && !/plural\([^)]*, '(built|planned|cancelled)'\)/.test(recipes))
 
 // ── C. a called-off run is not invited to draft paper it has no cost to draft ─
 //
@@ -108,7 +114,7 @@ ok('C6 the cancel warning that fires when paper *does* exist is untouched',
 ok('D1 the page counts posted reversals itself, page-side',
   journal.includes('store.entries.filter(e => e.status === \'posted\' && !!e.reverses).length'))
 ok('D2 the card now prints them as its own clause',
-  journal.includes('posted reversal${postedReversals === 1 ? \'\' : \'s\'}'))
+  journal.includes("plural(postedReversals, 'posted reversal')"))
 ok('D3 and says what they do, which is why they are not "standing"',
   journal.includes('the pair nets to nothing'))
 ok('D4 the card widens only when there is something to widen for',
@@ -229,11 +235,14 @@ eq('H5 35 vault specs, 30 restorable — unchanged', REGISTERS.length, 35)
 for (const [name, txt] of [['recipes', recipes], ['journal', journal], ['filings', filings], ['vault', vault]]) {
   ok(`H6 ${name}: no mojibake reached the source through an em dash`, !txt.includes('â€') && !txt.includes('Ã«'))
 }
-// `plural()` counts nouns ("3 periods"), not participles ("0 built"). The log card needed the
-// participle counts, so it uses them directly — and importing `plural` there would have been a
-// second way to say the same thing badly.
-ok('H7 the recipes page gained no plural() import for this repair',
-  recipes.includes("import { formatDateIN } from '@/lib/format'") && !recipes.includes('plural('))
+// `plural()` counts nouns ("3 periods"), not participles ("0 built"). R3-20's log card needed the
+// participle counts, so it spelled them directly and the page owned no import at all. R3-22 brought the
+// kit onto this page for its *nouns* — and `pluralNoun` for the figures a quantity formatter already
+// prints — which is the split worth keeping. So the pin is not the absence of an import; it is what the
+// import is for, and what the card still writes itself.
+ok('H7 the kit came for the nouns and the log still spells its own participles',
+  recipes.includes("import { formatDateIN, plural, pluralNoun } from '@/lib/format'")
+  && recipes.includes('const parts = [`${built} built`, `${planned} planned`]'))
 ok('H8 the filings page still routes its noun counts through plural()',
   filings.includes("plural(exposure.periods, 'period')"))
 ok('H9 no engine file was rewritten to make a sentence agree',

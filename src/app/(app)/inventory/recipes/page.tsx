@@ -62,7 +62,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { formatDateIN } from '@/lib/format'
+import { formatDateIN, plural, pluralNoun } from '@/lib/format'
 import { fmtQty } from '@/lib/reorder'
 import { toCsv } from '@/lib/registers'
 import { download } from '@/lib/party-ledger'
@@ -507,7 +507,7 @@ function RecipesPageInner() {
     const next = raiseDrafts('purchase_order', loadStore('purchase_order', orgId), fy, drafts, poFmt)
     saveStore('purchase_order', orgId, next.store)
     setRaised(next.docs.map(d => ({ number: d.number, id: d.id, vendor: d.party_name })))
-    flash(`${next.docs.length} purchase order${next.docs.length === 1 ? '' : 's'} drafted${skipped.length ? ` — ${skipped.length} skipped` : ''}. Open one on the register to confirm it.`)
+    flash(`${plural(next.docs.length, 'purchase order')} drafted${skipped.length ? ` — ${skipped.length} skipped` : ''}. Open one on the register to confirm it.`)
   }
 
   function exportShopping() {
@@ -787,7 +787,7 @@ function RecipesPageInner() {
       .map(r => !r.whole
         ? `${r.name}: draws ${fmtQty(r.need, r.unit)} — a fractional draw cannot name whole units, so none will be named`
         : r.shortfall > 0
-          ? `${r.name}: the shelf holds ${r.on_shelf.length} numbered unit${r.on_shelf.length === 1 ? '' : 's'} of the ${fmtQty(r.need, r.unit)} drawn, so no unit will be named`
+          ? `${r.name}: the shelf holds ${plural(r.on_shelf.length, 'numbered unit')} of the ${fmtQty(r.need, r.unit)} drawn, so no unit will be named`
           : '')
       .filter(Boolean)
 
@@ -996,7 +996,7 @@ function RecipesPageInner() {
     setDraft(null)
     setDraftError('')
     flash(moved
-      ? `${saved.ref} recorded — ${check.writes.length} movement${check.writes.length === 1 ? '' : 's'} written to the stock ledger${lotCount ? `, ${lotCount} lot${lotCount === 1 ? '' : 's'} drawn down` : ''}${unitCount ? `, ${unitCount} numbered unit${unitCount === 1 ? '' : 's'} issued into the run` : ''}${check.produced ? ' and the finished units landed in their own lot' : ''}${check.stamp.total === null ? '' : `, worth ${money(check.stamp.total)} as the catalogue and the rate rows read`}.`
+      ? `${saved.ref} recorded — ${plural(check.writes.length, 'movement')} written to the stock ledger${lotCount ? `, ${plural(lotCount, 'lot')} drawn down` : ''}${unitCount ? `, ${plural(unitCount, 'numbered unit')} issued into the run` : ''}${check.produced ? ' and the finished units landed in their own lot' : ''}${check.stamp.total === null ? '' : `, worth ${money(check.stamp.total)} as the catalogue and the rate rows read`}.`
       : draftExisting?.moved
         ? `${saved.ref} updated — its note only. The movements, the lot draws and the units it already wrote stay on the ledgers.`
         : `${saved.ref} is a plan on the log. No stock, no lot and no unit has moved.`)
@@ -1061,7 +1061,7 @@ function RecipesPageInner() {
     upsertBuild(orgId, { ...running, status: 'built', moved: true, ...(lotResult.lotId ? { output_batch_id: lotResult.lotId } : {}) })
     refreshStore()
     setProducts(await loadProducts(orgId))
-    flash(`${build.ref} moved — ${writes.length} movement${writes.length === 1 ? '' : 's'} on the stock ledger${lotResult.count ? `, ${lotResult.count} lot${lotResult.count === 1 ? '' : 's'} drawn down` : ''}${unitCount ? `, ${unitCount} numbered unit${unitCount === 1 ? '' : 's'} issued into the run` : ''}${lotResult.lotId ? ' and the finished units booked in as their own lot' : ''}.`)
+    flash(`${build.ref} moved — ${plural(writes.length, 'movement')} on the stock ledger${lotResult.count ? `, ${plural(lotResult.count, 'lot')} drawn down` : ''}${unitCount ? `, ${plural(unitCount, 'numbered unit')} issued into the run` : ''}${lotResult.lotId ? ' and the finished units booked in as their own lot' : ''}.`)
   }
 
   async function cancelRun(view: BuildView) {
@@ -1103,13 +1103,13 @@ function RecipesPageInner() {
         moved: false,
         notes: [
           build.notes,
-          `Reversed ${day} — the drawn units went back and the finished units came off${undone.count ? `, into ${undone.count} lot${undone.count === 1 ? '' : 's'} they came from` : ''}${undoneSerial ? `, and ${undoneSerial} numbered unit${undoneSerial === 1 ? '' : 's'} went back on the serial register` : ''}`,
+          `Reversed ${day} — the drawn units went back and the finished units came off${undone.count ? `, into ${plural(undone.count, 'lot')} they came from` : ''}${undoneSerial ? `, and ${plural(undoneSerial, 'numbered unit')} went back on the serial register` : ''}`,
           build.output_batch_id && !undone.zeroed ? 'The finished lot was left as it stands — something other than this run has moved against it.' : '',
         ].filter(Boolean).join(' · '),
       })
       refreshStore()
       setProducts(await loadProducts(orgId))
-      flash(`${build.ref} cancelled and reversed — the original run and its reversal both stay in the movement log${undone.count ? `, and ${undone.count} lot${undone.count === 1 ? '' : 's'} took the units back` : ''}${undoneSerial ? `, and ${undoneSerial} numbered unit${undoneSerial === 1 ? '' : 's'} stand on the shelf again` : ''}.`)
+      flash(`${build.ref} cancelled and reversed — the original run and its reversal both stay in the movement log${undone.count ? `, and ${plural(undone.count, 'lot')} took the units back` : ''}${undoneSerial ? `, and ${plural(undoneSerial, 'numbered unit')} ${undoneSerial === 1 ? 'stands' : 'stand'} on the shelf again` : ''}.`)
       return
     }
     const result = cancelBuild(orgId, build.id)
@@ -1252,12 +1252,12 @@ function RecipesPageInner() {
       <div className="rc-stats">
         <StatCard
           label="Recipes on the register" value={String(summary.recipes)}
-          sub={summary.recipes ? `${summary.active} in use · ${views.filter(v => v.recipe.status === 'draft').length} draft${views.filter(v => v.recipe.status === 'draft').length === 1 ? '' : 's'}` : 'nothing written down yet'}
+          sub={summary.recipes ? `${summary.active} in use · ${plural(views.filter(v => v.recipe.status === 'draft').length, 'draft')}` : 'nothing written down yet'}
           icon="recipe" tone="blue" delay={0}
         />
         <StatCard
           label="What the shelf can run" value={`${summary.runnable} / ${summary.active}`}
-          sub={summary.blocked ? `${summary.blocked} recipe${summary.blocked === 1 ? '' : 's'} held up by ${summary.shortage_rows} component${summary.shortage_rows === 1 ? '' : 's'}` : summary.active ? 'every live recipe can be run now' : 'no live recipe to plan'}
+          sub={summary.blocked ? `${plural(summary.blocked, 'recipe')} held up by ${plural(summary.shortage_rows, 'component')}` : summary.active ? 'every live recipe can be run now' : 'no live recipe to plan'}
           icon={summary.blocked ? 'alert' : 'shield'} tone={summary.blocked ? 'red' : summary.active ? 'green' : 'grey'} delay={40}
         />
         <StatCard
@@ -1276,7 +1276,7 @@ function RecipesPageInner() {
             // reads "0 built · 0 planned" leaves the reader adding a state that is not printed.
             const parts = [`${built} built`, `${planned} planned`]
             if (cancelled > 0) parts.push(`${cancelled} cancelled`)
-            if (demand.length) parts.push(`${demand.length} order${demand.length === 1 ? '' : 's'} waiting`)
+            if (demand.length) parts.push(`${plural(demand.length, 'order')} waiting`)
             return parts.join(' · ')
           })()}
           icon="list" tone={demand.length ? 'amber' : 'cyan'} delay={120}
@@ -1411,7 +1411,7 @@ function RecipesPageInner() {
 
                     <div className="rc-card-stats">
                       <StatRow label="Cost / unit, full" strong
-                        value={v.full.per_unit === null ? `— (${v.full.missing.length} gap${v.full.missing.length === 1 ? '' : 's'})` : price(v.full.per_unit)}
+                        value={v.full.per_unit === null ? `— (${plural(v.full.missing.length, 'gap')})` : price(v.full.per_unit)}
                         tone={v.full.per_unit === null ? 'amber' : 'grey'} />
                       {v.full.per_unit !== null && (v.recipe.labour_minutes > 0 || v.recipe.overhead_minutes > 0) && (
                         <StatRow label="Parts · labour · overhead" tone="grey"
@@ -1428,7 +1428,7 @@ function RecipesPageInner() {
                         value={v.recipe.status === 'active' ? `${fmtQty(v.plan.buildable_units, '')} units` : 'not while it is a draft'}
                         tone={v.recipe.status !== 'active' ? 'grey' : v.plan.can_run ? 'green' : 'red'} />
                       <StatRow label="Built · runs"
-                        value={v.build_count ? `${fmtQty(v.units_built, '')} on ${v.build_count} run${v.build_count === 1 ? '' : 's'}${v.last_built ? ` · last ${formatDateIN(v.last_built)}` : ''}` : 'nothing yet'} />
+                        value={v.build_count ? `${fmtQty(v.units_built, '')} on ${plural(v.build_count, 'run')}${v.last_built ? ` · last ${formatDateIN(v.last_built)}` : ''}` : 'nothing yet'} />
                       {v.variance !== null && Math.abs(v.variance) > 0.0001 && (
                         <StatRow label="Last run against recipe" tone="amber"
                           value={`${v.variance > 0 ? '+' : ''}${fmtQty(v.variance, '')} drawn`} />
@@ -1495,7 +1495,7 @@ function RecipesPageInner() {
 
                     <div className="rc-card-foot">
                       <Button variant="ghost" size="sm" icon="list" onClick={() => setOpenRecipe(open ? '' : recipe.id)}>
-                        {open ? 'Hide parts' : `${v.component_count} part${v.component_count === 1 ? '' : 's'}`}
+                        {open ? 'Hide parts' : `${plural(v.component_count, 'part')}`}
                       </Button>
                       <span className="rc-card-actions">
                         {recipe.status === 'active' && (
@@ -1534,8 +1534,8 @@ function RecipesPageInner() {
             <div className="rc-note">
               <Icon name="clock" size={13} strokeWidth={2.2} />
               <span>
-                {store.builds.filter(b => b.status === 'planned').length} planned run
-                {store.builds.filter(b => b.status === 'planned').length === 1 ? '' : 's'} on the log — a plan is a promise about materials
+                {plural(store.builds.filter(b => b.status === 'planned').length, 'planned run')} on the
+                log — a plan is a promise about materials
                 and has moved nothing. “Move stock” writes its movements; until then the shelf does not know about it.
               </span>
             </div>
@@ -1582,7 +1582,7 @@ function RecipesPageInner() {
                               <>
                                 {' · '}
                                 <button type="button" className="rc-inline" onClick={() => setOpenRecipe(open ? '' : r.build.id)}>
-                                  {r.lots.count} lot{r.lots.count === 1 ? '' : 's'} drawn{open ? ' — hide them' : ' — see which'}
+                                  {plural(r.lots.count, 'lot')} drawn{open ? ' — hide them' : ' — see which'}
                                 </button>
                               </>
                             )}
@@ -1592,7 +1592,7 @@ function RecipesPageInner() {
                               <>
                                 {' · '}
                                 <button type="button" className="rc-inline" onClick={() => setOpenRecipe(open ? '' : r.build.id)}>
-                                  {r.serials.count} unit{r.serials.count === 1 ? '' : 's'} issued{open ? ' — hide them' : ' — see which'}
+                                  {plural(r.serials.count, 'unit')} issued{open ? ' — hide them' : ' — see which'}
                                 </button>
                               </>
                             )}
@@ -1605,13 +1605,13 @@ function RecipesPageInner() {
                         <span className="rc-right rc-num" data-label="Units">{fmtQty(r.build.units, r.output?.unit || '')}</span>
                         <span className="rc-right rc-num" data-label="Materials" title="Parts at the catalogue's prices today, plus labour and overhead at the rates in force on the run's own date">
                           {r.full.value === null
-                            ? (r.full.missing.length ? `— (${r.full.missing.length} gap${r.full.missing.length === 1 ? '' : 's'})` : '—')
+                            ? (r.full.missing.length ? `— (${plural(r.full.missing.length, 'gap')})` : '—')
                             : money(r.full.value)}
                         </span>
                         <span data-label="Draw" className="rc-variance">
                           {r.variance.length
                             ? <button type="button" className="rc-inline" onClick={() => setOpenRecipe(open ? '' : r.build.id)}>
-                              {r.variance.length} line{r.variance.length === 1 ? '' : 's'} drawn differently
+                              {plural(r.variance.length, 'line')} drawn differently
                             </button>
                             : <span className="rc-sub">exactly the recipe</span>}
                         </span>
@@ -1937,7 +1937,7 @@ function RecipesPageInner() {
                   <Icon name={planViews[0].plan.can_run ? 'shield' : 'alert'} size={14} strokeWidth={2.2} />
                   <span>
                     {planViews[0].plan.can_run
-                      ? <>This run can be made <strong>{fmtQty(planViews[0].plan.buildable_units, '')} times over</strong> on the stock in hand{planViews[0].plan.untracked.length ? `, apart from ${planViews[0].plan.untracked.length} part${planViews[0].plan.untracked.length === 1 ? '' : 's'} with no count kept` : ''}.</>
+                      ? <>This run can be made <strong>{fmtQty(planViews[0].plan.buildable_units, '')} times over</strong> on the stock in hand{planViews[0].plan.untracked.length ? `, apart from ${plural(planViews[0].plan.untracked.length, 'part')} with no count kept` : ''}.</>
                       : <>The shelf cannot cover a run — <strong>{planViews[0].plan.limited_by}</strong> is the reason. Buy it in at <Link href="/bills">bills</Link> or <Link href="/purchase-orders">purchase orders</Link>, then come back.</>}
                   </span>
                 </div>
@@ -2031,7 +2031,7 @@ function RecipesPageInner() {
                   {shopping.orders.length > 0 && (
                     <div className="rc-po-raise">
                       <Button size="sm" icon="check" onClick={raiseShopping}>
-                        Raise {shopping.orders.length} order draft{shopping.orders.length === 1 ? '' : 's'}
+                        Raise {plural(shopping.orders.length, 'order draft')}
                       </Button>
                       <span className="rc-sub">Each becomes a draft purchase order on your register — nothing is sent or billed, and you can cancel one there.</span>
                     </div>
@@ -2041,7 +2041,7 @@ function RecipesPageInner() {
                     <div className="rc-unrouted">
                       <div className="rc-unrouted-head">
                         <Icon name="alert" size={13} strokeWidth={2.2} />
-                        Cannot be raised as an order yet — {shopping.unrouted.length} line{shopping.unrouted.length === 1 ? '' : 's'}, printed not dropped
+                        Cannot be raised as an order yet — {plural(shopping.unrouted.length, 'line')}, printed not dropped
                       </div>
                       {shopping.unrouted.map(u => (
                         <div key={u.line.product_id} className="rc-unrouted-row">
@@ -2063,7 +2063,7 @@ function RecipesPageInner() {
             <div className="rc-note">
               <Icon name="bag" size={13} strokeWidth={2.2} />
               <span>
-                You have {orders.length} confirmed order{orders.length === 1 ? '' : 's'}, none of them for a product with a live recipe.
+                You have {plural(orders.length, 'confirmed order')}, none of them for a product with a live recipe.
                 A recipe on the finished good turns the order register into a production plan on this board.
               </span>
             </div>
@@ -2088,7 +2088,7 @@ function RecipesPageInner() {
                   onClick={() => setComponentId(c.id)}>
                   <span className="rc-item-name">{c.name}</span>
                   <span className="rc-sub">
-                    {c.used_by} recipe{c.used_by === 1 ? '' : 's'} · {fmtQty(c.per_unit, c.unit)} per unit
+                    {plural(c.used_by, 'recipe')} · {fmtQty(c.per_unit, c.unit)} per unit
                   </span>
                 </button>
               ))}
@@ -2118,7 +2118,7 @@ function RecipesPageInner() {
                     <StatRow label="Recipes that draw it" value={String(used.length)} />
                     <StatRow label="Total draw per unit made" value={fmtQty(picked.per_unit, picked.unit)} />
                     <StatRow label={`Consumed ${period === 'all' ? 'on record' : `since ${formatDateIN(win.from)}`}`} strong
-                      value={consumed ? `${fmtQty(consumed, picked.unit)} on ${onRuns} run${onRuns === 1 ? '' : 's'}` : '—'}
+                      value={consumed ? `${fmtQty(consumed, picked.unit)} on ${plural(onRuns, 'run')}` : '—'}
                       tone={consumed > 0 ? 'violet' : 'grey'} />
                     {p && p.track_inventory !== false && (
                       <StatRow label="Runs the shelf could still cover"
@@ -2131,7 +2131,7 @@ function RecipesPageInner() {
                     <div className="rc-note">
                       <Icon name="recipe" size={13} strokeWidth={2.2} />
                       <span>
-                        It is also made here — {makes.length} recipe{makes.length === 1 ? '' : 's'} produce{makes.length === 1 ? 's' : ''} it,
+                        It is also made here — {plural(makes.length, 'recipe')} produce{makes.length === 1 ? 's' : ''} it,
                         so a planner treats it as a <strong>sub-assembly</strong> and looks at its own parts: {makes.map(r => r.name || 'Untitled').join(', ')}.
                       </span>
                     </div>
@@ -2157,7 +2157,7 @@ function RecipesPageInner() {
                             </span>
                             <span className="rc-num">{fmtQty(u.per_unit, picked.unit)} / unit</span>
                             <span className="rc-sub">
-                              {v ? `${fmtQty(v.units_built, '')} made on ${v.build_count} run${v.build_count === 1 ? '' : 's'}` : ''}
+                              {v ? `${fmtQty(v.units_built, '')} made on ${plural(v.build_count, 'run')}` : ''}
                             </span>
                           </div>
                         )
@@ -2240,8 +2240,8 @@ function RecipesPageInner() {
 
       <div className="rc-foot">
         <span>
-          {summary.recipes} recipe{summary.recipes === 1 ? '' : 's'} · {buildList.length} run{buildList.length === 1 ? '' : 's'}
-          {demand.length ? ` · ${demand.length} order line${demand.length === 1 ? '' : 's'} waiting on the shop` : ''}
+          {plural(summary.recipes, 'recipe')} · {plural(buildList.length, 'run')}
+          {demand.length ? ` · ${plural(demand.length, 'order line')} waiting on the shop` : ''}
           {' · '}stored in this browser, not a server: recipes hold quantities and minutes; rupees come from the catalogue&apos;s prices and the dated shop rates.
         </span>
         <span className="rc-foot-links">
@@ -2409,14 +2409,14 @@ function RecipesPageInner() {
                 <ul className="rc-preview-list">
                   <li>
                     <span className="rc-dot rc-dot-blue" />
-                    {editor.recipe.components.length} component{editor.recipe.components.length === 1 ? '' : 's'} · one run makes {fmtQty(editor.recipe.output_qty, preview.output?.unit || '')}
+                    {plural(editor.recipe.components.length, 'component')} · one run makes {fmtQty(editor.recipe.output_qty, preview.output?.unit || '')}
                     {editor.recipe.labour_minutes > 0 && <> · {fmtMinutes(editor.recipe.labour_minutes)} of labour</>}
                     {editor.recipe.overhead_minutes > 0 && <> · {fmtMinutes(editor.recipe.overhead_minutes)} of overhead</>}
                     {preview.margin_per_unit !== null && <> · margin {price(preview.margin_per_unit)} ({percent(preview.margin_pct)}) at the selling price on the master{preview.margin_basis === 'material' ? ', parts alone' : ''}</>}
                   </li>
                   <li>
                     <span className={`rc-dot rc-dot-${preview.plan.can_run ? 'green' : 'amber'}`} />
-                    the shelf can cover {fmtQty(preview.plan.buildable_units, '')} unit{preview.plan.buildable_units === 1 ? '' : 's'} now
+                    the shelf can cover {fmtQty(preview.plan.buildable_units, '')} {pluralNoun(preview.plan.buildable_units, 'unit')} now
                     {preview.plan.limited_by ? `, held up by ${preview.plan.limited_by}` : ''}
                   </li>
                   {preview.full.labour.missing && (
@@ -2619,7 +2619,7 @@ function RecipesPageInner() {
                         <select className="tf-input rc-lots-select" value={choice}
                           onChange={e => patchLotChoice(l.product_id, e.target.value)}
                           aria-label={`Which lot ${p?.name || 'this component'} was drawn from`}>
-                          <option value="auto">First expiry first out{row.ok ? ` — ${row.picks.length} lot${row.picks.length === 1 ? '' : 's'}` : ' — the lots cannot cover it'}</option>
+                          <option value="auto">First expiry first out{row.ok ? ` — ${plural(row.picks.length, 'lot')}` : ' — the lots cannot cover it'}</option>
                           {open_lots.map(v => (
                             <option key={v.id} value={v.id}>
                               {v.batch_no || 'unnamed lot'} · {fmtQty(v.left, v.unit)} left{v.status === 'expired' ? ' · expired' : ''}
@@ -2661,7 +2661,7 @@ function RecipesPageInner() {
                           )}
                         </span>
                         <Button variant="ghost" size="sm" onClick={() => patchUnitChoice(l.product_id, undefined)}
-                          disabled={unitAuto}>Oldest first{uRow.ok && unitAuto ? ` — ${uRow.picks.length} unit${uRow.picks.length === 1 ? '' : 's'}` : ''}</Button>
+                          disabled={unitAuto}>Oldest first{uRow.ok && unitAuto ? ` — ${plural(uRow.picks.length, 'unit')}` : ''}</Button>
                         <Button variant="ghost" size="sm" onClick={() => patchUnitChoice(l.product_id, [])}
                           disabled={!unitAuto && (l.unitIds || []).length === 0}>Name none</Button>
                         <span className={`rc-lots-take ${unitPicks.length && unitPicks.length === Math.trunc(Number(l.qty) || 0) ? '' : 'rc-warn'}`}>
@@ -2670,7 +2670,7 @@ function RecipesPageInner() {
                             : !uRow.whole
                               ? 'no unit named — a fractional draw cannot name whole units, so the register will not know which left the shelf'
                               : unitAuto && uRow.shortfall > 0
-                                ? `no unit named — the shelf holds ${uRow.on_shelf.length} numbered unit${uRow.on_shelf.length === 1 ? '' : 's'} of the ${fmtQty(uRow.need, unit)} drawn`
+                                ? `no unit named — the shelf holds ${plural(uRow.on_shelf.length, 'numbered unit')} of the ${fmtQty(uRow.need, unit)} drawn`
                                 : 'no unit named — the shelf moves and the serial register will not know this run took them'}
                         </span>
                       </div>
@@ -2771,7 +2771,7 @@ function RecipesPageInner() {
                     {draftCheck.stamp.total === null
                       ? (draftCheck.stamp.unpriced_legs[0]
                         ? `no full value yet — ${draftCheck.stamp.unpriced_legs[0]}`
-                        : `${draftCheck.stamp.unpriced.length || 'no'} component${draftCheck.stamp.unpriced.length === 1 ? '' : 's'} unpriced`)
+                        : `${draftCheck.stamp.unpriced.length || 'no'} ${pluralNoun(draftCheck.stamp.unpriced.length, 'component')} unpriced`)
                       : `${money(draftCheck.stamp.total)} a run${candidate.units > 0 ? ` · ${money(draftCheck.stamp.total / candidate.units)} a unit` : ''}`}
                   </span>
                 </div>
@@ -2817,7 +2817,7 @@ function RecipesPageInner() {
                     {draftCheck.unitWrites.length > 0 && (
                       <li>
                         <span className="rc-dot rc-dot-blue" />
-                        {draftCheck.unitWrites.length} numbered unit{draftCheck.unitWrites.length === 1 ? '' : 's'} (
+                        {plural(draftCheck.unitWrites.length, 'numbered unit')} (
                         {draftCheck.unitWrites.map(w => w.serial_no).join(', ')}) issued into the run through{' '}
                         <Link href="/inventory/serials">/inventory/serials</Link>&apos;s own register, again after the shelf moves — each unit
                         keeps its own history, and a cancel puts them back with an event of its own

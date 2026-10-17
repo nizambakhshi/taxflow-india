@@ -57,7 +57,7 @@ import { isCashTaxKey, loadStatuses, saveStatuses } from '@/lib/compliance'
 import { loadCC, saveCC } from '@/lib/costcentres'
 import { loadExp, saveExp } from '@/lib/exports'
 import { loadFilings, saveFilings } from '@/lib/filings'
-import { plural } from '@/lib/format'
+import { plural, pluralNoun } from '@/lib/format'
 import { loadFx, saveFx } from '@/lib/fx'
 import { loadGodowns, saveGodowns } from '@/lib/godowns'
 import * as gstr4 from '@/lib/gstr4'
@@ -653,7 +653,7 @@ export const REGISTERS: RegisterSpec[] = [
     detail: (v) => {
       const b = arrCount(v, 'branches')
       const s = arrCount(v, 'series')
-      return `${b} branch${b === 1 ? '' : 'es'} · ${plural(s, 'series override')}`
+      return `${plural(b, 'branch')} · ${plural(s, 'series override')}`
     },
     // Refused by shape, like the audit register: the parser reads a wrong-version file as empty,
     // and a blank register restored over a kept one looks like success.
@@ -1232,7 +1232,7 @@ export function applyRestore(vault: VaultFile, orgId: string, ids: string[]): Re
       from: n(entry.rows),
       seen,
       note: dropped > 0
-        ? `read back ${seen}; ${dropped} ${spec.unit}${dropped === 1 ? '' : 's'} dropped by the register's own parser`
+        ? `read back ${seen}; ${dropped} ${pluralNoun(dropped, spec.unit)} dropped by the register's own parser`
         : 'read back through its own loader',
     })
   }

@@ -348,7 +348,7 @@ export default function TargetsPage() {
         <StatCard
           label={`Sold in ${fyLabel(fy)}`}
           value={yearActual ? formatCompactINR(yearActual) : '—'}
-          sub={`${docCount} document${docCount === 1 ? '' : 's'} read`}
+          sub={`${plural(docCount, 'document')} read`}
           icon="trend" tone="cyan"
           delta={summary.ytdPct === null ? null : summary.ytdPct - 100}
           deltaSuffix="vs plan"
@@ -389,7 +389,7 @@ export default function TargetsPage() {
                     height={8}
                   />
                   <div style={{ fontSize: 11.5, color: 'var(--faint)', marginTop: 6 }}>
-                    {thisMonth.daysLeft} day{thisMonth.daysLeft === 1 ? '' : 's'} left in the month ·{' '}
+                    {plural(thisMonth.daysLeft, 'day')} left in the month ·{' '}
                     {thisMonth.pct ?? 0}% of the full target
                   </div>
                 </div>
