@@ -452,6 +452,11 @@ export interface QuarterlyStatement {
   periodFrom: string
   periodTo: string
   tax: number
+  /**
+   * Days from the due date to the day the register holds, or to today while a fee clock runs.
+   * A filing day after the due date is counted even when no tax was withheld: the lateness is a
+   * fact of the transcript, while the fee below is the narrower reading that needs tax.
+   */
   daysLate: number
   fee: number
   /** The day the shop says this statement went in — the register's only stop date. */
@@ -816,8 +821,14 @@ function quarterlyStatements(fyStart: number, rows: DeductionRow[], asOf: Date, 
       ? filing.filedOn
       : ''
     const stop = filedOn ? parseDate(filedOn)! : asOf
+    // The fee clock needs tax to run on — section 427 charges a share of the tax withheld, so a
+    // quarter with nothing withheld has no fee. A filing day is a transcript on its own, though:
+    // 15 August is after 31 July whether or not tax was withheld, and the row must not call it on
+    // time. Reading both from one flag made a nil quarter filed late print "Filed on time" — the
+    // defect the composer showed the first time it was typed into live (R3-27).
     const late = tax > 0 && dueDate < stop
-    const daysLate = late ? Math.ceil((stop.getTime() - dueDate.getTime()) / 86400000) : 0
+    const filedAfterDue = Boolean(filedOn) && dueDate < stop
+    const daysLate = (late || filedAfterDue) ? Math.ceil((stop.getTime() - dueDate.getTime()) / 86400000) : 0
     // 427(2) caps the fee at the tax deductible for the quarter. There is no second ceiling in
     // the section; the ₹5,00,000 this line used to carry was not the statute's.
     const cap = tax
@@ -893,7 +904,9 @@ export function tdsStatementCsvRows(wp: TdsWorkpaper): (string | number)[][] {
         ? 'ceiling — no filing day, at the cap'
         : q.ceiling
           ? 'ceiling — no filing day, read to today'
-          : 'nothing at stake',
+          : q.filedOn && q.daysLate > 0
+            ? 'filed after the due date — nothing was withheld'
+            : 'nothing at stake',
     q.filedOn || '', q.reference || '',
   ])
 }

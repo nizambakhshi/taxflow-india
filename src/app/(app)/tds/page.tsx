@@ -66,7 +66,7 @@ export default function TdsPage() {
   const [vendors, setVendors] = useState<TdsVendor[]>([])
   const [state, setState] = useState<TdsState>(emptyTds())
   const [tab, setTab] = useState<Tab>('workpaper')
-  const [savedAt, setSavedAt] = useState('')
+  const [savedLine, setSavedLine] = useState('')
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [stmtProblems, setStmtProblems] = useState<Record<string, string[]>>({})
   const [openVendors, setOpenVendors] = useState<Record<string, boolean>>({})
@@ -90,7 +90,11 @@ export default function TdsPage() {
         .from('gst_registrations').select('gstin').eq('organization_id', oid).eq('is_primary', true).single()
       setGstin(reg?.gstin || '')
 
-      setState(loadTds(oid))
+      // The register's own stamp, not the session's: a reload must not say "nothing saved yet"
+      // beside a quarter this device is still holding (R3-27).
+      const loaded = loadTds(oid)
+      setState(loaded)
+      setSavedLine(savedLineFor(loaded.updatedAt))
       await loadYear(oid, fyStart)
       setLoading(false)
     }
@@ -161,7 +165,7 @@ export default function TdsPage() {
     setState(next)
     if (orgId) {
       const stamped = saveTds(orgId, next)
-      setSavedAt(new Date(stamped.updatedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }))
+      setSavedLine(savedLineFor(stamped.updatedAt))
     }
   }, [orgId])
 
@@ -218,7 +222,10 @@ export default function TdsPage() {
   function changeFy(year: number) {
     setFyStart(year)
     setDraft({})
-    setState(loadTds(orgId))
+    setStmtProblems({})
+    const loaded = loadTds(orgId)
+    setState(loaded)
+    setSavedLine(savedLineFor(loaded.updatedAt))
     loadYear(orgId, year)
   }
 
@@ -454,7 +461,7 @@ export default function TdsPage() {
             />
             <div className="td-tools no-print">
               <span className="td-saved">
-                {savedAt ? `Saved on this device at ${savedAt}` : 'Nothing saved yet'}
+                {savedLine || 'Nothing saved yet'}
                 {' '}· {wp.months.filter(m => m.challan).length} of {wp.months.length} months recorded
               </span>
               <Button size="sm" variant="ghost" icon="download" onClick={exportDeposits}>Deposit sheet CSV</Button>
@@ -675,8 +682,8 @@ export default function TdsPage() {
             />
             <div className="td-tools no-print">
               <span className="td-saved">
-                {savedAt ? `Saved on this device at ${savedAt}` : 'Nothing saved yet'}
-                {' '}· {wp.statements.filter(q => q.filedOn).length} of {wp.statements.length} quarters have a filing day
+                {savedLine || 'Nothing saved yet'}
+                {' '}· {wp.statements.filter(q => q.filedOn).length} of {wp.statements.length} quarters with a filing day
               </span>
               <Button size="sm" variant="ghost" icon="download" onClick={exportStatements}>Statement sheet CSV</Button>
             </div>
@@ -686,17 +693,22 @@ export default function TdsPage() {
                 // The engine filters a day it cannot read; the field shows the reading, not the store.
                 const shownDate = textFor(draft, q.due, 'filedOn', q.filedOn)
                 const shownRef = textFor(draft, q.due, 'reference', q.reference)
+                // A filing day after the due date is late even when no tax was withheld; the fee
+                // clock is the narrower reading and only runs on tax (R3-27).
+                const filedLate = Boolean(q.filedOn) && q.daysLate > 0
                 const badge = q.ceiling
                   ? { tone: 'red' as const, label: 'Ceiling — no filing day' }
                   : q.stopped
                     ? { tone: 'amber' as const, label: 'Filed late — clock stopped' }
                     : q.filedOn
-                      ? { tone: 'green' as const, label: 'Filed on time' }
+                      ? filedLate
+                        ? { tone: 'amber' as const, label: 'Filed late — fee nil' }
+                        : { tone: 'green' as const, label: 'Filed on time' }
                       : q.due > todayISO
                         ? { tone: 'grey' as const, label: 'Not due yet' }
                         : { tone: 'grey' as const, label: 'No filing day' }
                 return (
-                  <div key={q.quarter} className={`td-stmt ${q.ceiling ? 'is-ceiling' : q.stopped ? 'is-late' : q.filedOn ? 'is-filed' : ''}`}>
+                  <div key={q.quarter} className={`td-stmt ${q.ceiling ? 'is-ceiling' : filedLate ? 'is-late' : q.filedOn ? 'is-filed' : ''}`}>
                     <div className="td-dep-head">
                       <div>
                         <div className="td-dep-month">{q.quarter} · {q.label}</div>
@@ -732,7 +744,7 @@ export default function TdsPage() {
                     <div className="td-dep-form td-stmt-form">
                       <label className="td-in">
                         <span>Statement filed on</span>
-                        <input className="tf-input" type="date" max={todayISO}
+                        <input className="tf-input" type="date" min={q.periodTo} max={todayISO}
                           value={shownDate}
                           onChange={e => setStatementField(q, 'filedOn', e.target.value)}
                           aria-label={`${q.quarter} ${q.label} statement filing date`} />
@@ -755,11 +767,14 @@ export default function TdsPage() {
                     {stmtProblems[q.due] && (
                       <div className="td-dep-hint">
                         {stmtProblems[q.due].map(msg => <div key={msg}>{msg}</div>)}
+                        {q.filedOn && (
+                          <div>The register still holds {formatDateIN(q.filedOn)}; the day above was not saved.</div>
+                        )}
                       </div>
                     )}
 
                     <div className="td-dep-foot">
-                      <span className={q.ceiling || q.stopped ? 'td-dep-warn' : 'td-dep-ok'}>
+                      <span className={q.ceiling || q.stopped || filedLate ? 'td-dep-warn' : 'td-dep-ok'}>
                         {q.ceiling
                           ? q.capped
                             ? `No filing day is recorded, but the fee has reached ${money(q.fee)} — the tax for the quarter — so another late day adds nothing.`
@@ -767,7 +782,9 @@ export default function TdsPage() {
                           : q.stopped
                             ? `The register holds ${formatDateIN(q.filedOn)}: ${plural(q.daysLate, 'day')} late, ${money(q.fee)}.`
                             : q.filedOn
-                              ? `Filed ${formatDateIN(q.filedOn)}, on or before the due date — nothing is at stake.`
+                              ? filedLate
+                                ? `The register holds ${formatDateIN(q.filedOn)}: ${plural(q.daysLate, 'day')} after the ${formatDateIN(q.due)} due date. Nothing was withheld, so the fee reads nil.`
+                                : `Filed ${formatDateIN(q.filedOn)}, on or before the due date — nothing is at stake.`
                               : q.tax > 0 && q.due > todayISO
                                 ? `The statement falls due ${formatDateIN(q.due)}; nothing has run yet.`
                                 : 'Nothing was withheld in this quarter, so the fee reads nil.'}
@@ -1054,6 +1071,20 @@ function yearOptions(): number[] {
 /** The page's own day, in the same 'YYYY-MM-DD' shape the register stores. */
 function isoDay(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/**
+ * The register's stamp, in words. A write from another day carries that day, so a register reloaded
+ * on Tuesday does not read "saved at 3:12 pm" and leave the reader to assume today (R3-27).
+ */
+function savedLineFor(iso: string): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const time = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+  return d.toDateString() === new Date().toDateString()
+    ? `Saved on this device at ${time}`
+    : `Saved on this device on ${d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}, ${time}`
 }
 
 function draftFor(draft: Record<string, string>, month: string, field: string, value: number | undefined): string {
