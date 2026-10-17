@@ -247,7 +247,7 @@ ok('E2 a project with one logged entry stopped calling it "1 logged rows" — on
   && !read('app/(app)/projects/page.tsx').includes("logged ${sum.entries === 1 ? 'day' : 'rows'}"))
 eq('E3 the vault prints a branch count the kit agrees',
   read('lib/vault.ts').includes("${plural(b, 'branch')}"), true)
-ok('E4 nine cards that hedged with "> 1" now state their zero — "0 invoices", not "0 invoice"',
+ok('E4 the nine "> 1" endings across three files now state their zero — "0 months", not "0 month"',
   !ALL.some(([, t]) => /> 1 \? 's'/.test(t)))
 
 // ── F. what a wording round must not have touched ───────────────────────────────
