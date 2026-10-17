@@ -812,7 +812,6 @@ function quarterlyStatements(fyStart: number, rows: DeductionRow[], asOf: Date, 
     const due = `${dueYear}-${q.due}`
     const periodTo = `${year}-${q.to}`
     const tax = rows.filter(r => r.month >= `${year}-${q.from.slice(0, 2)}` && r.month <= `${year}-${q.to.slice(0, 2)}`).reduce((s, r) => s + r.tax, 0)
-    const dueDate = parseDate(due)!
     const filing = state.statementFilings[due] ?? null
     // A day that has not arrived cannot stop a clock, and neither can one before the quarter it
     // reports had closed — the composer refuses both, and a hand-edited store falls back to reading
@@ -826,9 +825,23 @@ function quarterlyStatements(fyStart: number, rows: DeductionRow[], asOf: Date, 
     // 15 August is after 31 July whether or not tax was withheld, and the row must not call it on
     // time. Reading both from one flag made a nil quarter filed late print "Filed on time" — the
     // defect the composer showed the first time it was typed into live (R3-27).
-    const late = tax > 0 && dueDate < stop
-    const filedAfterDue = Boolean(filedOn) && dueDate < stop
-    const daysLate = (late || filedAfterDue) ? Math.ceil((stop.getTime() - dueDate.getTime()) / 86400000) : 0
+    //
+    // R3-29: days are calendar days, not fractions of one. `asOf` carries the time of day while
+    // the due date is midnight, so `ceil(stop - due)` read six days on 5 November at 10 am and
+    // five at midnight — the running clock gained a day after breakfast, and the same quarter
+    // read 6 days late before a filing day was typed and 5 after. Both ends are dropped to their
+    // day and counted at UTC midnight, the arithmetic the suites already use. The due date itself
+    // is not late: the clock starts the day after it.
+    const stopDay = ymd(stop)
+    const afterDue = Date.parse(stopDay) > Date.parse(due)
+    const late = tax > 0 && afterDue
+    const filedAfterDue = Boolean(filedOn) && afterDue
+    // Days run when either clock exists: the fee clock (tax withheld, past due) or the transcript (a
+    // filing day held, past due). A nil quarter with no filing day has neither, and must keep reading
+    // zero — R3-27's fence, restated here because the whole-day rewrite briefly dropped it.
+    const daysLate = late || filedAfterDue
+      ? Math.round((Date.parse(stopDay) - Date.parse(due)) / 86400000)
+      : 0
     // 427(2) caps the fee at the tax deductible for the quarter. There is no second ceiling in
     // the section; the ₹5,00,000 this line used to carry was not the statute's.
     const cap = tax

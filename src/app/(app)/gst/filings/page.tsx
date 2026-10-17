@@ -95,13 +95,16 @@ function costSentence(t: CostTotals, total: number): string {
     `${t.quantified} of ${plural(total, 'correction')} ${t.quantified === 1 ? 'carries' : 'carry'} a figure.`,
   ]
   if (t.stoppedRows > 0) {
-    parts.push(`${plural(t.stoppedRows, 'row')} stopped on the day its tax was paid and reads ${money(t.stoppedMoney)} — measured to that day, so the figure is finished.`)
+    // R3-29: `plural()` agreed the noun; the verb and the pronoun have to agree with it too.
+    const one = t.stoppedRows === 1
+    parts.push(`${plural(t.stoppedRows, 'row')} stopped on the day ${one ? 'its' : 'their'} tax was paid and ${one ? 'reads' : 'read'} ${money(t.stoppedMoney)} — measured to that day, so the figure is finished.`)
   }
   if (t.runningRows > 0) {
-    parts.push(`${plural(t.runningRows, 'row')} still unpaid reads ${money(t.runningMoney)} so far and adds about ${money(t.perDay)} a day.`)
+    const one = t.runningRows === 1
+    parts.push(`${plural(t.runningRows, 'row')} still unpaid ${one ? 'reads' : 'read'} ${money(t.runningMoney)} so far and ${one ? 'adds' : 'add'} about ${money(t.perDay)} a day.`)
   }
   if (t.undatedRows > 0) {
-    parts.push(`${plural(t.undatedRows, 'row')} carried with no payment date on the register is read to today as ${money(t.undatedMoney)} — a ceiling, and the real figure is lower.`)
+    parts.push(`${plural(t.undatedRows, 'row')} carried with no payment date on the register ${t.undatedRows === 1 ? 'is' : 'are'} read to today as ${money(t.undatedMoney)} — a ceiling, and the real figure is lower.`)
   }
   if (t.runningRows > 0 && t.undatedRows > 0) {
     parts.push(`${money(t.ceiling)} is the most the unpaid rows together could cost read to today.`)
@@ -1764,13 +1767,27 @@ function AmendRow({
                 <Badge tone={COST_STATE_META[cost.state].tone}>{COST_STATE_META[cost.state].label}</Badge>
               </div>
               <p>{cost.why}</p>
-              {cost.state !== 'reduce_takes_tax_out' && cost.state !== 'no_tax_to_run_on' && (
+              {cost.state !== 'reduce_takes_tax_out' && cost.state !== 'no_tax_to_run_on'
+                && cost.state !== 'cannot_tell' && (
                 <p>
-                  Measured on {money(cost.base)} of gross tax, from{' '}
-                  {cost.dueOn
-                    ? `the day the tax was due (${formatDateIN(cost.dueOn)})`
-                    : 'no start date the register can stand behind'}{' '}
-                  till {formatDateIN(cost.readTo)} — {cost.dueBasis}.
+                  {/* R3-29: a range only reads forward. A tax paid before the day it was owed, or read
+                      before that day has passed, has no "from due till read" to print — the two dates
+                      stand on their own and the sentence says why no day ran. */}
+                  {cost.state === 'stopped_before_due' ? (
+                    <>Measured on {money(cost.base)} of gross tax, due {formatDateIN(cost.dueOn)} and paid{' '}
+                      {formatDateIN(cost.readTo)} — the money left on or before the day it was owed, so no
+                      day ran between them ({cost.dueBasis}).</>
+                  ) : cost.state === 'not_due_yet' ? (
+                    <>Measured on {money(cost.base)} of gross tax, due {formatDateIN(cost.dueOn)} and read to{' '}
+                      {formatDateIN(cost.readTo)} — the day it is owed has not passed, so no day has run
+                      ({cost.dueBasis}).</>
+                  ) : (
+                    <>Measured on {money(cost.base)} of gross tax, from{' '}
+                      {cost.dueOn
+                        ? `the day the tax was due (${formatDateIN(cost.dueOn)})`
+                        : 'no start date the register can stand behind'}{' '}
+                      till {formatDateIN(cost.readTo)} — {cost.dueBasis}.</>
+                  )}
                   {cost.stopped
                     ? ` The clock stops on ${formatDateIN(cost.readTo)}: ${cost.paidBasis}.`
                     : cost.state === 'running' || cost.state === 'carried_undated'
@@ -1817,6 +1834,16 @@ function AmendRow({
   )
 }
 
+/**
+ * The note says which rule the clock hangs on; the citation says where the rule is written. When the
+ * note already is the citation's opening — "the proviso to rule 59(1)" against "proviso to rule
+ * 59(1) — …" — printing both reads as a stutter, so the fuller citation stands alone.
+ */
+function clockBasis(note: string, citation: string): string {
+  const norm = (s: string) => s.trim().toLowerCase().replace(/^the\s+/, '')
+  return norm(citation).startsWith(norm(note)) ? citation : `${note} — ${citation}`
+}
+
 function ClockCard({
   title, w, note, highlight = false,
 }: {
@@ -1837,7 +1864,7 @@ function ClockCard({
       </h4>
       <div className="left">{w.left > 0 ? `${plural(w.left, 'day')}` : w.open ? 'shutting' : 'closed'}</div>
       <p>{w.why}</p>
-      <small>{note} — {w.citation}</small>
+      <small>{clockBasis(note, w.citation)}</small>
     </div>
   )
 }

@@ -80,6 +80,15 @@ const KEY_FILINGS = 'taxflow:filings:'
 export const FILINGS_VERSION = 1
 export const FILINGS_KEY_PREFIX = KEY_FILINGS
 
+/**
+ * The engine stores its basis strings lowercase because most are read mid-sentence. Where one
+ * starts a sentence, lift its first letter rather than write a second copy of the sentence:
+ * R3-29 found "…the money left. the day this row states…" in the live amendment detail.
+ */
+function sentence(s: string): string {
+  return s ? s[0].toUpperCase() + s.slice(1) : s
+}
+
 /* ── the forms this register keeps ──────────────────────────────────────────── */
 
 export type FilingForm = 'gstr1' | 'gstr1a' | 'gstr3b' | 'cmp08' | 'gstr4' | 'gstr9'
@@ -1792,7 +1801,7 @@ export function amendmentCost(
   }
   if (!isDate(dueOn)) {
     return blank('cannot_tell',
-      `Cannot tell what the wait has cost. ${dueBasis}. No start date is a finding, not a zero.`)
+      `Cannot tell what the wait has cost. ${sentence(dueBasis)}. No start date is a finding, not a zero.`)
   }
   // Rule 88B(2) measures "till the date such tax is paid". Where the register holds that day — on the row
   // itself, or on the GSTR-3B row of the return the correction went through — the clock stops and the
@@ -1804,10 +1813,10 @@ export function amendmentCost(
     const interest = round2(a.tax * (INTEREST_PCT / 100) * (days / 365))
     const why = ran > 0
       ? `Interest under section 50 on ₹${a.tax.toLocaleString('en-IN')} of tax that was due on ${dueOn} and paid on `
-        + `${stop.date} — ${plural(days, 'day')} between them, read to the day the money left. ${stop.basis}.`
+        + `${stop.date} — ${plural(days, 'day')} between them, read to the day the money left. ${sentence(stop.basis)}.`
         + (a.status === 'open' ? ` The row is still open, so its window is still closing even though this clock is not.` : '')
       : `Nothing ran. This row's tax was paid on ${stop.date}, on or before the ${dueOn} it was owed — the figure is nil, `
-        + `and the nil here is a reading, not a blank. ${stop.basis}.`
+        + `and the nil here is a reading, not a blank. ${sentence(stop.basis)}.`
     return {
       id: a.id, period: a.period, kind: a.kind, doc_ref: a.doc_ref, effect: a.effect, status: a.status,
       tax: a.tax, state: ran > 0 ? 'stopped' : 'stopped_before_due', dueOn, dueBasis, readTo: stop.date,
@@ -1820,7 +1829,7 @@ export function amendmentCost(
   const elapsed = daysBetween(clockStart, today)
   if (elapsed <= 0) {
     return blank('not_due_yet',
-      `The tax on this row was not due until ${dueOn}, so nothing is late and nothing is running yet. ${dueBasis}.`,
+      `The tax on this row was not due until ${dueOn}, so nothing is late and nothing is running yet. ${sentence(dueBasis)}.`,
       { readTo: today })
   }
   const days = elapsed

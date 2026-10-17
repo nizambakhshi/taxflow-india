@@ -704,9 +704,11 @@ export default function TdsPage() {
                       ? filedLate
                         ? { tone: 'amber' as const, label: 'Filed late — fee nil' }
                         : { tone: 'green' as const, label: 'Filed on time' }
-                      : q.due > todayISO
-                        ? { tone: 'grey' as const, label: 'Not due yet' }
-                        : { tone: 'grey' as const, label: 'No filing day' }
+                      : q.due === todayISO
+                        ? { tone: 'grey' as const, label: 'Due today' }
+                        : q.due > todayISO
+                          ? { tone: 'grey' as const, label: 'Not due yet' }
+                          : { tone: 'grey' as const, label: 'No filing day' }
                 return (
                   <div key={q.quarter} className={`td-stmt ${q.ceiling ? 'is-ceiling' : filedLate ? 'is-late' : q.filedOn ? 'is-filed' : ''}`}>
                     <div className="td-dep-head">
@@ -785,8 +787,10 @@ export default function TdsPage() {
                               ? filedLate
                                 ? `The register holds ${formatDateIN(q.filedOn)}: ${plural(q.daysLate, 'day')} after the ${formatDateIN(q.due)} due date. Nothing was withheld, so the fee reads nil.`
                                 : `Filed ${formatDateIN(q.filedOn)}, on or before the due date — nothing is at stake.`
-                              : q.tax > 0 && q.due > todayISO
-                                ? `The statement falls due ${formatDateIN(q.due)}; nothing has run yet.`
+                              : q.tax > 0 && q.due >= todayISO
+                                ? q.due === todayISO
+                                  ? `The statement falls due today, ${formatDateIN(q.due)}; nothing has run yet — the clock starts tomorrow.`
+                                  : `The statement falls due ${formatDateIN(q.due)}; nothing has run yet.`
                                 : 'Nothing was withheld in this quarter, so the fee reads nil.'}
                       </span>
                       {q.filedOn && (
