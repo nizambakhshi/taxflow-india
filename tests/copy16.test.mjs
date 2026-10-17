@@ -153,7 +153,10 @@ eq('the card is labelled for what it counts', /label="At risk this year"/.test(f
 ok('the old label that read like a list is gone', !/At risk on this year/.test(filingsPage))
 ok('it no longer sends the reader to a breakdown', !/see the breakdown below/.test(filingsPage))
 ok('state one: money owed names its two parts', /\$\{money\(exposure\.fee\)\} of late fee and \$\{money\(exposure\.interest\)\} of section 50 interest/.test(filingsPage))
-ok('state two: time past with nothing owed says so', /past their date and nothing owed on them/.test(filingsPage))
+// R3-20 amended this sentence: "past their date" was shared with the finding above it, which counts
+// a different population (state = overdue, not days > 0). The card's own figure kept its true name —
+// "late or unfiled" — so the pin moved with it. State two is still stated, not implied.
+ok('state two: time past with nothing owed says so', /late or unfiled and nothing owed on them/.test(filingsPage))
 ok('state three: nothing past its date is stated, not implied', /no period on this register is past its date/.test(filingsPage))
 ok('the card counts its periods through the kit', /plural\(exposure\.periods, 'period'\)/.test(filingsPage))
 ok('the card still prints a rupee, not a count', /value=\{money\(exposure\.total\)\}/.test(filingsPage))

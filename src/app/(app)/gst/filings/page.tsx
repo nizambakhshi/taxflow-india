@@ -546,7 +546,7 @@ function FilingsPageInner() {
   // the same number as the figure beside it. A bracketed hint here would hedge a count the line computed.
   const findings = [
     { n: stats.blocked, label: stats.blocked === 1 ? 'row the chain shuts' : 'rows the chain shuts', detail: 'rule 59(6) — the previous period is not in, or an 88C(1) intimation stands unpaid', bad: true },
-    { n: stats.overdue, label: stats.overdue === 1 ? 'return past its date' : 'returns past their date', detail: 'measured against the date each row carries', bad: true },
+    { n: stats.overdue, label: stats.overdue === 1 ? 'return still unfiled past its date' : 'returns still unfiled past their date', detail: 'measured against the date each row carries — the cost strip below counts every period whose date has passed, filed late or not', bad: true },
     { n: stats.late, label: 'filed late', detail: 'filed after the date the row was written against', bad: false },
     { n: stats.drift, label: stats.drift === 1 ? 'row where the calendar and the rule disagree' : 'rows where the calendar and the rule disagree', detail: 'the app\'s own date against the date the rule text states', bad: true },
     { n: checks.length, label: checks.length === 1 ? 'tick the two lists do not agree about' : 'ticks the two lists do not agree about', detail: '/gst/calendar and this register, on the same return', bad: true },
@@ -694,9 +694,9 @@ function FilingsPageInner() {
             "see the breakdown" is a card that has not decided what it found (Rule 52). */}
         <StatCard label="At risk this year" value={money(exposure.total)}
           sub={exposure.total > 0
-            ? `${money(exposure.fee)} of late fee and ${money(exposure.interest)} of section 50 interest, over ${plural(exposure.periods, 'period')} past their date`
+            ? `${money(exposure.fee)} of late fee and ${money(exposure.interest)} of section 50 interest, over ${plural(exposure.periods, 'period')} late or unfiled`
             : exposure.periods > 0
-              ? `${plural(exposure.periods, 'period')} past their date and nothing owed on them`
+              ? `${plural(exposure.periods, 'period')} late or unfiled and nothing owed on them`
               : 'no period on this register is past its date'}
           icon="wallet" tone={exposure.total > 0 ? 'red' : 'grey'} />
       </div>
@@ -803,7 +803,7 @@ function FilingsPageInner() {
                 <div className="fg-exposure">
                   <StatRow label="Late fee still owed across the year" value={pctOrEmpty(exposure.fee)} tone={exposure.fee > 0 ? 'red' : 'grey'} strong />
                   <StatRow label="Interest under section 50" value={pctOrEmpty(exposure.interest)} tone={exposure.interest > 0 ? 'amber' : 'grey'} />
-                  <StatRow label="Periods past their date" value={String(exposure.periods)} />
+                  <StatRow label="Periods late or unfiled" value={String(exposure.periods)} />
                   <StatRow label="Rows already sealed" value={String(stats.sealed)} tone={stats.sealed > 0 ? 'green' : 'grey'} />
                 </div>
                 <p className="fg-side-note">

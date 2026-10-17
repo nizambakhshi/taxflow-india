@@ -389,9 +389,10 @@ function VaultPageInner() {
         title="The books vault"
         subtitle={
           <>
-            Documents live in the database and come back when you sign in. The {restorable} registers this app keeps on{' '}
+            Documents live in the database and come back when you sign in. The {REGISTERS.length} registers this app keeps on{' '}
             <em>this browser</em> do not — batches, serials, LUTs, splits, workpapers. This page writes them into one
-            file and puts them back through the pages that own them.
+            file and puts {restorable} of them back through the pages that own them; the other{' '}
+            {REGISTERS.length - restorable} travel as evidence only.
           </>
         }
         actions={

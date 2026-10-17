@@ -158,6 +158,13 @@ function JournalPageInner() {
   // missing head kept on a labelled placeholder, and the two columns footed. Read-only (R3-14).
   const tb = useMemo(() => trialBalance(store), [store])
   const movedThisFY = useMemo(() => movements(rowsInWindow(rows, { start: fy.start, end: fy.end })), [rows, fy])
+  // A posting that *reverses* one is itself `status: 'posted'`, so `livePostings` leaves it out of
+  // "standing" and `journalStats` counts only its original as "reversed". The card below has to name
+  // that row or the reader is left adding a numbered entry the sub-line never mentions.
+  const postedReversals = useMemo(
+    () => store.entries.filter(e => e.status === 'posted' && !!e.reverses).length,
+    [store],
+  )
   // The windows that are closed. An entry dated inside one is refused before its legs are read, so the
   // page states the locks it is obeying rather than let a Post button surprise the shop.
   const seals = useMemo(() => (orgId ? activeSeals(loadAudit(orgId)) : []), [orgId])
@@ -445,7 +452,9 @@ function JournalPageInner() {
       {/* ── The four numbers ──────────────────────────────────────────────────── */}
       <div className="jn-stats">
         <StatCard label="Postings standing" value={String(stats.posted)} icon="book" tone="green"
-          sub={stats.reversed > 0 ? `folded into the statements · ${stats.reversed} reversed` : 'folded into the statements'} delay={0} />
+          sub={stats.reversed > 0 || postedReversals > 0
+            ? `folded into the statements · ${stats.reversed} reversed${postedReversals > 0 ? ` · ${postedReversals} posted reversal${postedReversals === 1 ? '' : 's'} — the pair nets to nothing` : ''}`
+            : 'folded into the statements'} delay={0} />
         <StatCard label="Drafts" value={String(stats.drafts)} icon="edit" tone={stats.drafts ? 'amber' : 'grey'}
           sub="no number taken yet" delay={60} />
         <StatCard label={`Moved in ${fy.label}`} value={money(stats.rupeesThisFY)} icon="hash" tone="blue"

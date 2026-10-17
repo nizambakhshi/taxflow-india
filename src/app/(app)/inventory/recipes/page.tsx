@@ -1268,9 +1268,17 @@ function RecipesPageInner() {
         />
         <StatCard
           label="Runs on the log" value={String(buildList.length)}
-          sub={buildList.length
-            ? `${buildList.filter(b => b.status === 'built').length} built · ${buildList.filter(b => b.status === 'planned').length} planned${demand.length ? ` · ${demand.length} order${demand.length === 1 ? '' : 's'} waiting` : ''}`
-            : 'no run recorded yet'}
+          sub={buildList.length === 0 ? 'no run recorded yet' : (() => {
+            const built = buildList.filter(b => b.status === 'built').length
+            const planned = buildList.filter(b => b.status === 'planned').length
+            const cancelled = buildList.length - built - planned
+            // Every run the card counts has to be named by the card's own sub-line: a log of 3 that
+            // reads "0 built · 0 planned" leaves the reader adding a state that is not printed.
+            const parts = [`${built} built`, `${planned} planned`]
+            if (cancelled > 0) parts.push(`${cancelled} cancelled`)
+            if (demand.length) parts.push(`${demand.length} order${demand.length === 1 ? '' : 's'} waiting`)
+            return parts.join(' · ')
+          })()}
           icon="list" tone={demand.length ? 'amber' : 'cyan'} delay={120}
         />
       </div>
@@ -1705,6 +1713,8 @@ function RecipesPageInner() {
                                 <p className="rc-detail-note">
                                   {paper.entries.length > 0
                                     ? <>{r.build.ref}: {paper.note} — <Link href={`/journal?q=${encodeURIComponent(r.build.ref)}`}>open them on /journal</Link>.</>
+                                    : r.build.status === 'cancelled'
+                                    ? <>{r.build.ref} has no journal row yet — the run was called off, so there is no cost left to draft as paper.</>
                                     : <>{r.build.ref} has no journal row yet — its cost is a screen reading until the shop drafts it as paper.</>}
                                 </p>
                                 {cancelNote && (
@@ -2249,9 +2259,11 @@ function RecipesPageInner() {
           sold, at the HSN/SAC and rate of <em>that</em> good — not of its parts, which is why every card above checks the output has a
           code at all. Materials handed to somebody else to work on are a different thing entirely: that is job work, a supply on
           schedule I, and it belongs on <Link href="/gst/job-work">job work</Link> with its section 143 return clock.
-          Cost here is <strong>parts plus minutes priced by your dated rate rows</strong> — a reading, not a posting: there is still no
-          work-in-progress account, and nothing consumes materials by itself when an invoice is raised, because a finished unit may have
-          come from opening stock or a purchase just as well as from a run. The build form, not the invoice, records what a run took.
+          Cost here is <strong>parts plus minutes priced by your dated rate rows</strong> — a reading first, and paper only through
+          {' '}<Link href="/journal">the journal</Link>: a built run can be drafted as a work-in-progress pair on heads the shop names,
+          and nothing posts it from this page. No run consumes materials by itself when an invoice is raised, because a finished unit
+          may have come from opening stock or a purchase just as well as from a build. The build form, not the invoice, records what
+          a run took.
         </span>
       </div>
 
