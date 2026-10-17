@@ -1,5 +1,6 @@
 import { formatDateIN } from '@/lib/format'
 import { INDIAN_STATES } from '@/lib/constants'
+import { TDS_STATEMENT_FEE_CITATION, TDS_STATEMENT_FEE_PER_DAY } from '@/lib/tds'
 
 export type ComplianceCategory = 'gst' | 'tds' | 'income-tax' | 'payroll' | 'other'
 
@@ -257,7 +258,10 @@ export function generateEvents(fyStart: number, profile: Profile = DEFAULT_PROFI
         category: 'tds', due: iso(q.due[0], q.due[1] + 1, q.due[2]),
         period: `for ${q.label}`,
         description: 'Quarterly statement of tax deducted and deposited.',
-        penalty: { lateFeePerDay: 200, note: '₹200/day under section 234E, capped at the TDS amount.' },
+        penalty: {
+          lateFeePerDay: TDS_STATEMENT_FEE_PER_DAY,
+          note: `₹${TDS_STATEMENT_FEE_PER_DAY}/day under ${TDS_STATEMENT_FEE_CITATION}, capped at the TDS amount.`,
+        },
       })
     }
   }

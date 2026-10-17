@@ -10,6 +10,7 @@ import { toCsv } from '@/lib/registers'
 import { fyLabel, fyStartYear } from '@/lib/targets'
 import {
   SAMPLE_TDS_NOTE, SECTIONS, TDS_CSV_HEADERS, TDS_DEPOSIT_CSV_HEADERS, TDS_STATEMENT_CSV_HEADERS,
+  TDS_STATEMENT_FEE_CITATION, TDS_STATEMENT_FEE_PER_DAY, TDS_STATEMENT_PENALTY_CITATION,
   buildWorkpaper, effectiveRate, emptyTds, loadTds, noPanRateOf, saveTds, sectionOf, setBillSection,
   setChallan, setStatementFiling, setVendorSection, tdsBase, tdsCsvRows, tdsDepositCsvRows,
   tdsStatementCsvRows, validateStatementFiling, vendorKey,
@@ -282,7 +283,7 @@ export default function TdsPage() {
           tone={interestAtStake > 0 ? 'amber' : 'grey'}
           sub={wp.totals.statementFeeCeiling > 0
             ? `1.5% a month on the deposit · the 26Q fee includes ${money(wp.totals.statementFeeCeiling)} read only to today`
-            : '1.5% a month on the deposit, ₹100 a day on a late 26Q'} delay={240} />
+            : `1.5% a month on the deposit, ${money(TDS_STATEMENT_FEE_PER_DAY)} a day on a late 26Q`} delay={240} />
         <StatCard label="Value with no section chosen" value={wp.totals.untaggedValue} icon="factory"
           tone={untaggedCount ? 'amber' : 'grey'}
           sub={untaggedCount ? `${plural(untaggedCount, 'bill')} — tag the supplier to include them` : 'Every supplier is tagged'}
@@ -669,8 +670,8 @@ export default function TdsPage() {
         {tab === 'statements' && (
           <div className="td-body">
             <Headline
-              title="Form 24Q or 26Q, quarter by quarter"
-              note="The statement itself is filed on the income-tax portal, so this page cannot confirm a filing. Record the day the shop says it went in and the 271H fee stops there — a transcript, not proof. A quarter with no filing day keeps reading to today, and its fee is printed as a ceiling."
+              title="Form 138 / 140 (24Q / 26Q), quarter by quarter"
+              note="The statement itself is filed on the income-tax portal, so this page cannot confirm a filing. Record the day the shop says it went in and the late-statement fee stops there — a transcript, not proof. A quarter with no filing day keeps reading to today, and its fee is printed as a ceiling."
             />
             <div className="td-tools no-print">
               <span className="td-saved">
@@ -715,14 +716,14 @@ export default function TdsPage() {
                         <b className="tf-num">{q.daysLate || '—'}</b>
                       </span>
                       <span>
-                        <em>271H fee</em>
+                        <em>Late fee · 427</em>
                         <b className="tf-num">{q.fee ? money(q.fee) : '—'}</b>
                       </span>
                       <span>
                         <em>Per day</em>
                         <b className="tf-num">
                           {q.ceiling
-                            ? q.capped ? '₹0, at the cap' : '₹100, still running'
+                            ? q.capped ? '₹0, at the cap' : `${money(TDS_STATEMENT_FEE_PER_DAY)}, still running`
                             : q.stopped ? '₹0, stopped' : '—'}
                         </b>
                       </span>
@@ -823,9 +824,13 @@ export default function TdsPage() {
             </div>
 
             <div className="td-foot-note">
-              ₹100 a day under 271H for a late statement, capped at the tax involved, and a separate ₹200 a day under
-              285(2A) for the return of the deduction itself. The day recorded above is the shop&apos;s own transcript —
-              the portal is still invisible, so a quarter with no day on it is printed as a ceiling, never as the final demand.
+              {money(TDS_STATEMENT_FEE_PER_DAY)} a day under {TDS_STATEMENT_FEE_CITATION} for a late statement,
+              capped at the tax involved. A separate penalty of ₹10,000 to ₹1,00,000 under{' '}
+              {TDS_STATEMENT_PENALTY_CITATION} can follow a late or incorrect statement — it is a penalty the
+              officer decides, not a daily charge, so this page does not accrue it. The 2025 Act calls this
+              statement Form 140; the familiar 26Q name is kept. The day recorded above is the shop&apos;s own
+              transcript — the portal is still invisible, so a quarter with no day on it is printed as a
+              ceiling, never as the final demand.
               {' '}{SAMPLE_TDS_NOTE}
             </div>
           </div>

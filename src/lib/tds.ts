@@ -463,11 +463,11 @@ export interface QuarterlyStatement {
   /** True when the quarter is late with no filing day on it: the fee is a ceiling, and says so. */
   ceiling: boolean
   /**
-   * True when the fee has reached the cap the law puts on it — the tax involved, or ₹5,00,000 —
+   * True when the fee has reached the cap the law puts on it — the tax involved —
    * so another late day adds nothing. A ceiling can be bounded; the page must not call it growing.
    */
   capped: boolean
-  /** ₹100 a day still running under 271H; the labelled nil once the clock stops or the cap is reached (Rule 27). */
+  /** ₹200 a day under section 427 (234E of the 1961 Act) while the clock runs; the labelled nil once it stops or reaches the cap (Rule 27). */
   perDay: number
 }
 
@@ -773,8 +773,22 @@ const QUARTERS: { label: string; quarter: string; from: string; to: string; due:
 ]
 
 /**
- * 26Q is filed quarterly. A late statement costs ₹100 a day under 271H, capped at the tax
- * involved, and ₹200 a day under 285(2A), capped at the fee for the return.
+ * The late-statement fee is section 427 of the Income-tax Act, 2025 — section 234E of the
+ * 1961 Act it replaced: ₹200 a day, capped at the tax deductible for the quarter. Section
+ * 271H (section 461 of the 2025 Act) is a different thing: a ₹10,000–₹1,00,000 penalty the
+ * officer decides, not a daily charge, so no clock on this page accrues it. The compliance
+ * calendar reads this one constant, so the two registers cannot cite two fees again.
+ */
+export const TDS_STATEMENT_FEE_PER_DAY = 200
+export const TDS_STATEMENT_FEE_CITATION =
+  'section 427 of the Income-tax Act, 2025 (section 234E of the 1961 Act)'
+export const TDS_STATEMENT_PENALTY_CITATION =
+  'section 461 of the Income-tax Act, 2025 (section 271H of the 1961 Act)'
+
+/**
+ * 26Q is filed quarterly. A late statement costs ₹200 a day under section 427 (section 234E),
+ * capped at the tax involved. Section 271H (section 461 of the 2025 Act) is a separate,
+ * discretionary penalty — never a per-day charge, so it is printed as a range and not accrued.
  *
  * R3-25's amendment, borrowed whole from the filings register's rule 88B(2) shape (R3-24):
  * a clock reads to the date the register holds, or it does not stop. Where the shop has said
@@ -804,10 +818,12 @@ function quarterlyStatements(fyStart: number, rows: DeductionRow[], asOf: Date, 
     const stop = filedOn ? parseDate(filedOn)! : asOf
     const late = tax > 0 && dueDate < stop
     const daysLate = late ? Math.ceil((stop.getTime() - dueDate.getTime()) / 86400000) : 0
-    const cap = Math.min(tax, 5_00_000)
+    // 427(2) caps the fee at the tax deductible for the quarter. There is no second ceiling in
+    // the section; the ₹5,00,000 this line used to carry was not the statute's.
+    const cap = tax
     // At the cap a further day adds nothing — the fee has stopped growing even though no filing
     // day stops the clock. The two states are different and the page prints them differently.
-    const capped = late && daysLate * 100 >= cap
+    const capped = late && daysLate * TDS_STATEMENT_FEE_PER_DAY >= cap
     const stopped = late && Boolean(filedOn)
     return {
       label: q.label,
@@ -817,13 +833,13 @@ function quarterlyStatements(fyStart: number, rows: DeductionRow[], asOf: Date, 
       periodTo,
       tax,
       daysLate,
-      fee: late ? Math.min(daysLate * 100, cap) : 0,
+      fee: late ? Math.min(daysLate * TDS_STATEMENT_FEE_PER_DAY, cap) : 0,
       filedOn,
       reference: filing?.reference || '',
       stopped,
       ceiling: late && !filedOn,
       capped,
-      perDay: late && !filedOn && !capped ? 100 : 0,
+      perDay: late && !filedOn && !capped ? TDS_STATEMENT_FEE_PER_DAY : 0,
     }
   })
 }

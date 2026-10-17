@@ -1,16 +1,22 @@
 // R3-25 — the statement clock stops on the day the shop says it filed.
 //
 // R2-11's 26Q card printed its own limitation: "Statements are filed on the income-tax portal, so this
-// page cannot see whether you filed one." The fee under section 271H therefore always read to today —
-// a ceiling, even for a quarter filed a year ago. R3-21's shape (a limitation a card prints about itself
-// is a task) and R3-24's grammar (a clock stops on a date the register holds, or it does not) are applied
-// whole to a second register under a second statute: a quarter can now carry the shop's own filing day
-// and acknowledgement, the days and fee stop there, and a quarter still undated keeps reading to today
+// page cannot see whether you filed one." The fee therefore always read to today — a ceiling, even for
+// a quarter filed a year ago. R3-21's shape (a limitation a card prints about itself is a task) and
+// R3-24's grammar (a clock stops on a date the register holds, or it does not) are applied whole to a
+// second register under a second statute: a quarter can now carry the shop's own filing day and
+// acknowledgement, the days and fee stop there, and a quarter still undated keeps reading to today
 // with its fee labelled a ceiling. What is new beyond R3-24 is the cap: once the fee reaches the tax
-// involved (or ₹5,00,000) another late day adds nothing, and that is a third state, not a running clock.
+// involved another late day adds nothing, and that is a third state, not a running clock.
+//
+// Amended at R3-26: this suite first pinned the fee at ₹100/day under section 271H and a second
+// ₹5,00,000 ceiling. The fee is ₹200/day under section 427 of the Income-tax Act, 2025 (section 234E
+// of the 1961 Act), capped at the tax; 271H (section 461 of the 2025 Act) is a separate
+// ₹10,000–₹1,00,000 penalty, not a clock. The values below are re-pinned to the statute; the states
+// R3-25 introduced are unchanged.
 //
 // This suite fences the six things that must not silently regress:
-//   A. the reading to today is unchanged for a register written before this round (same fee, same ceiling),
+//   A. the reading to today is the statute's for a register written before this round (same states, corrected fee),
 //   B. a held day stops the clock and a day before the quarter closed or after today never does,
 //   C. the ceiling is labelled, the stopped figure is not, and the cap is its own labelled state,
 //   D. totals split a ceiling from a figure — a closed liability is not a risk (Rule 27/Rule 61),
@@ -43,7 +49,7 @@ const {
 const AS_OF = new Date(2026, 9, 17)          // '2026-10-17' — Q1 is late, Q2 falls due in a fortnight
 const AS_OF_MIXED = new Date(2026, 11, 15)   // '2026-12-15' — Q1 and Q2 both past their due date
 const AS_OF_2030 = new Date(2030, 5, 1)      // '2030-06-01' — every quarter is at the tax cap
-const AS_OF_2040 = new Date(2040, 5, 1)      // '2040-06-01' — ₹100/day crosses even the ₹5,00,000 ceiling
+const AS_OF_2040 = new Date(2040, 5, 1)      // '2040-06-01' — ₹200/day crosses a ₹6,00,000 tax cap
 
 /** An independent day count from UTC midnights, so the engine's local-midnight count is checked. */
 function dayCount(from, to) {
@@ -62,7 +68,7 @@ function eq(name, actual, expected) {
 
 // ── the fixture ────────────────────────────────────────────────────────────────
 // One professional-fee supplier tagged 194J_PRO (10%, whole once ₹50,000 is crossed), one ₹1,00,000 bill
-// in each quarter of 2026-27. Each quarter therefore holds ₹10,000 of tax, which is also the 271H cap.
+// in each quarter of 2026-27. Each quarter therefore holds ₹10,000 of tax, which is also the 427 cap.
 const VENDOR = { id: 'v1', name: 'A & Co', pan: 'ABCDE1234F', gstin: '' }
 const bill = (id, billNumber, billDate) => ({
   id, billNumber, billDate, vendorId: 'v1', vendorName: 'A & Co', gstin: '',
@@ -85,19 +91,20 @@ eq('A1 Q1 due 31 July 2026', wp.statements[0].due, '2026-07-31')
 eq('A1a Q1 period closes 30 June 2026', wp.statements[0].periodTo, '2026-06-30')
 eq('A2 the late days are due→today', wp.statements[0].daysLate, dayCount('2026-07-31', '2026-10-17'))
 eq('A2a that is 78 days', wp.statements[0].daysLate, 78)
-eq('A3 the fee is ₹100 a day', wp.statements[0].fee, 78 * 100)
+eq('A3 78 days at ₹200 cross the quarter\'s ₹10,000 tax', wp.statements[0].fee, 10000)
 eq('A3a no filing day — the fee is a ceiling', wp.statements[0].ceiling, true)
 eq('A3b and it is not called stopped', wp.statements[0].stopped, false)
-eq('A3c nor capped', wp.statements[0].capped, false)
-eq('A3d the per-day clock still runs', wp.statements[0].perDay, 100)
+eq('A3c the cap is reached, so it is capped', wp.statements[0].capped, true)
+eq('A3d the per-day clock is a labelled nil at the cap', wp.statements[0].perDay, 0)
 eq('A3e no day is invented for it', wp.statements[0].filedOn, '')
+eq('A3f the fee is the tax, not the raw 78 × ₹200', wp.statements[0].fee, wp.statements[0].tax)
 eq('A4 Q2 has not fallen due yet', wp.statements[1].due, '2026-10-31')
 eq('A4a nothing has run', wp.statements[1].fee, 0)
 eq('A4b and it is not a ceiling', wp.statements[1].ceiling, false)
 eq('A5 Q3 is due in the calendar year after it opened', wp.statements[2].due, '2027-01-31')
 eq('A5a Q4 likewise', wp.statements[3].due, '2027-05-31')
-eq('A6 the year totals the one late quarter', wp.totals.statementFee, 7800)
-eq('A6a all of it is a ceiling', wp.totals.statementFeeCeiling, 7800)
+eq('A6 the year totals the one late quarter at its cap', wp.totals.statementFee, 10000)
+eq('A6a all of it is a ceiling', wp.totals.statementFeeCeiling, 10000)
 eq('A6b nothing is stopped money', wp.totals.statementFee - wp.totals.statementFeeCeiling, 0)
 
 // ── B. a held day stops the clock ──────────────────────────────────────────────
@@ -109,14 +116,14 @@ eq('B1 the day the register holds travels with the quarter', q1s.filedOn, '2026-
 eq('B1a the acknowledgement travels beside it', q1s.reference, 'ACK-9')
 eq('B2 days run due→filed, not due→today', q1s.daysLate, dayCount('2026-07-31', '2026-08-20'))
 eq('B2a that is 20 days', q1s.daysLate, 20)
-eq('B3 the fee stops at the held day', q1s.fee, 20 * 100)
-eq('B3a recomputed independently against the tax cap', q1s.fee, Math.min(dayCount('2026-07-31', '2026-08-20') * 100, 10000))
+eq('B3 the fee stops at the held day', q1s.fee, 20 * 200)
+eq('B3a recomputed independently against the tax cap', q1s.fee, Math.min(dayCount('2026-07-31', '2026-08-20') * 200, 10000))
 eq('B3b stopped is its own state', q1s.stopped, true)
 eq('B3c it is no longer a ceiling', q1s.ceiling, false)
 eq('B3d and no day is added beyond it', q1s.perDay, 0)
 eq('B4 the other quarters are untouched by one filing', wpStop.statements[1].fee, 0)
 eq('B4a and carry no day', wpStop.statements[1].filedOn, '')
-eq('B5 the year carries only the stopped figure', wpStop.totals.statementFee, 2000)
+eq('B5 the year carries only the stopped figure', wpStop.totals.statementFee, 4000)
 eq('B5a with no ceiling left in it', wpStop.totals.statementFeeCeiling, 0)
 
 // Filed on the due date is on time; filed before it (but after the quarter closed) is also on time.
@@ -146,11 +153,11 @@ eq('C0 Q1 is stopped', wpMixed.statements[0].stopped, true)
 eq('C0a Q2 is still a ceiling', wpMixed.statements[1].ceiling, true)
 eq('C0b Q2 days are due→today', wpMixed.statements[1].daysLate, dayCount('2026-10-31', '2026-12-15'))
 eq('C0c that is 45 days', wpMixed.statements[1].daysLate, 45)
-eq('C1 Q1 money is a figure', wpMixed.statements[0].fee, 2000)
-eq('C1a Q2 money is a ceiling', wpMixed.statements[1].fee, 4500)
-eq('C2 totals keep the two kinds apart', wpMixed.totals.statementFee, 6500)
-eq('C2a the ceiling is only the undated quarter', wpMixed.totals.statementFeeCeiling, 4500)
-eq('C2b the closed liability is what is left after the ceiling', wpMixed.totals.statementFee - wpMixed.totals.statementFeeCeiling, 2000)
+eq('C1 Q1 money is a figure', wpMixed.statements[0].fee, 4000)
+eq('C1a Q2 money is a ceiling', wpMixed.statements[1].fee, 9000)
+eq('C2 totals keep the two kinds apart', wpMixed.totals.statementFee, 13000)
+eq('C2a the ceiling is only the undated quarter', wpMixed.totals.statementFeeCeiling, 9000)
+eq('C2b the closed liability is what is left after the ceiling', wpMixed.totals.statementFee - wpMixed.totals.statementFeeCeiling, 4000)
 
 // Once the fee reaches the tax involved, another late day adds nothing — a bounded ceiling.
 const wpLate = read(BASE, AS_OF_2030)
@@ -162,13 +169,14 @@ eq('C3d it is still a ceiling, not a figure', wpLate.statements[0].ceiling, true
 eq('C3e all four quarters are at the cap', wpLate.statements.filter(q => q.capped).length, 4)
 eq('C3f the year cannot claim more than the tax withheld', wpLate.totals.statementFeeCeiling, 40000)
 
-// The ₹5,00,000 ceiling binds before the tax does on a large quarter.
+// The cap is the tax involved; there is no second ₹5,00,000 ceiling in section 427.
 const bigBill = { ...bill('big', 'BIG-1', '2026-05-10'), taxable: 6000000, grandTotal: 6000000 }
 const wpBig = buildWorkpaper([bigBill], [], [VENDOR], BASE, 2026, AS_OF_2040)
 eq('C4 a ₹60,00,000 fee bill withholds ₹6,00,000', wpBig.statements[0].tax, 600000)
-eq('C4a the fee stops at the statutory ceiling', wpBig.statements[0].fee, 500000)
+eq('C4a the fee stops at the tax, not at ₹5,00,000', wpBig.statements[0].fee, 600000)
 eq('C4b capped, not running', wpBig.statements[0].capped, true)
 eq('C4c and no further day is added', wpBig.statements[0].perDay, 0)
+eq('C4d the fee equals the tax', wpBig.statements[0].fee, wpBig.statements[0].tax)
 
 // A stopped quarter that is also at the cap is a figure; stopped wins over capped in what it calls itself.
 const stopAtCap = read(setStatementFiling(BASE, '2026-07-31', { filedOn: '2030-06-01', reference: 'LATE-ACK' }), AS_OF_2030)
@@ -209,7 +217,7 @@ eq('E1b the acknowledgement survives a round trip', loaded.statementFilings['202
 eq('E2 the store version is unchanged', TDS_VERSION, 1)
 eq('E2a and load reports it', loaded.version, 1)
 const wpNow = buildWorkpaper(BILLS, [], [VENDOR], loaded, 2026, AS_OF)
-eq('E3 the held day stops Q1 after a reload', wpNow.statements[0].fee, 2000)
+eq('E3 the held day stops Q1 after a reload', wpNow.statements[0].fee, 4000)
 eq('E3a so the year has a figure and no Q1 ceiling', wpNow.totals.statementFeeCeiling, 0)
 eq('E4 a future day in the store is not read', wpNow.statements[3].filedOn, '')
 const wpDec = buildWorkpaper(BILLS, [], [VENDOR], loaded, 2026, AS_OF_MIXED)
@@ -223,7 +231,7 @@ const legacy = { version: 1, updatedAt: '', payerType: 'business', vendorSection
 lsBacking.set('taxflow:tds:org-legacy', JSON.stringify(legacy))
 const old = loadTds('org-legacy')
 eq('E7 a pre-round register loads with no filing days', Object.keys(old.statementFilings).length, 0)
-eq('E8 and the fee reads exactly as the round before', buildWorkpaper(BILLS, [], [VENDOR], old, 2026, AS_OF).totals.statementFee, 7800)
+eq('E8 and the fee reads as the statute now reads', buildWorkpaper(BILLS, [], [VENDOR], old, 2026, AS_OF).totals.statementFee, 10000)
 lsBacking.set('taxflow:tds:org-broken', '{not json')
 const broken = loadTds('org-broken')
 eq('E9 a damaged file loads empty, not throwing', Object.keys(broken.statementFilings).length, 0)
@@ -258,8 +266,8 @@ const basis = (rows, i) => rows[i][TDS_STATEMENT_CSV_HEADERS.indexOf('Fee basis'
 eq('G3 a stopped row says which day it is measured to', basis(csv, 0), 'measured to the day this register holds')
 eq('G3a and prints that day', csv[0][TDS_STATEMENT_CSV_HEADERS.indexOf('Filed on')], '2026-08-20')
 eq('G3b and the acknowledgement', csv[0][TDS_STATEMENT_CSV_HEADERS.indexOf('Acknowledgement')], 'ACK-9')
-eq('G4 a ceiling row says it is read to today', basis(tdsStatementCsvRows(wp), 0), 'ceiling — no filing day, read to today')
-eq('G4a with no day invented', tdsStatementCsvRows(wp)[0][TDS_STATEMENT_CSV_HEADERS.indexOf('Filed on')], '')
+eq('G4 a ceiling row says it is read to today', basis(tdsStatementCsvRows(wpMixed), 1), 'ceiling — no filing day, read to today')
+eq('G4a with no day invented', tdsStatementCsvRows(wpMixed)[1][TDS_STATEMENT_CSV_HEADERS.indexOf('Filed on')], '')
 eq('G5 a capped ceiling says so', basis(tdsStatementCsvRows(wpLate), 0), 'ceiling — no filing day, at the cap')
 eq('G6 a quarter with nothing at stake says that', basis(tdsStatementCsvRows(wp), 1), 'nothing at stake')
 eq('G6a and a quarter filed on time says nothing is at stake', basis(tdsStatementCsvRows(onDue), 0), 'nothing at stake')
@@ -284,8 +292,8 @@ ok('H13 the old "cannot see whether you filed" sentence is gone', !/cannot see w
 ok('H14 the old table constants are gone', !/STMT_COLS|STMT_GRID/.test(PAGE))
 ok('H15 no hand-spelled plural was added in the round\'s sentences', !/day\$\{[^}]*=== 1 \? '' : 's'\}/.test(PAGE))
 ok('H16 the engine guards the pre-period day as well as the future one', /filing\.filedOn <= ymd\(asOf\) && filing\.filedOn >= periodTo/.test(LIB))
-ok('H17 per-day is nil once stopped or capped', /perDay: late && !filedOn && !capped \? 100 : 0/.test(LIB))
-ok('H18 the cap is min(tax, 5,00,000)', /const cap = Math\.min\(tax, 5_00_000\)/.test(LIB))
+ok('H17 per-day is nil once stopped or capped', /perDay: late && !filedOn && !capped \? TDS_STATEMENT_FEE_PER_DAY : 0/.test(LIB))
+ok('H18 the cap is the tax involved, with no second ceiling', /const cap = tax/.test(LIB))
 
 console.log(`\ntds25: ${pass - failures.length}/${pass} passed`)
 if (failures.length) {
